@@ -1,0 +1,126 @@
+// Synthetic payloads shaped like the Pierre API responses. No real data.
+
+export const pierreBankAccount = {
+  id: 'p-acc-bank',
+  name: 'Conta Corrente',
+  customName: null,
+  type: 'BANK',
+  subtype: 'CHECKING_ACCOUNT',
+  balance: '1523.45',
+  currencyCode: 'BRL',
+  marketingName: null,
+  connectorName: 'Bank A',
+  itemLastUpdatedAt: '2026-10-26T13:34:07.676Z',
+  itemIsActive: true,
+};
+
+export const pierreCardAccount = {
+  id: 'p-acc-card',
+  name: 'Cartao Exemplo',
+  customName: null,
+  type: 'CREDIT',
+  subtype: 'CREDIT_CARD',
+  balance: '320.50',
+  currencyCode: 'BRL',
+  marketingName: null,
+  connectorName: 'Bank A',
+  itemLastUpdatedAt: '2026-10-26T13:34:07.676Z',
+  itemIsActive: true,
+};
+
+export const pierreWalletAccount = {
+  id: 'p-acc-wallet',
+  name: 'Carteira',
+  customName: null,
+  type: 'BANK',
+  subtype: 'SAVINGS',
+  balance: '0.00',
+  currencyCode: 'BRL',
+  marketingName: null,
+  connectorName: null,
+  itemLastUpdatedAt: '2026-09-13T14:41:41.675Z',
+  itemIsActive: true,
+};
+
+export const pierreBankCredit = {
+  id: 'p-tx-1',
+  account_id: 'p-acc-bank',
+  description: 'Pix recebido',
+  original_description: 'Transferencia recebida',
+  category: 'Transfer',
+  currency_code: 'BRL',
+  amount: 150,
+  date: '2026-10-20T12:00:00.000Z',
+  installment_due_date: '2026-10-20T12:00:00.000Z',
+  type: 'CREDIT',
+  status: 'POSTED',
+  provider_id: 'prov-1',
+  credit_card_data: null,
+  account_credit_data: null,
+  account_type: 'BANK',
+  account_subtype: 'CHECKING_ACCOUNT',
+  manual_transaction: false,
+};
+
+export const pierreCardPurchase = {
+  id: 'p-tx-2',
+  account_id: 'p-acc-card',
+  description: 'Loja Exemplo 2/5',
+  original_description: 'LOJA EXEMPLO 02/05',
+  category: 'Shopping',
+  currency_code: 'BRL',
+  amount: 99.9,
+  date: '2026-10-21T03:00:00.000Z',
+  installment_due_date: '2026-11-21T03:00:00.000Z',
+  type: 'DEBIT',
+  status: 'PENDING',
+  provider_id: null,
+  credit_card_data: { installmentNumber: 2, totalInstallments: 5, billId: null },
+  account_credit_data: {
+    creditLimit: 5000,
+    availableCreditLimit: 4679.5,
+    minimumPayment: 48.08,
+    balanceDueDate: '2026-11-10T00:00:00.000Z',
+  },
+  account_type: 'CREDIT',
+  account_subtype: 'CREDIT_CARD',
+  manual_transaction: false,
+};
+
+export const pierreCardPayment = {
+  id: 'p-tx-3',
+  account_id: 'p-acc-card',
+  description: 'Pagamento recebido',
+  original_description: 'PAGAMENTO RECEBIDO',
+  category: null,
+  currency_code: 'BRL',
+  amount: -320,
+  date: '2026-10-15T03:00:00.000Z',
+  installment_due_date: '2026-10-15T03:00:00.000Z',
+  type: 'CREDIT',
+  status: 'POSTED',
+  provider_id: null,
+  credit_card_data: { installmentNumber: null, totalInstallments: null },
+  account_credit_data: {
+    creditLimit: 4000,
+    availableCreditLimit: 3000,
+    minimumPayment: 30,
+    balanceDueDate: '2026-10-10T00:00:00.000Z',
+  },
+  account_type: 'CREDIT',
+  account_subtype: 'CREDIT_CARD',
+  manual_transaction: false,
+};
+
+export const pierreBill = {
+  id: 'p-bill-1',
+  userId: 'user-1',
+  itemId: 'p-item-1',
+  accountId: 'p-acc-card',
+  dueDate: '2026-11-10T00:00:00.000Z',
+  billClosingDate: '2026-11-03T00:00:00.000Z',
+  totalAmount: '320.50',
+  totalAmountCurrencyCode: 'BRL',
+  minimumPaymentAmount: '48.08',
+  allowsInstallments: true,
+};
