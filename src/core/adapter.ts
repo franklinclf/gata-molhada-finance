@@ -20,4 +20,6 @@ export interface SourceAdapter {
   fetchBills(): Promise<SourceBill[]>;
   /** Present only when capabilities.refreshOnDemand is true. */
   requestRefresh?(): Promise<RefreshHandle>;
+  /** Returns and clears notes about records the adapter skipped, for the sync report. */
+  drainWarnings?(): string[];
 }
