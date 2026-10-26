@@ -1,3 +1,4 @@
+import type { CanonicalAccount, LimitGroup } from '../core/canonical.ts';
 import type { Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction } from '../core/types.ts';
 
 export interface NewSnapshot {
@@ -43,5 +44,9 @@ export interface Store {
   listSourceAccounts(sourceId: SourceId): StoredSourceAccount[];
   listSourceTransactions(sourceId: SourceId): StoredSourceTransaction[];
   listSourceBills(sourceId: SourceId): StoredSourceBill[];
+  /** Replaces all canonical accounts, limit groups and source references in one transaction. */
+  replaceCanonicalAccounts(accounts: CanonicalAccount[], groups: LimitGroup[], builtAt: string): void;
+  listCanonicalAccounts(): CanonicalAccount[];
+  listLimitGroups(): LimitGroup[];
   close(): void;
 }
