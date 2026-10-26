@@ -16,7 +16,7 @@ export interface Freshness {
 
 export interface SourceAccount {
   externalId: string;
-  externalItemId: string;
+  externalItemId: string | null;
   institution: string;
   kind: AccountKind;
   name: string;
