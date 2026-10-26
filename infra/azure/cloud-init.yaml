@@ -1,0 +1,27 @@
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - git
+  - curl
+  - jq
+
+write_files:
+  - path: /etc/gmf/vm.env
+    permissions: '0644'
+    content: |
+      GMF_HOST=__HOST__
+      GMF_KEYVAULT=__KEYVAULT__
+
+runcmd:
+  - fallocate -l 1G /swapfile
+  - chmod 600 /swapfile
+  - mkswap /swapfile
+  - swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - systemctl enable --now docker
+  - git clone --depth 1 https://github.com/franklinclf/gata-molhada-finance.git /opt/gmf
+  - mkdir -p /var/lib/gmf/backups
+  - chown -R 1000:1000 /var/lib/gmf
+  - bash /opt/gmf/deploy/install.sh
