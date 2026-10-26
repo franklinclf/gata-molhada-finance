@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import type { AccountRef, CanonicalAccount, LimitGroup } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import { currentVersion, migrate } from './migrations.ts';
 import type {
@@ -74,6 +75,35 @@ interface SourceBillRow {
   minimum_payment: number | null;
   first_seen_at: string;
   last_seen_at: string;
+}
+
+interface CanonicalAccountRow {
+  id: string;
+  institution: string;
+  kind: string;
+  name: string;
+  last4: string | null;
+  balance: number;
+  balance_source_id: string | null;
+  balance_as_of: string | null;
+  credit_limit: number | null;
+  available_limit: number | null;
+  minimum_payment: number | null;
+  due_date: string | null;
+  limit_group_id: string | null;
+}
+
+interface RefRow {
+  source_id: string;
+  external_id: string;
+  account_id: string;
+  role: string;
+}
+
+interface LimitGroupRow {
+  id: string;
+  institution: string;
+  credit_limit: number;
 }
 
 export function openSqliteStore(path: string, migrationsDir: string): Store {
@@ -263,6 +293,65 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         minimumPayment: r.minimum_payment,
         firstSeenAt: r.first_seen_at,
         lastSeenAt: r.last_seen_at,
+      }));
+    },
+
+    replaceCanonicalAccounts(accounts: CanonicalAccount[], groups: LimitGroup[], builtAt: string): void {
+      inTransaction(() => {
+        db.exec('DELETE FROM account_source_refs');
+        db.exec('DELETE FROM accounts');
+        db.exec('DELETE FROM limit_groups');
+        const insertGroup = db.prepare('INSERT INTO limit_groups (id, institution, credit_limit) VALUES (?, ?, ?)');
+        for (const g of groups) insertGroup.run(g.id, g.institution, g.creditLimit);
+        const insertAccount = db.prepare(
+          `INSERT INTO accounts (id, institution, kind, name, last4, balance, balance_source_id, balance_as_of,
+             credit_limit, available_limit, minimum_payment, due_date, limit_group_id, built_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const insertRef = db.prepare('INSERT INTO account_source_refs (source_id, external_id, account_id, role) VALUES (?, ?, ?, ?)');
+        for (const a of accounts) {
+          insertAccount.run(a.id, a.institution, a.kind, a.name, a.last4, a.balance, a.balanceSourceId, a.balanceAsOf,
+            a.creditLimit, a.availableLimit, a.minimumPayment, a.dueDate, a.limitGroupId, builtAt);
+          for (const r of a.refs) insertRef.run(r.sourceId, r.externalId, a.id, r.role);
+        }
+      });
+    },
+
+    listCanonicalAccounts(): CanonicalAccount[] {
+      const rows = db.prepare('SELECT * FROM accounts ORDER BY institution, kind, name').all() as unknown as CanonicalAccountRow[];
+      const refRows = db.prepare("SELECT * FROM account_source_refs ORDER BY account_id, CASE role WHEN 'member' THEN 0 ELSE 1 END, source_id, external_id").all() as unknown as RefRow[];
+      const refsByAccount = new Map<string, AccountRef[]>();
+      for (const r of refRows) {
+        const list = refsByAccount.get(r.account_id) ?? [];
+        list.push({ sourceId: r.source_id, externalId: r.external_id, role: r.role as AccountRef['role'] });
+        refsByAccount.set(r.account_id, list);
+      }
+      return rows.map((r) => ({
+        id: r.id,
+        institution: r.institution,
+        kind: r.kind as AccountKind,
+        name: r.name,
+        last4: r.last4,
+        balance: r.balance,
+        balanceSourceId: r.balance_source_id,
+        balanceAsOf: r.balance_as_of,
+        creditLimit: r.credit_limit,
+        availableLimit: r.available_limit,
+        minimumPayment: r.minimum_payment,
+        dueDate: r.due_date,
+        limitGroupId: r.limit_group_id,
+        refs: refsByAccount.get(r.id) ?? [],
+      }));
+    },
+
+    listLimitGroups(): LimitGroup[] {
+      const rows = db.prepare('SELECT * FROM limit_groups ORDER BY id').all() as unknown as LimitGroupRow[];
+      const members = db.prepare('SELECT id, limit_group_id FROM accounts WHERE limit_group_id IS NOT NULL ORDER BY id').all() as unknown as Array<{ id: string; limit_group_id: string }>;
+      return rows.map((g) => ({
+        id: g.id,
+        institution: g.institution,
+        creditLimit: g.credit_limit,
+        memberIds: members.filter((m) => m.limit_group_id === g.id).map((m) => m.id),
       }));
     },
 
