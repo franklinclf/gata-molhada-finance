@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Test double for GNU sha256sum on machines that only have shasum.
+exec shasum -a 256 "$@"

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Test double for the docker CLI. State lives in $STUB_STATE, one file per fact.
+s="$STUB_STATE"
+get() { if [[ -f "$s/$1" ]]; then cat "$s/$1"; fi; }
+
+case "$1" in
+  pull)
+    exit 0 ;;
+  image)
+    shift 2
+    if [[ "${1:-}" == "-f" ]]; then get latest_id; exit 0; fi
+    if [[ "${1:-}" == "gmf-rollback:previous" && -f "$s/previous_id" ]]; then exit 0; fi
+    exit 1 ;;
+  inspect)
+    shift
+    fmt="$2"
+    [[ -f "$s/current_id" ]] || exit 1
+    case "$fmt" in
+      *Image*) get current_id ;;
+      *Health*) get health ;;
+      *Labels*) get env_hash ;;
+    esac ;;
+  exec)
+    echo "$*" >> "$s/exec.log"
+    exit "${STUB_EXEC_EXIT:-0}" ;;
+  tag)
+    echo "$2" > "$s/previous_id"
+    exit 0 ;;
+  logs)
+    echo "stub container logs"
+    exit 0 ;;
+  compose)
+    echo "$*" >> "$s/compose.log"
+    if [[ "${!#}" == "app" ]]; then
+      if [[ "${GMF_IMAGE:-}" == "gmf-rollback:previous" ]]; then
+        cp "$s/previous_id" "$s/current_id"
+        echo healthy > "$s/health"
+      else
+        cp "$s/latest_id" "$s/current_id"
+        echo "${STUB_NEW_HEALTH:-healthy}" > "$s/health"
+      fi
+      echo "${GMF_ENV_HASH:-}" > "$s/env_hash"
+    fi
+    exit 0 ;;
+esac
+echo "docker stub: unhandled call: $*" >&2
+exit 99

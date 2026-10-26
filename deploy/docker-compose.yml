@@ -1,0 +1,33 @@
+name: gmf
+
+services:
+  app:
+    image: ${GMF_IMAGE:-ghcr.io/franklinclf/gata-molhada-finance:latest}
+    container_name: gmf-app
+    restart: unless-stopped
+    env_file:
+      - /run/gmf/app.env
+    labels:
+      gmf.env-hash: ${GMF_ENV_HASH:-none}
+    volumes:
+      - /var/lib/gmf:/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2
+    container_name: gmf-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      GMF_HOST: ${GMF_HOST:?GMF_HOST is required}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

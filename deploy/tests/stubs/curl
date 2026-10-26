@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Test double for curl: answers the metadata token call and Key Vault secret reads.
+url=""
+for arg in "$@"; do
+  case "$arg" in http*) url="$arg" ;; esac
+done
+
+case "$url" in
+  *metadata/identity/oauth2/token*)
+    echo '{"access_token":"stub-token"}' ;;
+  *.vault.azure.net/secrets/MISSING-SECRET*)
+    exit 22 ;;
+  *.vault.azure.net/secrets/MULTILINE-SECRET*)
+    printf '{"value":"line1\\nline2"}\n' ;;
+  *.vault.azure.net/secrets/*)
+    name="${url##*/secrets/}"
+    name="${name%%\?*}"
+    printf '{"value":"value-of-%s"}\n' "$name" ;;
+  *)
+    echo "curl stub: unhandled url: $url" >&2
+    exit 99 ;;
+esac

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Test double for git: the deploy only calls `git -C <dir> pull ...`.
+exit 0

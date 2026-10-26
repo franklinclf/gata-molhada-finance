@@ -1,0 +1,10 @@
+[Unit]
+Description=Gata Molhada Finance deploy
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/gmf/deploy/deploy.sh
+TimeoutStartSec=300
