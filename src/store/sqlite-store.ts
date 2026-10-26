@@ -2,9 +2,17 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { Freshness, SourceId } from '../core/types.ts';
+import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import { currentVersion, migrate } from './migrations.ts';
-import type { NewSnapshot, Snapshot, SourceRegistration, Store } from './store.ts';
+import type {
+  NewSnapshot,
+  Snapshot,
+  SourceRegistration,
+  Store,
+  StoredSourceAccount,
+  StoredSourceBill,
+  StoredSourceTransaction,
+} from './store.ts';
 
 interface SnapshotRow {
   id: number;
@@ -23,12 +31,68 @@ interface FreshnessRow {
   observed_at: string;
 }
 
+interface SourceAccountRow {
+  source_id: string;
+  external_id: string;
+  external_item_id: string | null;
+  institution: string;
+  kind: string;
+  name: string;
+  last4: string | null;
+  balance: number;
+  credit_limit: number | null;
+  available_limit: number | null;
+  minimum_payment: number | null;
+  due_date: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+interface SourceTransactionRow {
+  source_id: string;
+  external_id: string;
+  account_external_id: string;
+  occurred_at: string;
+  amount: number;
+  description: string;
+  description_raw: string | null;
+  status: string;
+  installment_number: number | null;
+  installment_total: number | null;
+  category: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+interface SourceBillRow {
+  source_id: string;
+  external_id: string;
+  account_external_id: string;
+  due_date: string;
+  closing_date: string | null;
+  total: number;
+  minimum_payment: number | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
 export function openSqliteStore(path: string, migrationsDir: string): Store {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys = ON');
   if (path !== ':memory:') db.exec('PRAGMA journal_mode = WAL');
   migrate(db, migrationsDir);
+
+  function inTransaction(work: () => void): void {
+    db.exec('BEGIN');
+    try {
+      work();
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
 
   return {
     schemaVersion: () => currentVersion(db),
@@ -86,6 +150,119 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         institution: r.institution,
         lastUpdatedAt: r.last_updated_at,
         observedAt: r.observed_at,
+      }));
+    },
+
+    upsertSourceAccounts(sourceId: SourceId, accounts: SourceAccount[], seenAt: string): void {
+      const statement = db.prepare(
+        `INSERT INTO source_accounts (source_id, external_id, external_item_id, institution, kind, name, last4, balance,
+           credit_limit, available_limit, minimum_payment, due_date, first_seen_at, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (source_id, external_id) DO UPDATE SET
+           external_item_id = excluded.external_item_id, institution = excluded.institution, kind = excluded.kind,
+           name = excluded.name, last4 = excluded.last4, balance = excluded.balance, credit_limit = excluded.credit_limit,
+           available_limit = excluded.available_limit, minimum_payment = excluded.minimum_payment,
+           due_date = excluded.due_date, last_seen_at = excluded.last_seen_at`,
+      );
+      inTransaction(() => {
+        for (const a of accounts) {
+          statement.run(sourceId, a.externalId, a.externalItemId, a.institution, a.kind, a.name, a.last4, a.balance,
+            a.creditLimit, a.availableLimit, a.minimumPayment, a.dueDate, seenAt, seenAt);
+        }
+      });
+    },
+
+    upsertSourceTransactions(sourceId: SourceId, transactions: SourceTransaction[], seenAt: string): void {
+      const statement = db.prepare(
+        `INSERT INTO source_transactions (source_id, external_id, account_external_id, occurred_at, amount, description,
+           description_raw, status, installment_number, installment_total, category, first_seen_at, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (source_id, external_id) DO UPDATE SET
+           account_external_id = excluded.account_external_id, occurred_at = excluded.occurred_at,
+           amount = excluded.amount, description = excluded.description, description_raw = excluded.description_raw,
+           status = excluded.status, installment_number = excluded.installment_number,
+           installment_total = excluded.installment_total, category = excluded.category,
+           last_seen_at = excluded.last_seen_at`,
+      );
+      inTransaction(() => {
+        for (const t of transactions) {
+          statement.run(sourceId, t.externalId, t.accountExternalId, t.occurredAt, t.amount, t.description,
+            t.descriptionRaw, t.status, t.installment?.number ?? null, t.installment?.total ?? null, t.category,
+            seenAt, seenAt);
+        }
+      });
+    },
+
+    upsertSourceBills(sourceId: SourceId, bills: SourceBill[], seenAt: string): void {
+      const statement = db.prepare(
+        `INSERT INTO source_bills (source_id, external_id, account_external_id, due_date, closing_date, total,
+           minimum_payment, first_seen_at, last_seen_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (source_id, external_id) DO UPDATE SET
+           account_external_id = excluded.account_external_id, due_date = excluded.due_date,
+           closing_date = excluded.closing_date, total = excluded.total, minimum_payment = excluded.minimum_payment,
+           last_seen_at = excluded.last_seen_at`,
+      );
+      inTransaction(() => {
+        for (const b of bills) {
+          statement.run(sourceId, b.externalId, b.accountExternalId, b.dueDate, b.closingDate, b.total,
+            b.minimumPayment, seenAt, seenAt);
+        }
+      });
+    },
+
+    listSourceAccounts(sourceId: SourceId): StoredSourceAccount[] {
+      const rows = db.prepare('SELECT * FROM source_accounts WHERE source_id = ? ORDER BY external_id').all(sourceId) as unknown as SourceAccountRow[];
+      return rows.map((r) => ({
+        sourceId: r.source_id,
+        externalId: r.external_id,
+        externalItemId: r.external_item_id,
+        institution: r.institution,
+        kind: r.kind as AccountKind,
+        name: r.name,
+        last4: r.last4,
+        balance: r.balance,
+        creditLimit: r.credit_limit,
+        availableLimit: r.available_limit,
+        minimumPayment: r.minimum_payment,
+        dueDate: r.due_date,
+        firstSeenAt: r.first_seen_at,
+        lastSeenAt: r.last_seen_at,
+      }));
+    },
+
+    listSourceTransactions(sourceId: SourceId): StoredSourceTransaction[] {
+      const rows = db.prepare('SELECT * FROM source_transactions WHERE source_id = ? ORDER BY occurred_at, external_id').all(sourceId) as unknown as SourceTransactionRow[];
+      return rows.map((r) => ({
+        sourceId: r.source_id,
+        externalId: r.external_id,
+        accountExternalId: r.account_external_id,
+        occurredAt: r.occurred_at,
+        amount: r.amount,
+        description: r.description,
+        descriptionRaw: r.description_raw,
+        status: r.status as TransactionStatus,
+        installment: r.installment_number !== null && r.installment_total !== null
+          ? { number: r.installment_number, total: r.installment_total }
+          : null,
+        category: r.category,
+        firstSeenAt: r.first_seen_at,
+        lastSeenAt: r.last_seen_at,
+      }));
+    },
+
+    listSourceBills(sourceId: SourceId): StoredSourceBill[] {
+      const rows = db.prepare('SELECT * FROM source_bills WHERE source_id = ? ORDER BY due_date, external_id').all(sourceId) as unknown as SourceBillRow[];
+      return rows.map((r) => ({
+        sourceId: r.source_id,
+        externalId: r.external_id,
+        accountExternalId: r.account_external_id,
+        dueDate: r.due_date,
+        closingDate: r.closing_date,
+        total: r.total,
+        minimumPayment: r.minimum_payment,
+        firstSeenAt: r.first_seen_at,
+        lastSeenAt: r.last_seen_at,
       }));
     },
 

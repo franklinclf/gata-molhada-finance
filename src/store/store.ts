@@ -1,4 +1,4 @@
-import type { Freshness, SourceId } from '../core/types.ts';
+import type { Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction } from '../core/types.ts';
 
 export interface NewSnapshot {
   sourceId: SourceId;
@@ -19,6 +19,16 @@ export interface SourceRegistration {
   capabilities: Record<string, boolean>;
 }
 
+export interface Seen {
+  sourceId: SourceId;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export type StoredSourceAccount = SourceAccount & Seen;
+export type StoredSourceTransaction = SourceTransaction & Seen;
+export type StoredSourceBill = SourceBill & Seen;
+
 export interface Store {
   schemaVersion(): number;
   registerSource(source: SourceRegistration, now: string): void;
@@ -26,5 +36,12 @@ export interface Store {
   latestSnapshot(sourceId: SourceId, endpoint: string): Snapshot | null;
   upsertFreshness(freshness: Freshness): void;
   listFreshness(): Freshness[];
+  /** Inserts new records and refreshes existing ones; first_seen_at is kept, last_seen_at becomes seenAt. */
+  upsertSourceAccounts(sourceId: SourceId, accounts: SourceAccount[], seenAt: string): void;
+  upsertSourceTransactions(sourceId: SourceId, transactions: SourceTransaction[], seenAt: string): void;
+  upsertSourceBills(sourceId: SourceId, bills: SourceBill[], seenAt: string): void;
+  listSourceAccounts(sourceId: SourceId): StoredSourceAccount[];
+  listSourceTransactions(sourceId: SourceId): StoredSourceTransaction[];
+  listSourceBills(sourceId: SourceId): StoredSourceBill[];
   close(): void;
 }
