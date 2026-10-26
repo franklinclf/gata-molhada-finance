@@ -27,3 +27,48 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build image
+        run: docker build --build-arg GIT_SHA="${GITHUB_SHA}" -t gmf:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name gmf -p 8080:8080 gmf:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz; then
+              echo
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs gmf
+          exit 1
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [verify, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and push
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "${REGISTRY_TOKEN}" | docker login ghcr.io -u "${REGISTRY_USER}" --password-stdin
+          docker build --build-arg GIT_SHA="${GITHUB_SHA}" -t "${IMAGE}:latest" -t "${IMAGE}:sha-${GITHUB_SHA::7}" .
+          docker push "${IMAGE}:latest"
+          docker push "${IMAGE}:sha-${GITHUB_SHA::7}"
