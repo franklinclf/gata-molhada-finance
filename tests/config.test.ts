@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { loadConfig } from '../src/config.ts';
 
 test('loadConfig applies defaults', () => {
-  assert.deepEqual(loadConfig({}), { port: 8080, dbPath: 'data/gmf.sqlite', version: 'dev', observer: false, secureCookies: true });
+  assert.deepEqual(loadConfig({}), { port: 8080, dbPath: 'data/gmf.sqlite', version: 'dev', observer: false, secureCookies: true, webDir: 'dist/web' });
 });
 
 test('loadConfig reads the environment', () => {
@@ -13,6 +13,7 @@ test('loadConfig reads the environment', () => {
     version: 'abc123',
     observer: false,
     secureCookies: true,
+    webDir: 'dist/web',
   });
 });
 

@@ -81,7 +81,7 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
 
   if (pathname.startsWith('/api/')) {
     if (!authenticated) return json(401, { error: 'unauthorized' });
-    const result = apiRoute(method, pathname, new URLSearchParams(request.search ?? ''), deps.store, deps.now());
+    const result = apiRoute(method, pathname, new URLSearchParams(request.search ?? ''), deps.store, deps.now(), request.body);
     return result ? json(result.status, result.body) : json(404, { error: 'not_found' });
   }
   return json(404, { error: 'not_found' });

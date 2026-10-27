@@ -91,5 +91,7 @@ export interface Store {
   useRecoveryCode(codeHash: string, usedAt: string): boolean;
   getAuthState(key: string): string | null;
   setAuthState(key: string, value: string): void;
+  getSetting(key: string): string | null;
+  setSetting(key: string, value: string, updatedAt: string): void;
   close(): void;
 }
