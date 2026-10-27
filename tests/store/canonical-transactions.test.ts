@@ -39,7 +39,7 @@ const links: TransactionLink[] = [
 
 const finding = (overrides: Partial<Finding> = {}): Finding => ({
   id: 'fd_1',
-  kind: 'missing_in_source',
+  kind: 'possible_match',
   severity: 'warning',
   accountId: 'acc_1',
   transactionId: 'tx_1',
@@ -98,8 +98,8 @@ test('findings keep their opening time while the problem persists', () => {
 
 test('a finding that disappears is marked resolved and hidden from the open list', () => {
   const store = newStore();
-  store.syncFindings([finding(), finding({ id: 'fd_2', kind: 'stale_pending' })], T1);
-  store.syncFindings([finding({ id: 'fd_2', kind: 'stale_pending' })], T2);
+  store.syncFindings([finding(), finding({ id: 'fd_2', kind: 'possible_match' })], T1);
+  store.syncFindings([finding({ id: 'fd_2', kind: 'possible_match' })], T2);
   assert.deepEqual(store.listFindings().map((f) => f.id), ['fd_2']);
   const all = store.listFindings({ includeResolved: true });
   assert.equal(all.find((f) => f.id === 'fd_1')?.resolvedAt, T2);

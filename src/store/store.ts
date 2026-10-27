@@ -1,4 +1,4 @@
-import type { CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, TransactionLink } from '../core/canonical.ts';
+import type { CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, TransactionLink } from '../core/canonical.ts';
 import type { Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction } from '../core/types.ts';
 
 export interface NewSnapshot {
@@ -105,6 +105,17 @@ export interface Store {
   addCustomCategory(name: string, now: string): void;
   /** Removes a custom category and every override and rule that points to it. */
   deleteCustomCategory(name: string): void;
+  listManualMapping(): ManualMapping;
+  /** Joins two canonical transactions of different sources: every record of one is tied to every record of the other. */
+  addManualLink(transactionA: string, transactionB: string, now: string): boolean;
+  /** Undoes the manual joins that involve any record of a canonical transaction. */
+  removeManualLinks(transactionId: string): void;
+  /** Sets aside (or brings back) every record of a canonical transaction. */
+  setTransactionIgnored(transactionId: string, ignored: boolean, now: string): void;
+  dismissFinding(findingId: string, now: string): void;
+  listDismissedFindingIds(): Set<string>;
+  /** Hard-deletes source transactions dated before the instant. Returns how many were removed. */
+  deleteSourceTransactionsBefore(instant: string): number;
   getSetting(key: string): string | null;
   setSetting(key: string, value: string, updatedAt: string): void;
   close(): void;

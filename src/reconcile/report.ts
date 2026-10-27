@@ -8,7 +8,7 @@ export function formatTransactionReport(result: TransactionReconciliation, limit
   const lines: string[] = [];
   lines.push(
     `Transactions: ${stats.groups} (confirmed ${stats.byState.confirmed}, single source ${stats.byState.single_source}, ` +
-      `status conflict ${stats.byState.conflict}, set aside as stale pending ${stats.byState.stale_pending})`,
+      `ignored by you ${stats.byState.ignored}, set aside as stale pending ${stats.byState.stale_pending})`,
   );
   const joined = stats.byPass
     .map((n, pass) => (pass === 0 || n === 0 ? null : `${PASS_LABELS[pass]} ${n}`))

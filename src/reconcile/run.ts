@@ -42,9 +42,19 @@ export interface FullReconciliation {
   transactions: TransactionReconciliation;
 }
 
+/** Day the app starts caring about. Older source records are deleted, because they only add noise. */
+export const DEFAULT_DATA_START = '2026-01-01';
+
+/** UTC instant at which a Brazil-time day (UTC-3) starts. */
+export function startOfLocalDay(day: string): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) + 3 * 3_600_000).toISOString();
+}
+
 /** Rebuilds canonical accounts, then canonical transactions and findings, and saves all of them. */
-export function runReconciliation(store: Store, options: RunOptions & { staleDays?: { bank?: number; card?: number } } = {}): FullReconciliation {
+export function runReconciliation(store: Store, options: RunOptions & { staleDays?: number; dataStart?: string } = {}): FullReconciliation {
   const now = options.now ?? (() => new Date());
+  const dataStart = options.dataStart ?? DEFAULT_DATA_START;
+  store.deleteSourceTransactionsBefore(startOfLocalDay(dataStart));
   const accounts = runAccountReconciliation(store, options);
   const views = loadSourceViews(store, options.priority ?? DEFAULT_SOURCE_PRIORITY);
   const transactions = reconcileTransactions({
@@ -52,9 +62,12 @@ export function runReconciliation(store: Store, options: RunOptions & { staleDay
     sources: views.map((v) => ({ sourceId: v.sourceId, priority: v.priority, transactions: v.transactions, freshness: v.freshness })),
     now: now(),
     staleDays: options.staleDays,
+    dataStart,
+    manual: store.listManualMapping(),
   });
+  const dismissed = store.listDismissedFindingIds();
   const stamp = now().toISOString();
   store.replaceCanonicalTransactions(transactions.transactions, transactions.links, stamp);
-  store.syncFindings(transactions.findings, stamp);
+  store.syncFindings(transactions.findings.filter((f) => !dismissed.has(f.id)), stamp);
   return { accounts, transactions };
 }

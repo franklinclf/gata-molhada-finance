@@ -1,3 +1,4 @@
+import { runReconciliation } from '../reconcile/run.ts';
 import type { Store } from '../store/store.ts';
 import { effectiveTransactions, ruleKey } from './scope.ts';
 
@@ -71,4 +72,81 @@ export function setAccountHidden(store: Store, accountId: string, hidden: unknow
   if (!store.listCanonicalAccounts().some((a) => a.id === accountId)) return { ok: false, status: 404, error: 'not_found' };
   store.setAccountHidden(accountId, hidden, now.toISOString());
   return { ok: true };
+}
+
+// ---------- mapping between sources ----------
+
+const rebuild = (store: Store, now: Date) => void runReconciliation(store, { now: () => now });
+
+const knownTransaction = (store: Store, id: string) => store.listCanonicalTransactions({ includeExcluded: true }).find((t) => t.id === id);
+
+/** Says that two canonical transactions from different sources are the same one. */
+export function joinTransactions(store: Store, id: unknown, otherId: unknown, now: Date): MutationResult {
+  if (typeof id !== 'string' || typeof otherId !== 'string' || id === otherId) return { ok: false, status: 400, error: 'otherId must be another transaction' };
+  const a = knownTransaction(store, id);
+  const b = knownTransaction(store, otherId);
+  if (!a || !b) return { ok: false, status: 404, error: 'not_found' };
+  if (a.accountId !== b.accountId) return { ok: false, status: 400, error: 'both transactions must be on the same account' };
+  if (!store.addManualLink(id, otherId, now.toISOString())) return { ok: false, status: 400, error: 'they come from the same source, so they cannot be the same transaction' };
+  rebuild(store, now);
+  return { ok: true };
+}
+
+export function separateTransaction(store: Store, id: string, now: Date): MutationResult {
+  if (!knownTransaction(store, id)) return { ok: false, status: 404, error: 'not_found' };
+  store.removeManualLinks(id);
+  rebuild(store, now);
+  return { ok: true };
+}
+
+/** Leaves a transaction out of every total (or brings it back). */
+export function setIgnored(store: Store, id: string, ignored: unknown, now: Date): MutationResult {
+  if (typeof ignored !== 'boolean') return { ok: false, status: 400, error: 'ignored must be true or false' };
+  if (!knownTransaction(store, id)) return { ok: false, status: 404, error: 'not_found' };
+  store.setTransactionIgnored(id, ignored, now.toISOString());
+  rebuild(store, now);
+  return { ok: true };
+}
+
+/** "This is not the same transaction": the suggestion does not come back. */
+export function dismissSuggestion(store: Store, findingId: string, now: Date): MutationResult {
+  if (!store.listFindings().some((f) => f.id === findingId)) return { ok: false, status: 404, error: 'not_found' };
+  store.dismissFinding(findingId, now.toISOString());
+  rebuild(store, now);
+  return { ok: true };
+}
+
+export interface Candidate {
+  id: string;
+  occurredAt: string;
+  amount: number;
+  description: string;
+  status: string;
+  category: string | null;
+  sourceIds: string[];
+  /** Days apart from the transaction being mapped. */
+  daysApart: number;
+}
+
+/** Transactions on the same account that only other sources report, closest first: what this one could be joined with. */
+export function joinCandidates(store: Store, id: string): Candidate[] | null {
+  const all = effectiveTransactions(store, { includeHidden: true, includeExcluded: true });
+  const target = all.find((t) => t.id === id);
+  if (!target) return null;
+  const day = 86_400_000;
+  return all
+    .filter((t) => t.id !== id && t.accountId === target.accountId && t.state !== 'ignored' && !t.sourceIds.some((s) => target.sourceIds.includes(s)))
+    .map((t) => ({
+      id: t.id,
+      occurredAt: t.occurredAt,
+      amount: t.amount,
+      description: t.description,
+      status: t.status,
+      category: t.category,
+      sourceIds: t.sourceIds,
+      daysApart: Math.round(Math.abs(new Date(t.occurredAt).getTime() - new Date(target.occurredAt).getTime()) / day),
+    }))
+    .filter((c) => c.daysApart <= 10)
+    .sort((a, b) => (a.amount === target.amount ? 0 : 1) - (b.amount === target.amount ? 0 : 1) || a.daysApart - b.daysApart || Math.abs(a.amount - target.amount) - Math.abs(b.amount - target.amount))
+    .slice(0, 12);
 }

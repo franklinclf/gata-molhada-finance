@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, TransactionLink, TransactionState } from '../core/canonical.ts';
+import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -603,6 +603,57 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         db.prepare('DELETE FROM category_overrides WHERE category = ?').run(name);
         db.prepare('DELETE FROM category_rules WHERE category = ?').run(name);
       });
+    },
+
+    listManualMapping(): ManualMapping {
+      const pairs = (db.prepare('SELECT source_a, external_a, source_b, external_b FROM manual_links').all() as Array<{ source_a: string; external_a: string; source_b: string; external_b: string }>).map(
+        (r): [RecordRef, RecordRef] => [{ sourceId: r.source_a, externalId: r.external_a }, { sourceId: r.source_b, externalId: r.external_b }],
+      );
+      const ignored = (db.prepare('SELECT source_id, external_id FROM ignored_records').all() as Array<{ source_id: string; external_id: string }>).map((r) => ({ sourceId: r.source_id, externalId: r.external_id }));
+      return { pairs, ignored };
+    },
+
+    addManualLink(transactionA: string, transactionB: string, now: string): boolean {
+      const a = this.listTransactionLinks(transactionA);
+      const b = this.listTransactionLinks(transactionB);
+      if (a.length === 0 || b.length === 0 || a.some((x) => b.some((y) => y.sourceId === x.sourceId))) return false;
+      inTransaction(() => {
+        for (const x of a) {
+          for (const y of b) {
+            db.prepare('INSERT OR IGNORE INTO manual_links (source_a, external_a, source_b, external_b, created_at) VALUES (?, ?, ?, ?, ?)').run(x.sourceId, x.externalId, y.sourceId, y.externalId, now);
+          }
+        }
+      });
+      return true;
+    },
+
+    removeManualLinks(transactionId: string): void {
+      inTransaction(() => {
+        for (const l of this.listTransactionLinks(transactionId)) {
+          db.prepare('DELETE FROM manual_links WHERE (source_a = ? AND external_a = ?) OR (source_b = ? AND external_b = ?)').run(l.sourceId, l.externalId, l.sourceId, l.externalId);
+        }
+      });
+    },
+
+    setTransactionIgnored(transactionId: string, ignored: boolean, now: string): void {
+      inTransaction(() => {
+        for (const l of this.listTransactionLinks(transactionId)) {
+          if (ignored) db.prepare('INSERT OR IGNORE INTO ignored_records (source_id, external_id, ignored_at) VALUES (?, ?, ?)').run(l.sourceId, l.externalId, now);
+          else db.prepare('DELETE FROM ignored_records WHERE source_id = ? AND external_id = ?').run(l.sourceId, l.externalId);
+        }
+      });
+    },
+
+    dismissFinding(findingId: string, now: string): void {
+      db.prepare('INSERT OR IGNORE INTO dismissed_findings (finding_id, dismissed_at) VALUES (?, ?)').run(findingId, now);
+    },
+
+    listDismissedFindingIds(): Set<string> {
+      return new Set((db.prepare('SELECT finding_id FROM dismissed_findings').all() as Array<{ finding_id: string }>).map((r) => r.finding_id));
+    },
+
+    deleteSourceTransactionsBefore(instant: string): number {
+      return Number(db.prepare('DELETE FROM source_transactions WHERE occurred_at < ?').run(instant).changes);
     },
 
     getSetting(key: string): string | null {

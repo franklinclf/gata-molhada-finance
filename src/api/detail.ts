@@ -35,6 +35,8 @@ export interface TransactionDetail {
   findings: StoredFinding[];
   /** The category rule that applies to this description, if there is one. */
   rule: { category: string } | null;
+  /** True when the records of this transaction were joined by the user, so "separate" makes sense. */
+  joinedByHand: boolean;
 }
 
 export function transactionDetail(store: Store, id: string, now: Date): TransactionDetail | null {
@@ -86,6 +88,8 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
   }
 
   const rule = store.listCategoryRules().get(key);
+  const manual = store.listManualMapping();
+  const joinedByHand = sources.some((s) => manual.pairs.some(([a, b]) => (a.sourceId === s.sourceId && a.externalId === s.externalId) || (b.sourceId === s.sourceId && b.externalId === s.externalId)));
   return {
     transaction,
     account: { id: account.id, institution: account.institution, name: account.name, last4: account.last4, kind: account.kind, hidden: store.listHiddenAccountIds().has(account.id) },
@@ -102,5 +106,6 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
     cycle,
     findings: store.listFindings({ includeResolved: false }).filter((f) => f.transactionId === id),
     rule: rule !== undefined ? { category: rule } : null,
+    joinedByHand,
   };
 }
