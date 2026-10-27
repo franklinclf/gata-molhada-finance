@@ -548,6 +548,63 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       db.prepare('INSERT INTO auth_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
     },
 
+    listHiddenAccountIds(): Set<string> {
+      const rows = db.prepare('SELECT account_id FROM account_prefs WHERE hidden = 1').all() as Array<{ account_id: string }>;
+      return new Set(rows.map((r) => r.account_id));
+    },
+
+    setAccountHidden(accountId: string, hidden: boolean, now: string): void {
+      db.prepare('INSERT INTO account_prefs (account_id, hidden, updated_at) VALUES (?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET hidden = excluded.hidden, updated_at = excluded.updated_at').run(accountId, hidden ? 1 : 0, now);
+    },
+
+    listTransactionLinks(transactionId: string): Array<{ sourceId: SourceId; externalId: string; matchPass: number }> {
+      const rows = db.prepare('SELECT source_id, external_id, match_pass FROM transaction_links WHERE transaction_id = ? ORDER BY match_pass, source_id').all(transactionId) as Array<{ source_id: string; external_id: string; match_pass: number }>;
+      return rows.map((r) => ({ sourceId: r.source_id, externalId: r.external_id, matchPass: r.match_pass }));
+    },
+
+    listCategoryOverrides(): Map<string, string> {
+      const rows = db
+        .prepare('SELECT l.transaction_id AS id, o.category AS category FROM transaction_links l JOIN category_overrides o ON o.source_id = l.source_id AND o.external_id = l.external_id ORDER BY o.updated_at')
+        .all() as Array<{ id: string; category: string }>;
+      return new Map(rows.map((r) => [r.id, r.category]));
+    },
+
+    setCategoryOverride(transactionId: string, category: string | null, now: string): void {
+      inTransaction(() => {
+        const links = db.prepare('SELECT source_id, external_id FROM transaction_links WHERE transaction_id = ?').all(transactionId) as Array<{ source_id: string; external_id: string }>;
+        for (const l of links) {
+          if (category === null) db.prepare('DELETE FROM category_overrides WHERE source_id = ? AND external_id = ?').run(l.source_id, l.external_id);
+          else db.prepare('INSERT INTO category_overrides (source_id, external_id, category, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at').run(l.source_id, l.external_id, category, now);
+        }
+      });
+    },
+
+    listCategoryRules(): Map<string, string> {
+      const rows = db.prepare('SELECT match_key, category FROM category_rules').all() as Array<{ match_key: string; category: string }>;
+      return new Map(rows.map((r) => [r.match_key, r.category]));
+    },
+
+    setCategoryRule(matchKey: string, category: string | null, now: string): void {
+      if (category === null) db.prepare('DELETE FROM category_rules WHERE match_key = ?').run(matchKey);
+      else db.prepare('INSERT INTO category_rules (match_key, category, updated_at) VALUES (?, ?, ?) ON CONFLICT(match_key) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at').run(matchKey, category, now);
+    },
+
+    listCustomCategories(): string[] {
+      return (db.prepare('SELECT name FROM custom_categories ORDER BY name').all() as Array<{ name: string }>).map((r) => r.name);
+    },
+
+    addCustomCategory(name: string, now: string): void {
+      db.prepare('INSERT OR IGNORE INTO custom_categories (name, created_at) VALUES (?, ?)').run(name, now);
+    },
+
+    deleteCustomCategory(name: string): void {
+      inTransaction(() => {
+        db.prepare('DELETE FROM custom_categories WHERE name = ?').run(name);
+        db.prepare('DELETE FROM category_overrides WHERE category = ?').run(name);
+        db.prepare('DELETE FROM category_rules WHERE category = ?').run(name);
+      });
+    },
+
     getSetting(key: string): string | null {
       const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
       return row ? row.value : null;

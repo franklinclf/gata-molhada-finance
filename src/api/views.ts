@@ -3,8 +3,10 @@ import type { Cents } from '../core/money.ts';
 import { institutionKey } from '../core/names.ts';
 import { localDay } from '../core/time.ts';
 import { summarizeAccounts } from '../reconcile/accounts.ts';
+import { cyclesFor, type Cycle } from './cycles.ts';
 import { quotaReport } from '../scheduler/quota.ts';
 import type { Store } from '../store/store.ts';
+import { effectiveTransactions, visibleAccounts, visibleLimitGroups, type EffectiveTransaction, type ViewOptions } from './scope.ts';
 
 /** Every view says when it was built and how old the oldest data behind it is. */
 export interface Stamped {
@@ -48,8 +50,8 @@ function inRange(t: CanonicalTransaction, range: DateRange): boolean {
   return day >= range.from && day <= range.to;
 }
 
-function liveTransactions(store: Store, range: DateRange): CanonicalTransaction[] {
-  return store.listCanonicalTransactions().filter((t) => !t.excluded && inRange(t, range));
+function liveTransactions(store: Store, range: DateRange, opts: ViewOptions): EffectiveTransaction[] {
+  return effectiveTransactions(store, opts).filter((t) => !t.excluded && inRange(t, range));
 }
 
 // ---------- balances ----------
@@ -60,8 +62,8 @@ export interface BalancesView extends Stamped {
   accounts: Array<{ id: string; institution: string; name: string; kind: string; last4: string | null; balance: Cents; asOf: string | null }>;
 }
 
-export function balances(store: Store, now: Date): BalancesView {
-  const accounts = store.listCanonicalAccounts().filter(isBank);
+export function balances(store: Store, now: Date, opts: ViewOptions = {}): BalancesView {
+  const accounts = visibleAccounts(store, opts).filter(isBank);
   const total = accounts.reduce((sum, a) => sum + a.balance, 0);
   const byInstitution = new Map<string, { institution: string; balance: Cents; accounts: number; times: string[] }>();
   for (const a of accounts) {
@@ -84,39 +86,74 @@ export function balances(store: Store, now: Date): BalancesView {
 
 // ---------- cards ----------
 
-export interface CardsView extends Stamped {
-  totals: { owed: Cents; creditLimit: Cents; used: Cents; available: Cents };
-  cards: Array<{
-    id: string;
-    institution: string;
-    name: string;
-    last4: string | null;
-    balance: Cents;
-    creditLimit: Cents | null;
-    availableLimit: Cents | null;
-    limitGroupId: string | null;
-    dueDate: string | null;
-    minimumPayment: Cents | null;
-    asOf: string | null;
-  }>;
-  /** Cards that share one limit appear here once, so the limit is not counted twice. */
-  limitGroups: Array<{ id: string; institution: string; creditLimit: Cents; used: Cents; available: Cents; cardIds: string[] }>;
+export interface CardRow {
+  id: string;
+  institution: string;
+  name: string;
+  last4: string | null;
+  /** Amount the issuer reports as owed now. For cards on a shared limit this is the total of the group. */
+  balance: Cents;
+  creditLimit: Cents | null;
+  availableLimit: Cents | null;
+  limitGroupId: string | null;
+  asOf: string | null;
+  /** The cycle chosen on the screen, or null when the card has no bills yet. */
+  cycle: Cycle | null;
+  /** Amount of the chosen cycle: the published bill, or for the open cycle the issuer's estimate (see `estimated`). */
+  total: Cents;
+  /** Net purchases already posted in the chosen cycle. */
+  posted: Cents;
+  /** True when `total` comes from the issuer's balance and can include installments that are not posted yet. */
+  estimated: boolean;
+  /** Closed bills still unpaid, whatever cycle is chosen. */
+  outstanding: Cents;
+  /** Due date to pay next: the oldest unpaid bill, else the open cycle. */
+  nextDueDate: string | null;
+  minimumPayment: Cents | null;
 }
 
-export function cards(store: Store, now: Date): CardsView {
-  const all = store.listCanonicalAccounts();
-  const cardAccounts = all.filter((a) => a.kind === 'credit_card');
-  const totals = summarizeAccounts(all);
-  const byId = new Map(cardAccounts.map((a) => [a.id, a]));
-  const limitGroups = store.listLimitGroups().map((g) => {
-    const first = byId.get(g.memberIds[0] ?? '');
-    const available = first?.availableLimit ?? g.creditLimit - (first?.balance ?? 0);
-    return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds };
-  });
-  return {
-    ...stamp(cardAccounts, now),
-    totals: { owed: totals.cardOwed, creditLimit: totals.creditLimit, used: totals.creditUsed, available: totals.creditAvailable },
-    cards: cardAccounts.map((a) => ({
+export interface CardsView extends Stamped {
+  /** `open` is each card's current open cycle; otherwise a due month (YYYY-MM). */
+  cycle: string;
+  /** Due months that exist for at least one card, newest first. */
+  cycles: string[];
+  totals: { cycleTotal: Cents; outstanding: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
+  cards: CardRow[];
+  /** Cards that share one limit appear here once, so the limit is not counted twice. */
+  limitGroups: Array<{ id: string; institution: string; creditLimit: Cents; used: Cents; available: Cents; cardIds: string[]; openEstimate: Cents }>;
+}
+
+export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoice = 'open'): CardsView {
+  const accounts = visibleAccounts(store, opts);
+  const cardAccounts = accounts.filter((a) => a.kind === 'credit_card');
+  const today = localDay(now.toISOString());
+  const transactions = effectiveTransactions(store, opts, accounts);
+  const allCycles = new Map(cardAccounts.map((a) => [a.id, cyclesFor(store, a, transactions, today)]));
+  const groups = visibleLimitGroups(store, accounts);
+  const groupOf = new Map(cardAccounts.filter((a) => a.limitGroupId !== null).map((a) => [a.id, a.limitGroupId as string]));
+
+  const outstandingOf = (id: string) => (allCycles.get(id) ?? []).reduce((s, c) => s + c.outstanding, 0);
+  const nextDueOf = (id: string): string | null => {
+    const list = allCycles.get(id) ?? [];
+    const unpaid = list.filter((c) => c.outstanding > 0).sort((x, y) => x.dueDate.localeCompare(y.dueDate))[0];
+    return unpaid?.dueDate ?? list.find((c) => c.status === 'open')?.dueDate ?? null;
+  };
+
+  const rows: CardRow[] = cardAccounts.map((a) => {
+    const list = allCycles.get(a.id) ?? [];
+    const cycle = (cycleChoice === 'open' ? list.find((c) => c.status === 'open') : list.find((c) => c.key === cycleChoice)) ?? null;
+    const outstanding = outstandingOf(a.id);
+    const posted = cycle ? cycle.charges - cycle.credits : 0;
+    let total = a.balance;
+    let estimated = false;
+    if (cycle) {
+      if (cycle.billTotal !== null) total = cycle.billTotal;
+      else if (a.limitGroupId === null) {
+        total = Math.max(a.balance - outstanding, posted);
+        estimated = total !== posted;
+      } else total = posted;
+    }
+    return {
       id: a.id,
       institution: a.institution,
       name: a.name,
@@ -125,10 +162,55 @@ export function cards(store: Store, now: Date): CardsView {
       creditLimit: a.creditLimit,
       availableLimit: a.availableLimit,
       limitGroupId: a.limitGroupId,
-      dueDate: a.dueDate,
-      minimumPayment: a.minimumPayment,
       asOf: a.balanceAsOf,
-    })),
+      cycle,
+      total,
+      posted,
+      estimated,
+      outstanding,
+      nextDueDate: nextDueOf(a.id) ?? a.dueDate,
+      minimumPayment: a.minimumPayment,
+    };
+  });
+
+  const byId = new Map(cardAccounts.map((a) => [a.id, a]));
+  const limitGroups = groups.map((g) => {
+    const first = byId.get(g.memberIds[0] ?? '');
+    const available = first?.availableLimit ?? g.creditLimit - (first?.balance ?? 0);
+    const members = g.memberIds.reduce((s, id) => s + outstandingOf(id), 0);
+    return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max((first?.balance ?? 0) - members, 0) };
+  });
+
+  // A shared limit reports one balance for all its cards, so in the open cycle the group counts once.
+  let cycleTotal = 0;
+  const countedGroups = new Set<string>();
+  for (const row of rows) {
+    const gid = groupOf.get(row.id);
+    if (gid !== undefined && row.cycle !== null && row.cycle.billTotal === null) {
+      if (countedGroups.has(gid)) continue;
+      countedGroups.add(gid);
+      cycleTotal += limitGroups.find((g) => g.id === gid)?.openEstimate ?? 0;
+    } else cycleTotal += row.total;
+  }
+  const summary = summarizeAccounts(accounts);
+  const dues = rows.map((r) => r.nextDueDate).filter((d): d is string => d !== null).sort();
+  const months = new Set<string>();
+  for (const list of allCycles.values()) for (const c of list) if (c.status !== 'open') months.add(c.key);
+
+  return {
+    ...stamp(cardAccounts, now),
+    cycle: cycleChoice,
+    cycles: [...months].sort().reverse(),
+    totals: {
+      cycleTotal,
+      outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
+      reportedByIssuer: summary.cardOwed,
+      creditLimit: summary.creditLimit,
+      used: summary.creditUsed,
+      available: summary.creditAvailable,
+      nextDueDate: dues[0] ?? null,
+    },
+    cards: rows,
     limitGroups,
   };
 }
@@ -171,11 +253,11 @@ export interface CashFlowView extends Stamped, DateRange {
 }
 
 /** Money that enters and leaves bank accounts. Card purchases count when the bill is paid; moves between own accounts are left out. */
-export function cashFlow(store: Store, range: DateRange, now: Date): CashFlowView {
-  const accounts = store.listCanonicalAccounts();
+export function cashFlow(store: Store, range: DateRange, now: Date, opts: ViewOptions = {}): CashFlowView {
+  const accounts = visibleAccounts(store, opts);
   const bankIds = new Set(accounts.filter(isBank).map((a) => a.id));
   const perDay = new Map<string, { inflow: Cents; outflow: Cents }>();
-  for (const t of liveTransactions(store, range)) {
+  for (const t of liveTransactions(store, range, opts)) {
     if (!bankIds.has(t.accountId) || isOwnTransfer(t.category)) continue;
     const day = localDay(t.occurredAt);
     const row = perDay.get(day) ?? { inflow: 0, outflow: 0 };
@@ -202,12 +284,12 @@ export interface SpendingView extends Stamped, DateRange {
 }
 
 /** What was spent, dated by purchase (accrual): card purchases on the purchase day, bank outflows on their day. Refunds subtract. */
-export function spending(store: Store, range: DateRange, groupBy: SpendingGroup, now: Date): SpendingView {
-  const accounts = store.listCanonicalAccounts();
+export function spending(store: Store, range: DateRange, groupBy: SpendingGroup, now: Date, opts: ViewOptions = {}): SpendingView {
+  const accounts = visibleAccounts(store, opts);
   const bankIds = new Set(accounts.filter(isBank).map((a) => a.id));
   const rows = new Map<string, { amount: Cents; count: number }>();
   const perDay = new Map<string, Cents>();
-  for (const t of liveTransactions(store, range)) {
+  for (const t of liveTransactions(store, range, opts)) {
     if (isNonSpending(t.category)) continue;
     // Money coming into a bank account is income. Only card credits (refunds) reduce spending.
     if (t.amount > 0 && bankIds.has(t.accountId)) continue;
@@ -243,10 +325,10 @@ function addMonths(day: string, months: number): string {
   return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
 }
 
-export function installments(store: Store, now: Date): InstallmentsView {
-  const accounts = store.listCanonicalAccounts();
+export function installments(store: Store, now: Date, opts: ViewOptions = {}): InstallmentsView {
+  const accounts = visibleAccounts(store, opts);
   const latest = new Map<string, CanonicalTransaction>();
-  for (const t of store.listCanonicalTransactions()) {
+  for (const t of effectiveTransactions(store, opts, accounts)) {
     if (!t.installment || t.excluded || t.installment.total < 2) continue;
     const key = `${t.accountId}|${t.description}|${t.installment.total}|${-t.amount}`;
     const current = latest.get(key);

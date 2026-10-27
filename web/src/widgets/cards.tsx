@@ -17,8 +17,8 @@ export function CardsWidget({ now, hidden }: WidgetProps) {
               <strong>{data.totals.creditLimit > 0 ? `${Math.round((data.totals.used / data.totals.creditLimit) * 100)}%` : '–'}</strong>
             </Ring>
             <div>
-              <div class="muted">Total em faturas</div>
-              <div class="big">{brl(data.totals.owed, hidden)}</div>
+              <div class="muted">Fatura em aberto</div>
+              <div class="big">{brl(data.totals.cycleTotal, hidden)}</div>
               <div class="muted">Disponível {brl(data.totals.available, hidden)} de {brl(data.totals.creditLimit, hidden)}</div>
             </div>
           </div>
@@ -31,9 +31,9 @@ export function CardsWidget({ now, hidden }: WidgetProps) {
                     {c.last4 ? ` •••• ${c.last4}` : ''}
                   </div>
                   <Meter fraction={c.creditLimit ? (c.creditLimit - (c.availableLimit ?? c.creditLimit - c.balance)) / c.creditLimit : 0} />
-                  <div class="muted">{c.dueDate ? `Vence em ${dayMonth(c.dueDate)}` : 'Sem vencimento informado'}</div>
+                  <div class="muted">{c.nextDueDate ? `Vence em ${dayMonth(c.nextDueDate)}` : 'Sem vencimento informado'}</div>
                 </div>
-                <strong>{brl(c.balance, hidden)}</strong>
+                <strong>{brl(c.total, hidden)}</strong>
               </li>
             ))}
           </ul>
