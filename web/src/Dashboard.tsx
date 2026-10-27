@@ -69,7 +69,7 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
             {editing ? 'Concluir' : 'Personalizar painel'}
           </button>
         )}
-        {editing && (
+        {editing && !narrow && (
           <>
             <select class="select" value="" onChange={(e) => { const value = (e.currentTarget as HTMLSelectElement).value as WidgetId; if (value) add(value); }} aria-label="Adicionar widget">
               <option value="">+ Adicionar widget</option>

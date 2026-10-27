@@ -8,7 +8,8 @@ const MAX_NAME = 60;
 export function cleanCategoryName(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const name = value.trim().replace(/\s+/g, ' ');
-  return name.length >= 1 && name.length <= MAX_NAME ? name : null;
+  // "Sem categoria" is how the screens name transactions without a category.
+  return name.length >= 1 && name.length <= MAX_NAME && name.toLowerCase() !== 'sem categoria' ? name : null;
 }
 
 /** Sets or clears the category of one transaction. `applyToSimilar` also saves a rule for its description. */

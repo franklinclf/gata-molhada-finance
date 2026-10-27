@@ -74,6 +74,8 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     }
   }
 
+  // The spending view labels uncategorized money "Sem categoria"; accept that label as well as the empty value.
+  const wantedCategories = query.categories?.map((c) => (c === 'Sem categoria' ? '' : c));
   const text = query.q?.trim().toLowerCase();
   const wanted = (skip?: Dimension) => (t: EffectiveTransaction): boolean => {
     const account = byId.get(t.accountId);
@@ -83,7 +85,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     if (query.to !== undefined && day > query.to) return false;
     if (skip !== 'account' && query.accountIds?.length && !query.accountIds.includes(t.accountId)) return false;
     if (skip !== 'institution' && query.institutions?.length && !query.institutions.includes(account.institution)) return false;
-    if (skip !== 'category' && query.categories?.length && !query.categories.includes(t.category ?? '')) return false;
+    if (skip !== 'category' && wantedCategories?.length && !wantedCategories.includes(t.category ?? '')) return false;
     if (query.kind === 'expense' && t.amount >= 0) return false;
     if (query.kind === 'income' && t.amount <= 0) return false;
     if (query.status !== undefined && t.status !== query.status) return false;

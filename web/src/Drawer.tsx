@@ -38,6 +38,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
   return (
     <div class="overlay" onClick={close}>
       <div class="drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Detalhes da transação">
+        <div class="sheet-handle" aria-hidden="true" />
         <button class="x close" onClick={close} aria-label="Fechar">
           ×
         </button>

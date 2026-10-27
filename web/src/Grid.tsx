@@ -67,10 +67,9 @@ export function Grid({ items, editing, onChange, renderItem, onRemove, titleOf }
     setDraft(null);
   }
 
-  const ordered = [...shown].sort((a, b) => a.y - b.y || a.x - b.x);
   return (
     <div ref={container} class={editing ? 'grid12 editing' : 'grid12'} style={{ '--row': `${ROW_HEIGHT}px`, '--gap': `${GAP}px` }}>
-      {ordered.map((item) => (
+      {shown.map((item) => (
         <div
           key={item.id}
           class={drag.current?.id === item.id ? 'cell dragging' : 'cell'}

@@ -12,6 +12,7 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
   const { data, error } = useLoad(() => api.cycles(accountId), [accountId]);
   if (!data) return <Loading error={error} />;
   return (
+    <div class="scroll-x">
     <table class="table">
       <thead>
         <tr>
@@ -42,6 +43,7 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

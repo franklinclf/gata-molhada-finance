@@ -15,6 +15,20 @@ import { hrefFor, useRoute } from './router.ts';
 
 type Phase = 'checking' | 'out' | 'in';
 
+/** The four sections kept on the bottom bar of a phone; the rest sit behind "Mais". */
+const TABS: Array<[string, string, string]> = [
+  ['', 'Painel', '▦'],
+  ['transactions', 'Transações', '☰'],
+  ['spending', 'Gastos', '◔'],
+  ['cards', 'Cartões', '▭'],
+];
+const MORE: Array<[string, string]> = [
+  ['accounts', 'Contas'],
+  ['cashflow', 'Fluxo de caixa'],
+  ['status', 'Fontes e divergências'],
+  ['settings', 'Ajustes'],
+];
+
 const NAV: Array<[string, string]> = [
   ['', 'Painel'],
   ['transactions', 'Transações'],
@@ -31,6 +45,7 @@ export function App() {
   // Values start hidden on a device that never chose, so opening the app in public shows nothing by accident.
   const [hidden, setHidden] = useStoredFlag('gmf.hidden', true);
   const [now, setNow] = useState(() => new Date());
+  const [more, setMore] = useState(false);
   const route = useRoute();
 
   useEffect(() => {
@@ -48,6 +63,7 @@ export function App() {
   if (phase === 'out') return <Login onDone={() => setPhase('in')} />;
 
   const tx = route.params.get('tx');
+  const inMore = MORE.some(([id]) => id === route.page);
   let page;
   switch (route.page) {
     case 'transactions':
@@ -101,7 +117,43 @@ export function App() {
         </div>
       </header>
       <main class="main">{page}</main>
-      {tx && <TransactionDrawer id={tx} hidden={hidden} />}
+      <nav class="tabbar" aria-label="Seções">
+        {TABS.map(([id, label, icon]) => (
+          <a key={id} class={route.page === id && !more ? 'tab-item on' : 'tab-item'} href={hrefFor(id)} onClick={() => setMore(false)}>
+            <span aria-hidden="true">{icon}</span>
+            {label}
+          </a>
+        ))}
+        <button class={more || inMore ? 'tab-item on' : 'tab-item'} onClick={() => setMore(!more)} aria-expanded={more}>
+          <span aria-hidden="true">⋯</span>
+          Mais
+        </button>
+      </nav>
+      {more && (
+        <div class="overlay sheet-overlay" onClick={() => setMore(false)}>
+          <div class="drawer sheet" role="dialog" aria-label="Mais seções" onClick={(e) => e.stopPropagation()}>
+            <div class="sheet-handle" aria-hidden="true" />
+            {MORE.map(([id, label]) => (
+              <a key={id} class="sheet-item" href={hrefFor(id)} onClick={() => setMore(false)}>
+                {label} <span aria-hidden="true">›</span>
+              </a>
+            ))}
+            <button class="sheet-item" onClick={() => setHidden(!hidden)}>
+              {hidden ? 'Mostrar valores' : 'Ocultar valores'}
+            </button>
+            <button
+              class="sheet-item"
+              onClick={() => {
+                setMore(false);
+                void api.logout().finally(() => setPhase('out'));
+              }}
+            >
+              Sair
+            </button>
+          </div>
+        </div>
+      )}
+      {tx && <TransactionDrawer key={tx} id={tx} hidden={hidden} />}
     </>
   );
 }

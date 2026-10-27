@@ -23,7 +23,10 @@ const SORTS = [
 const PAGE = 50;
 
 const reais = (cents: string | null) => (cents === null || cents === '' ? '' : String(Number(cents) / 100));
-const toCents = (text: string) => (text.trim() === '' ? null : String(Math.round(Number(text.replace(',', '.')) * 100)));
+const toCents = (text: string) => {
+  const n = Number(text.replace(/\./g, '').replace(',', '.'));
+  return text.trim() === '' || !Number.isFinite(n) || n < 0 ? null : String(Math.round(n * 100));
+};
 
 /** Transaction explorer. Every filter lives in the URL, so a link from a widget opens it already scoped. */
 export function TransactionsPage({ route, now, hidden }: { route: Route; now: Date; hidden: boolean }) {
@@ -94,9 +97,9 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         </select>
         <label class="amount">
           R$ de
-          <input inputMode="decimal" value={reais(p.get('min'))} onChange={(e) => set({ min: toCents((e.currentTarget as HTMLInputElement).value) })} />
+          <input key={`min${p.get('min')}`} inputMode="decimal" defaultValue={reais(p.get('min'))} onChange={(e) => set({ min: toCents((e.currentTarget as HTMLInputElement).value) })} />
           até
-          <input inputMode="decimal" value={reais(p.get('max'))} onChange={(e) => set({ max: toCents((e.currentTarget as HTMLInputElement).value) })} />
+          <input key={`max${p.get('max')}`} inputMode="decimal" defaultValue={reais(p.get('max'))} onChange={(e) => set({ max: toCents((e.currentTarget as HTMLInputElement).value) })} />
         </label>
         <select class="select" value={p.get('sort') ?? 'date_desc'} onChange={(e) => set({ sort: (e.currentTarget as HTMLSelectElement).value === 'date_desc' ? null : (e.currentTarget as HTMLSelectElement).value })} aria-label="Ordem">
           {SORTS.map((s) => (

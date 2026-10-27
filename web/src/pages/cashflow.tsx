@@ -71,7 +71,7 @@ export function CashflowPage({ route, now, hidden }: { route: Route; now: Date; 
           </div>
           <div class="panel">
             {!list.data ? (
-              <Loading error={list.error} />
+              ids.length === 0 && banks.data ? <div class="empty">Nenhuma conta bancária visível.</div> : <Loading error={list.error} />
             ) : (
               <>
                 <ul class="rows tall tx-list">

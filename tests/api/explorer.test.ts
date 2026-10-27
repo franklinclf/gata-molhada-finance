@@ -181,3 +181,9 @@ test('routes: explorer filters, detail, writes and validation', () => {
   assert.equal(call('GET', '/api/nothing'), null);
   assert.equal(call('POST', '/api/balances')?.status, 405);
 });
+
+test('the label "Sem categoria" from the spending view finds uncategorized transactions, and cannot be created as a category', () => {
+  const store = seeded();
+  assert.deepEqual(ids(explore(store, { ...base, categories: ['Sem categoria'] }, NOW)), ['nocat']);
+  assert.equal(addCategory(store, 'sem categoria', NOW).ok, false);
+});
