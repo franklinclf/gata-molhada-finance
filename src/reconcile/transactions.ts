@@ -5,6 +5,8 @@ import type {
   Finding,
   FindingKind,
   FindingSeverity,
+  ManualMapping,
+  RecordRef,
   TransactionLink,
   TransactionState,
 } from '../core/canonical.ts';
@@ -28,10 +30,13 @@ export interface TransactionInput {
   sources: TransactionSource[];
   now: Date;
   /**
-   * Pending entries seen by only one source and older than this many days are set aside. A card purchase stays
-   * pending until its statement closes, so cards get a longer limit. Defaults to 7 for bank accounts, 30 for cards.
+   * A pending entry that only one source reports, and is older than this many days, is set aside: what is left is
+   * a source that never updated or an authorization that never settled. Defaults to 7.
    */
-  staleDays?: { bank?: number; card?: number };
+  staleDays?: number;
+  /** Local day (YYYY-MM-DD). Records dated before it are not used at all. */
+  dataStart?: string;
+  manual?: ManualMapping;
 }
 
 export interface TransactionStats {
@@ -60,6 +65,8 @@ interface Group {
 }
 
 const FUZZY_WINDOW_MS = 36 * 3_600_000;
+const SUPERSEDED_WINDOW_DAYS = 5;
+const POSSIBLE_MATCH_DAYS = 5;
 const DAY_MS = 86_400_000;
 const INSTALLMENT_SUFFIX = /\d{1,2}\s*\/\s*\d{1,2}\s*$/;
 
@@ -128,21 +135,19 @@ function freshnessOf(source: TransactionSource | undefined, institution: string)
 }
 
 export function reconcileTransactions(input: TransactionInput): TransactionReconciliation {
-  const staleDaysFor = (kind: CanonicalAccount['kind']) =>
-    kind === 'credit_card' ? (input.staleDays?.card ?? 30) : (input.staleDays?.bank ?? 7);
+  const staleDays = input.staleDays ?? 7;
+  const refKey = (sourceId: string, externalId: string) => `${sourceId}|${externalId}`;
+  const ignored = new Set((input.manual?.ignored ?? []).map((r) => refKey(r.sourceId, r.externalId)));
   const sources = [...input.sources].sort((a, b) => a.priority - b.priority || a.sourceId.localeCompare(b.sourceId));
   const byId = new Map(sources.map((s) => [s.sourceId, s]));
-  const coverageStart = new Map<SourceId, string | null>(
-    sources.map((s) => [s.sourceId, s.transactions.reduce<string | null>((min, t) => (min === null || t.occurredAt < min ? t.occurredAt : min), null)]),
-  );
 
   const transactions: CanonicalTransaction[] = [];
   const links: TransactionLink[] = [];
   const findings: Finding[] = [];
   const stats: TransactionStats = {
     groups: 0,
-    byState: { confirmed: 0, single_source: 0, conflict: 0, stale_pending: 0 },
-    byPass: [0, 0, 0, 0, 0],
+    byState: { confirmed: 0, single_source: 0, conflict: 0, stale_pending: 0, ignored: 0 },
+    byPass: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   };
 
   const addFinding = (kind: FindingKind, severity: FindingSeverity, account: CanonicalAccount, transactionId: string, summary: string, details: Record<string, unknown>) => {
@@ -157,12 +162,22 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
     const groups: Group[] = [];
     for (const source of present) {
       const externalIds = new Set(memberRefs.filter((r) => r.sourceId === source.sourceId).map((r) => r.externalId));
-      const txs = source.transactions.filter((t) => externalIds.has(t.accountExternalId));
+      const txs = source.transactions.filter((t) => externalIds.has(t.accountExternalId) && (input.dataStart === undefined || localDay(t.occurredAt) >= input.dataStart));
       if (groups.length === 0) {
         for (const tx of txs) groups.push({ records: [{ sourceId: source.sourceId, priority: source.priority, tx, pass: 0 }] });
       } else {
         joinSource(groups, source, txs);
       }
+    }
+
+    // Records the user joined by hand. A group never holds two records from the same source.
+    for (const [a, b] of input.manual?.pairs ?? []) {
+      const find = (ref: RecordRef) => groups.find((g) => g.records.some((r) => r.sourceId === ref.sourceId && r.tx.externalId === ref.externalId));
+      const ga = find(a);
+      const gb = find(b);
+      if (!ga || !gb || ga === gb || ga.records.some((r) => gb.records.some((q) => q.sourceId === r.sourceId))) continue;
+      ga.records.push(...gb.records.map((r) => ({ ...r, pass: 9 })));
+      groups.splice(groups.indexOf(gb), 1);
     }
 
     const keyed = groups.map((group) => {
@@ -188,10 +203,13 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
         return null;
       };
 
+      // A source rarely says "posted" unless the bank did, and Pierre often keeps things pending long after the bank
+      // posted them. So one posted report is enough, and sources are never in conflict over the status.
       let state: TransactionState;
-      if (records.length > 1) state = statuses.size > 1 ? 'conflict' : 'confirmed';
-      else if (status === 'pending' && input.now.getTime() - time(primary) > staleDaysFor(account.kind) * DAY_MS) state = 'stale_pending';
-      else state = 'single_source';
+      if (records.some((r) => ignored.has(refKey(r.sourceId, r.tx.externalId)))) state = 'ignored';
+      // When both sources say pending, the bank itself does (card purchases stay pending until the statement closes).
+      else if (status === 'pending' && records.length === 1 && input.now.getTime() - time(primary) > staleDays * DAY_MS) state = 'stale_pending';
+      else state = records.length > 1 ? 'confirmed' : 'single_source';
 
       transactions.push({
         id,
@@ -205,44 +223,61 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
         category: firstNonNull((t) => t.category),
         state,
         sourceIds,
-        excluded: state === 'stale_pending',
+        excluded: state === 'stale_pending' || state === 'ignored',
       });
-      stats.groups++;
-      stats.byState[state]++;
       for (const r of records) {
         links.push({ sourceId: r.sourceId, externalId: r.tx.externalId, transactionId: id, matchPass: r.pass });
         stats.byPass[r.pass] = (stats.byPass[r.pass] ?? 0) + 1;
       }
+    }
 
-      const label = `${account.institution} / ${account.name}: ${formatBRL(primary.amount)} on ${localDay(primary.occurredAt)} "${primary.descriptionRaw ?? primary.description}"`;
-      const base = { occurredAt: primary.occurredAt, amount: primary.amount, sources: sourceIds };
+    const mine = transactions.filter((t) => t.accountId === account.id);
 
-      if (state === 'stale_pending') {
-        addFinding('stale_pending', 'warning', account, id, `${label} is still pending after ${staleDaysFor(account.kind)} days and only ${sourceIds[0]} reports it`, base);
-      } else if (state === 'conflict') {
-        const lagging = records.find((r) => r.tx.status === 'pending') as Record_;
-        const postedSource = records.find((r) => r.tx.status === 'posted') as Record_;
-        const laggingAt = freshnessOf(byId.get(lagging.sourceId), account.institution);
-        const postedAt = freshnessOf(byId.get(postedSource.sourceId), account.institution);
-        const explained = laggingAt !== null && postedAt !== null && laggingAt < postedAt;
-        addFinding('status_conflict', explained ? 'info' : 'warning', account, id,
-          `${label} is pending in ${lagging.sourceId} and posted in ${postedSource.sourceId}${explained ? ` (${lagging.sourceId} synced earlier)` : ''}`,
-          { ...base, pendingIn: lagging.sourceId, postedIn: postedSource.sourceId });
-      } else if (state === 'single_source') {
-        for (const other of present) {
-          if (sourceIds.includes(other.sourceId)) continue;
-          const start = coverageStart.get(other.sourceId) ?? null;
-          if (start !== null && primary.occurredAt < start) continue;
-          const syncedAt = freshnessOf(other, account.institution);
-          if (syncedAt !== null && syncedAt < primary.occurredAt) {
-            addFinding('not_yet_synced', 'info', account, id, `${label} is not in ${other.sourceId} yet (last sync ${syncedAt})`, { ...base, missingIn: other.sourceId, lastSyncAt: syncedAt });
-          } else {
-            addFinding('missing_in_source', 'warning', account, id, `${label} is in ${sourceIds[0]} but missing in ${other.sourceId}`, { ...base, missingIn: other.sourceId, lastSyncAt: syncedAt });
-          }
-        }
+    // A pending entry whose posted twin is already there (same amount, a few days apart) is the authorization that
+    // settled, seen separately because the sources never joined them. It is not a second charge.
+    for (const t of mine) {
+      if (t.status !== 'pending' || t.sourceIds.length > 1 || t.state === 'ignored' || t.state === 'stale_pending') continue;
+      const twin = mine.find((o) => o !== t && o.status === 'posted' && o.amount === t.amount && Math.abs(new Date(o.occurredAt).getTime() - new Date(t.occurredAt).getTime()) <= SUPERSEDED_WINDOW_DAYS * DAY_MS);
+      if (twin) {
+        t.state = 'stale_pending';
+        t.excluded = true;
       }
     }
+
+    // Records that look like the same transaction in two sources but were too far apart to join on their own.
+    const loose = mine.filter((t) => t.state === 'single_source').sort((a, b) => a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id));
+    const used = new Set<string>();
+    for (const t of loose) {
+      if (used.has(t.id)) continue;
+      let best: CanonicalTransaction | null = null;
+      let bestGap = Infinity;
+      for (const o of loose) {
+        if (o === t || used.has(o.id) || o.sourceIds[0] === t.sourceIds[0] || o.amount !== t.amount) continue;
+        const gap = Math.abs(new Date(o.occurredAt).getTime() - new Date(t.occurredAt).getTime());
+        if (gap <= POSSIBLE_MATCH_DAYS * DAY_MS && gap < bestGap) {
+          best = o;
+          bestGap = gap;
+        }
+      }
+      if (!best) continue;
+      used.add(t.id);
+      used.add(best.id);
+      const rank = (x: CanonicalTransaction) => byId.get(x.sourceIds[0] ?? '')?.priority ?? 99;
+      const [first, second] = rank(t) <= rank(best) ? [t, best] : [best, t];
+      addFinding(
+        'possible_match',
+        'info',
+        account,
+        first.id,
+        `${account.institution} / ${account.name}: ${formatBRL(first.amount)} "${first.description}" in ${first.sourceIds[0]} on ${localDay(first.occurredAt)} may be the same as "${second.description}" in ${second.sourceIds[0]} on ${localDay(second.occurredAt)}`,
+        { occurredAt: first.occurredAt, amount: first.amount, sources: [first.sourceIds[0], second.sourceIds[0]], otherTransactionId: second.id },
+      );
+    }
   }
+
+  for (const key of Object.keys(stats.byState) as TransactionState[]) stats.byState[key] = 0;
+  stats.groups = transactions.length;
+  for (const t of transactions) stats.byState[t.state]++;
 
   transactions.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || a.id.localeCompare(b.id));
   findings.sort((a, b) => a.id.localeCompare(b.id));

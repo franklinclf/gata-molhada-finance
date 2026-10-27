@@ -1,6 +1,19 @@
 import type { Cents } from './money.ts';
 import type { AccountKind, SourceId, TransactionStatus } from './types.ts';
 
+export interface RecordRef {
+  sourceId: SourceId;
+  externalId: string;
+}
+
+/** Choices the user made in the app. They survive every rebuild. */
+export interface ManualMapping {
+  /** Two records, from different sources, that the user says are the same transaction. */
+  pairs: Array<[RecordRef, RecordRef]>;
+  /** Records the user wants left out of every total. */
+  ignored: RecordRef[];
+}
+
 export type AccountRole = 'member' | 'duplicate';
 
 export interface AccountRef {
@@ -35,7 +48,12 @@ export interface LimitGroup {
   memberIds: string[];
 }
 
-export type TransactionState = 'confirmed' | 'single_source' | 'conflict' | 'stale_pending';
+/**
+ * confirmed: more than one source reports it. single_source: only one does, which is common and not a problem.
+ * stale_pending: pending for longer than the banks keep things pending, so left out of totals.
+ * ignored: set aside by the user. conflict is no longer produced (a posted report always wins) and only exists in old data.
+ */
+export type TransactionState = 'confirmed' | 'single_source' | 'conflict' | 'stale_pending' | 'ignored';
 
 export interface CanonicalTransaction {
   id: string;
@@ -58,11 +76,12 @@ export interface TransactionLink {
   sourceId: SourceId;
   externalId: string;
   transactionId: string;
-  /** 0 = first record of the group; 1 = same instant; 2 = same day; 3 = installment; 4 = same amount within 36 hours. */
+  /** 0 = first record of the group; 1 = same instant; 2 = same day; 3 = installment; 4 = same amount within 36 hours; 9 = joined by the user. */
   matchPass: number;
 }
 
-export type FindingKind = 'missing_in_source' | 'not_yet_synced' | 'status_conflict' | 'stale_pending';
+/** The only open question left for the user: two records from different sources that may be the same transaction. */
+export type FindingKind = 'possible_match';
 export type FindingSeverity = 'info' | 'warning';
 
 export interface Finding {

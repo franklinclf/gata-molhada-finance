@@ -77,58 +77,32 @@ test('identical purchases on one day are paired one to one', () => {
   assert.equal(new Set(r.transactions.map((t) => t.id)).size, 2);
 });
 
-test('a status difference is a conflict and the posted status wins', () => {
-  const r = run([tx({ externalId: 'a', status: 'posted' })], [tx({ externalId: 'b', status: 'pending' })], {
-    sources: [
-      txSource('pierre', 0, [tx({ externalId: 'a', accountExternalId: 'p1', status: 'posted' })], [fresh('pierre', 'Bank A', '2026-10-26T15:00:00.000Z')]),
-      txSource('pluggy', 1, [tx({ externalId: 'b', accountExternalId: 'g1', status: 'pending' })], [fresh('pluggy', 'Bank A', '2026-10-25T20:00:00.000Z')]),
-    ],
-  });
-  assert.equal(r.transactions[0]?.state, 'conflict');
+test('a posted report wins over a pending one, and the sources are not in conflict', () => {
+  const r = run([tx({ externalId: 'a', status: 'pending' })], [tx({ externalId: 'b', status: 'posted' })]);
+  assert.equal(r.transactions[0]?.state, 'confirmed');
   assert.equal(r.transactions[0]?.status, 'posted');
-  assert.equal(r.findings[0]?.kind, 'status_conflict');
-  assert.equal(r.findings[0]?.severity, 'info');
+  assert.equal(r.findings.length, 0);
+  const other = run([tx({ externalId: 'a', status: 'posted' })], [tx({ externalId: 'b', status: 'pending' })]);
+  assert.equal(other.transactions[0]?.status, 'posted');
+  assert.equal(other.findings.length, 0);
 });
 
-test('a status conflict that the sync times do not explain is a warning', () => {
-  const r = run([tx({ externalId: 'a', status: 'posted' })], [tx({ externalId: 'b', status: 'pending' })]);
-  assert.equal(r.findings[0]?.severity, 'warning');
-});
-
-test('a transaction in one source only is missing when the other source synced after it', () => {
+test('a transaction one source does not have is normal: single source, no finding', () => {
   const r = run([tx({ externalId: 'a' })], []);
   assert.equal(r.transactions[0]?.state, 'single_source');
-  assert.equal(r.findings[0]?.kind, 'missing_in_source');
-  assert.equal(r.findings[0]?.details.missingIn, 'pluggy');
+  assert.deepEqual(r.transactions[0]?.sourceIds, ['pierre']);
+  assert.equal(r.findings.length, 0);
 });
 
-test('a transaction newer than the other source last sync is only not synced yet', () => {
-  const r = run([tx({ externalId: 'a', occurredAt: '2026-10-26T14:00:00.000Z' })], [], {
-    sources: [
-      txSource('pierre', 0, [tx({ externalId: 'a', accountExternalId: 'p1', occurredAt: '2026-10-26T14:00:00.000Z' })], [fresh('pierre', 'Bank A', '2026-10-26T15:00:00.000Z')]),
-      txSource('pluggy', 1, [tx({ externalId: 'x', accountExternalId: 'g1', occurredAt: '2026-10-10T12:00:00.000Z', amount: -1 })], [fresh('pluggy', 'Bank A', '2026-10-25T20:00:00.000Z')]),
-    ],
-  });
-  const kinds = r.findings.map((f) => f.kind);
-  assert.ok(kinds.includes('not_yet_synced'));
-  assert.equal(r.findings.find((f) => f.kind === 'not_yet_synced')?.severity, 'info');
-});
-
-test('no finding for a transaction older than everything the other source has', () => {
-  const r = run([tx({ externalId: 'a', occurredAt: '2026-07-01T12:00:00.000Z' })], [tx({ externalId: 'b', occurredAt: '2026-10-01T12:00:00.000Z', amount: -777, descriptionRaw: 'OTHER' })]);
-  const old = r.transactions.find((t) => t.occurredAt.startsWith('2026-07-01'));
-  assert.equal(old?.state, 'single_source');
-  assert.equal(r.findings.filter((f) => f.transactionId === old?.id).length, 0);
-});
-
-test('a lone pending bank transaction is set aside after 7 days, a card one after 30', () => {
+test('pending entries older than 7 days are set aside, on bank accounts and cards alike', () => {
   const bank = run([tx({ externalId: 'a', status: 'pending', occurredAt: '2026-10-10T12:00:00.000Z' })], []);
   assert.equal(bank.transactions[0]?.state, 'stale_pending');
   assert.equal(bank.transactions[0]?.excluded, true);
   assert.equal(bank.stats.byState.stale_pending, 1);
+  assert.equal(bank.findings.length, 0);
 
-  const recentBank = run([tx({ externalId: 'a', status: 'pending', occurredAt: '2026-10-22T12:00:00.000Z' })], []);
-  assert.equal(recentBank.transactions[0]?.state, 'single_source');
+  const recent = run([tx({ externalId: 'a', status: 'pending', occurredAt: '2026-10-22T12:00:00.000Z' })], []);
+  assert.equal(recent.transactions[0]?.state, 'single_source');
 
   const card = (days: number) =>
     reconcileTransactions({
@@ -136,14 +110,78 @@ test('a lone pending bank transaction is set aside after 7 days, a card one afte
       sources: [txSource('pierre', 0, [tx({ externalId: 'a', accountExternalId: 'p1', status: 'pending', occurredAt: new Date(NOW.getTime() - days * 86_400_000).toISOString() })])],
       now: NOW,
     }).transactions[0]?.state;
-  assert.equal(card(20), 'single_source');
-  assert.equal(card(35), 'stale_pending');
+  assert.equal(card(5), 'single_source');
+  assert.equal(card(9), 'stale_pending');
 });
 
-test('a pending transaction that both sources report is never set aside', () => {
+test('a pending entry that both sources report is real, however old: the bank itself says pending', () => {
   const old = '2026-08-01T12:00:00.000Z';
   const r = run([tx({ externalId: 'a', status: 'pending', occurredAt: old })], [tx({ externalId: 'b', status: 'pending', occurredAt: old })]);
   assert.equal(r.transactions[0]?.state, 'confirmed');
+  assert.equal(r.transactions[0]?.excluded, false);
+});
+
+test('a pending entry with a posted twin of the same amount nearby is the authorization that settled', () => {
+  const r = run(
+    [tx({ externalId: 'a', status: 'pending', amount: 3991, occurredAt: '2026-10-24T01:00:00.000Z', descriptionRaw: 'PAGAMENTO RECEBIDO' })],
+    [tx({ externalId: 'b', status: 'posted', amount: 3991, occurredAt: '2026-10-22T11:00:00.000Z', descriptionRaw: 'Pagamento recebido' })],
+  );
+  const pending = r.transactions.find((t) => t.status === 'pending');
+  assert.equal(pending?.state, 'stale_pending');
+  assert.equal(pending?.excluded, true);
+  assert.equal(r.transactions.find((t) => t.status === 'posted')?.excluded, false);
+});
+
+test('single-source records of different sources with the same amount a few days apart are offered as a possible match', () => {
+  const r = run(
+    [tx({ externalId: 'a', amount: -4200, occurredAt: '2026-10-10T12:00:00.000Z', descriptionRaw: 'ONE' })],
+    [tx({ externalId: 'b', amount: -4200, occurredAt: '2026-10-13T12:00:00.000Z', descriptionRaw: 'TWO' })],
+  );
+  assert.equal(r.transactions.length, 2);
+  assert.equal(r.findings.length, 1);
+  const f = r.findings[0]!;
+  assert.equal(f.kind, 'possible_match');
+  assert.equal(f.severity, 'info');
+  const first = r.transactions.find((t) => t.id === f.transactionId)!;
+  assert.deepEqual(first.sourceIds, ['pierre']);
+  assert.equal(r.transactions.find((t) => t.id === f.details.otherTransactionId)?.sourceIds[0], 'pluggy');
+  assert.deepEqual(run([tx({ externalId: 'a', amount: -4200, occurredAt: '2026-10-10T12:00:00.000Z', descriptionRaw: 'ONE' })], [tx({ externalId: 'b', amount: -4200, occurredAt: '2026-10-13T12:00:00.000Z', descriptionRaw: 'TWO' })]).findings.map((x) => x.id), [f.id]);
+});
+
+test('no possible match when the amounts differ, the gap is long, or both records are from one source', () => {
+  assert.equal(run([tx({ externalId: 'a', amount: -100, descriptionRaw: 'ONE' })], [tx({ externalId: 'b', amount: -101, occurredAt: '2026-10-21T12:00:00.000Z', descriptionRaw: 'TWO' })]).findings.length, 0);
+  assert.equal(run([tx({ externalId: 'a', amount: -100, descriptionRaw: 'ONE' })], [tx({ externalId: 'b', amount: -100, occurredAt: '2026-10-28T12:00:00.000Z', descriptionRaw: 'TWO' })]).findings.length, 0);
+  assert.equal(run([tx({ externalId: 'a', amount: -100, descriptionRaw: 'ONE' }), tx({ externalId: 'b', amount: -100, occurredAt: '2026-10-22T12:00:00.000Z', descriptionRaw: 'TWO' })], []).findings.length, 0);
+});
+
+test('records dated before dataStart are not used', () => {
+  const r = run([tx({ externalId: 'a', occurredAt: '2025-12-31T12:00:00.000Z', descriptionRaw: 'OLD' }), tx({ externalId: 'b', occurredAt: '2026-01-02T12:00:00.000Z', descriptionRaw: 'NEW' })], [], { dataStart: '2026-01-01' });
+  assert.deepEqual(r.transactions.map((t) => t.descriptionRaw), ['NEW']);
+});
+
+test('records the user joined by hand become one transaction, even far apart', () => {
+  const pierreTx = tx({ externalId: 'a', amount: -5000, occurredAt: '2026-10-01T12:00:00.000Z', descriptionRaw: 'ONE' });
+  const pluggyTx = tx({ externalId: 'b', amount: -4999, occurredAt: '2026-10-09T12:00:00.000Z', descriptionRaw: 'TWO' });
+  const manual = { pairs: [[{ sourceId: 'pierre', externalId: 'a' }, { sourceId: 'pluggy', externalId: 'b' }]] as [{ sourceId: string; externalId: string }, { sourceId: string; externalId: string }][], ignored: [] };
+  const r = run([pierreTx], [pluggyTx], { manual });
+  assert.equal(r.transactions.length, 1);
+  assert.deepEqual(r.transactions[0]?.sourceIds, ['pierre', 'pluggy']);
+  assert.equal(r.transactions[0]?.state, 'confirmed');
+  assert.equal(r.links.find((l) => l.sourceId === 'pluggy')?.matchPass, 9);
+});
+
+test('a manual join of two records from the same source is refused', () => {
+  const a = tx({ externalId: 'a', descriptionRaw: 'ONE', amount: -1 });
+  const b = tx({ externalId: 'b', descriptionRaw: 'TWO', amount: -2, occurredAt: '2026-10-22T12:00:00.000Z' });
+  const manual = { pairs: [[{ sourceId: 'pierre', externalId: 'a' }, { sourceId: 'pierre', externalId: 'b' }]] as [{ sourceId: string; externalId: string }, { sourceId: string; externalId: string }][], ignored: [] };
+  assert.equal(run([a, b], [], { manual }).transactions.length, 2);
+});
+
+test('a record the user ignored is kept but left out of the totals', () => {
+  const r = run([tx({ externalId: 'a' })], [tx({ externalId: 'b' })], { manual: { pairs: [], ignored: [{ sourceId: 'pluggy', externalId: 'b' }] } });
+  assert.equal(r.transactions[0]?.state, 'ignored');
+  assert.equal(r.transactions[0]?.excluded, true);
+  assert.equal(r.stats.byState.ignored, 1);
 });
 
 test('fills missing fields from the other source', () => {
@@ -175,8 +213,4 @@ test('canonical ids are stable and do not depend on input order', () => {
   assert.ok(first.transactions.every((t) => /^tx_[0-9a-f]{16}$/.test(t.id)));
 });
 
-test('finding ids are stable between runs', () => {
-  const first = run([tx({ externalId: 'a' })], []);
-  const second = run([tx({ externalId: 'a' })], []);
-  assert.deepEqual(first.findings.map((f) => f.id), second.findings.map((f) => f.id));
-});
+

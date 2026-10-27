@@ -4,7 +4,7 @@ import { cyclesFor } from './cycles.ts';
 import { transactionDetail } from './detail.ts';
 import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
-import { addCategory, listCategories, removeCategory, setAccountHidden, setTransactionCategory, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -15,7 +15,7 @@ export interface ApiResult {
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const CYCLE = /^(open|\d{4}-\d{2})$/;
-const STATES = ['confirmed', 'single_source', 'conflict', 'stale_pending'] as const;
+const STATES = ['confirmed', 'single_source', 'conflict', 'stale_pending', 'ignored'] as const;
 const SORTS: SortKey[] = ['date_desc', 'date_asc', 'amount_desc', 'amount_asc'];
 
 function isRealDay(value: string): boolean {
@@ -151,6 +151,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (parts.length !== 2) return null;
       return method === 'GET' ? { status: 200, body: views.freshness(store, now) } : methodNotAllowed();
     case 'findings':
+      if (parts.length === 4 && id !== undefined && sub === 'dismiss') return method === 'POST' ? fromMutation(dismissSuggestion(store, id, now)) : methodNotAllowed();
       if (parts.length !== 2) return null;
       return method === 'GET' ? { status: 200, body: { items: views.findings(store, params.get('includeResolved') === 'true') } } : methodNotAllowed();
     case 'cashflow':
@@ -175,6 +176,24 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         if (method !== 'GET') return methodNotAllowed();
         const detail = transactionDetail(store, id, now);
         return detail ? { status: 200, body: detail } : { status: 404, body: { error: 'not_found' } };
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'candidates') {
+        if (method !== 'GET') return methodNotAllowed();
+        const candidates = joinCandidates(store, id);
+        return candidates ? { status: 200, body: { items: candidates } } : { status: 404, body: { error: 'not_found' } };
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'merge') {
+        if (method === 'DELETE') return fromMutation(separateTransaction(store, id, now));
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { otherId }');
+        return fromMutation(joinTransactions(store, id, input.otherId, now));
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'ignore') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { ignored }');
+        return fromMutation(setIgnored(store, id, input.ignored, now));
       }
       if (parts.length === 4 && id !== undefined && sub === 'category') {
         if (method !== 'PUT') return methodNotAllowed();
