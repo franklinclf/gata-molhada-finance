@@ -27,3 +27,5 @@ Publique de novo o commit desejado (um revert na `main`) e deixe o CI gerar a im
 ## Remover tudo
 
 `GMF_KEYVAULT=<cofre> bash infra/azure/99-teardown.sh` pede a digitação do nome do grupo de recursos e apaga VM, disco, IP, rede e cofre. O nome do cofre fica reservado por 7 dias, a menos que se rode `az keyvault purge`.
+
+Para enviar de uma vez os segredos do seu `.env` local ao cofre: `GMF_KEYVAULT=<cofre> bash infra/azure/push-env.sh` (use `--dry-run` para ver só os nomes). Os valores são gravados entre aspas simples no ambiente do contêiner, porque os hashes de senha contêm `$`. Valores com aspas simples são recusados.

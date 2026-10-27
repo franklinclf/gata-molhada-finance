@@ -10,6 +10,8 @@ case "$url" in
     echo '{"access_token":"stub-token"}' ;;
   *.vault.azure.net/secrets/MISSING-SECRET*)
     exit 22 ;;
+  *.vault.azure.net/secrets/QUOTE-SECRET*)
+    printf '{"value":"it'"'"'s"}\n' ;;
   *.vault.azure.net/secrets/MULTILINE-SECRET*)
     printf '{"value":"line1\\nline2"}\n' ;;
   *.vault.azure.net/secrets/*)
