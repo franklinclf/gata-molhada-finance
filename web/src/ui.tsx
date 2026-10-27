@@ -27,11 +27,35 @@ export interface Option {
   count?: number;
 }
 
-/** A button that opens a checklist. Options can be searched, which helps with long category lists. */
-export function MultiSelect({ label, options, selected, onChange, searchable = true }: { label: string; options: Option[]; selected: string[]; onChange: (value: string[]) => void; searchable?: boolean }) {
+/** A list of checkboxes with optional search, used inline in the filter panel and inside the popover select. */
+export function CheckList({ options, selected, onChange, searchable = true, maxHeight = 240 }: { options: Option[]; selected: string[]; onChange: (value: string[]) => void; searchable?: boolean; maxHeight?: number }) {
   const [filter, setFilter] = useState('');
   const visible = options.filter((o) => o.label.toLowerCase().includes(filter.toLowerCase()));
   const toggle = (value: string) => onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);
+  return (
+    <div class="checklist">
+      {searchable && options.length > 6 && <input class="search" placeholder="Buscar" value={filter} onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)} />}
+      <div class="options" style={{ maxHeight: `${maxHeight}px` }}>
+        {visible.length === 0 && <div class="muted">Nada encontrado</div>}
+        {visible.map((o) => (
+          <label key={o.value} class="option">
+            <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)} />
+            <span class="grow clip">{o.label || 'Sem categoria'}</span>
+            {o.count !== undefined && <span class="muted">{o.count}</span>}
+          </label>
+        ))}
+      </div>
+      {selected.length > 0 && (
+        <button class="link" onClick={() => onChange([])}>
+          Limpar
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** A button that opens a checklist. */
+export function MultiSelect({ label, options, selected, onChange, searchable = true }: { label: string; options: Option[]; selected: string[]; onChange: (value: string[]) => void; searchable?: boolean }) {
   return (
     <details class="multi">
       <summary class={selected.length > 0 ? 'chip on' : 'chip'}>
@@ -39,23 +63,23 @@ export function MultiSelect({ label, options, selected, onChange, searchable = t
         {selected.length > 0 ? ` (${selected.length})` : ''}
       </summary>
       <div class="popover">
-        {searchable && <input class="search" placeholder="Buscar" value={filter} onInput={(e) => setFilter((e.currentTarget as HTMLInputElement).value)} />}
-        <div class="options">
-          {visible.length === 0 && <div class="muted">Nada encontrado</div>}
-          {visible.map((o) => (
-            <label key={o.value} class="option">
-              <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)} />
-              <span class="grow clip">{o.label || 'Sem categoria'}</span>
-              {o.count !== undefined && <span class="muted">{o.count}</span>}
-            </label>
-          ))}
-        </div>
-        {selected.length > 0 && (
-          <button class="link" onClick={() => onChange([])}>
-            Limpar
-          </button>
-        )}
+        <CheckList options={options} selected={selected} onChange={onChange} searchable={searchable} />
       </div>
+    </details>
+  );
+}
+
+/** A filter section that can be folded away; sections with an active filter start open. */
+export function Section({ title, active, children, open = false }: { title: string; active?: number; children: ComponentChildren; open?: boolean }) {
+  // Opened by default only when it mounts, so clearing the last filter does not fold it under the cursor.
+  const [startOpen] = useState(open || (active ?? 0) > 0);
+  return (
+    <details class="fsection" open={startOpen}>
+      <summary>
+        <span>{title}</span>
+        {(active ?? 0) > 0 && <span class="badge info">{active}</span>}
+      </summary>
+      <div class="fbody">{children}</div>
     </details>
   );
 }
@@ -76,23 +100,25 @@ export function StatusBadge({ status }: { status: string }) {
 
 export const STATE_LABEL: Record<string, string> = {
   confirmed: 'Confirmada pelas duas fontes',
-  single_source: 'Vista em uma fonte só',
+  single_source: 'Só uma fonte tem (normal)',
   conflict: 'Fontes discordam do status',
-  stale_pending: 'Pendente há muito tempo',
+  stale_pending: 'Pendente que o banco não mostra (fora dos totais)',
+  ignored: 'Ignorada por você (fora dos totais)',
 };
 
-export function TxRow({ t, hidden, onOpen }: { t: { id: string; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void }) {
+export function TxRow({ t, hidden, onOpen }: { t: { id: string; sourceIds?: string[]; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void }) {
   return (
-    <li class="tx" onClick={() => onOpen(t.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onOpen(t.id)}>
+    <li class="tx" data-no-nav onClick={() => onOpen(t.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onOpen(t.id)}>
       <div class="grow">
         <div class="clip">{t.description}</div>
         <div class="muted clip">
           {dayMonth(localDay(t.occurredAt))} · {t.account.institution}
           {t.account.last4 ? ` •••• ${t.account.last4}` : ''} · {t.category ?? 'Sem categoria'}
           {t.status === 'pending' ? ' · pendente' : ''}
-          {t.state === 'conflict' || t.state === 'stale_pending' ? ' · ⚠' : ''}
+          {t.state === 'ignored' ? ' · ignorada' : t.state === 'stale_pending' ? ' · fora dos totais' : ''}
         </div>
       </div>
+      {t.state === 'single_source' && t.sourceIds && t.sourceIds.length === 1 && <span class="badge muted" data-tip={`Só o ${t.sourceIds[0]} tem esta transação`}>só {t.sourceIds[0]}</span>}
       <strong class={t.amount >= 0 ? 'good-text' : ''}>{brl(t.amount, hidden)}</strong>
     </li>
   );

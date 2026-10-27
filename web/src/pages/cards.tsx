@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { api, type CardsView } from '../api.ts';
-import { Meter } from '../charts.tsx';
+import { Bars, Meter } from '../charts.tsx';
 import { brl, dayMonth, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
@@ -117,6 +117,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
   const tab = route.params.get('tab') ?? 'cards';
   const { data, error, loading } = useLoad(() => api.cards(cycle), [cycle]);
   const installments = useLoad(() => api.installments(), []);
+  const bills = useLoad(() => api.bills(), []);
 
   return (
     <div class="page-body">
@@ -128,6 +129,30 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
           </button>
         ))}
       </div>
+      {tab === 'cards' && bills.data && (
+        <div class="panel">
+          <h3>Faturas por mês de vencimento (clique em uma barra para ver o ciclo)</h3>
+          <Bars
+            hidden={hidden}
+            height={150}
+            selected={cycle}
+            onSelect={(key) => patchParams({ cycle: key === 'open' ? null : key })}
+            data={bills.data.bars.map((b) => ({
+              key: b.key,
+              label: b.open ? 'Aberta' : monthName(b.key).slice(0, 3),
+              value: b.total,
+              color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : 'var(--warn)',
+              tip: `${b.open ? 'Ciclo em aberto' : `Venc. ${monthName(b.key)}`}\n${hidden ? '••••' : brl(b.total)}${b.open ? '' : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
+            }))}
+          />
+          <div class="legend">
+            <span><i style={{ background: 'var(--accent)' }} /> em aberto</span>
+            <span><i style={{ background: 'var(--good)' }} /> paga</span>
+            <span><i style={{ background: 'var(--warn)' }} /> a pagar</span>
+            <span><i style={{ background: 'var(--bad)' }} /> vencida</span>
+          </div>
+        </div>
+      )}
       {tab === 'cards' && (
         <label class="inline-field">
           Ciclo

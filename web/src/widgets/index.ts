@@ -28,5 +28,5 @@ export const WIDGETS: Record<WidgetId, { title: string; component: FunctionCompo
   installments: { title: 'Parcelas', component: InstallmentsWidget },
   recent: { title: 'Transações recentes', component: RecentWidget },
   freshness: { title: 'Atualização das fontes', component: FreshnessWidget },
-  findings: { title: 'Divergências abertas', component: FindingsWidget },
+  findings: { title: 'Para conferir', component: FindingsWidget },
 };

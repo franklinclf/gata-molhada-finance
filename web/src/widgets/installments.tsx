@@ -1,7 +1,6 @@
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { brl, monthName } from '../format.ts';
-import { rowsFit } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { Go } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
@@ -9,7 +8,7 @@ import type { WidgetProps } from './index.ts';
 
 export function InstallmentsWidget({ item, now, hidden, size }: WidgetProps) {
   const { data, error, loading } = useLoad(() => api.installments(), [], 300_000);
-  const limit = Math.max(rowsFit(item.h, 5), 1);
+  const limit = 60;
   return (
     <Widget title="Parcelas" to={{ page: 'cards', params: { tab: 'installments' } }} asOf={data?.oldestDataAt} now={now} loading={loading && !data} error={error}>
       {data && (

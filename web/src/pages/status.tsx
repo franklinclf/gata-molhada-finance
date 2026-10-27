@@ -1,17 +1,31 @@
+import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { ago, isStale } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
 import { Loading } from '../ui.tsx';
-import { KIND_LABEL } from '../widgets/findings.tsx';
 
 export function StatusPage({ now }: { now: Date }) {
   const fresh = useLoad(() => api.freshness(), [], 60_000);
   const findings = useLoad(() => api.findings(), []);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const act = async (id: string, work: () => Promise<unknown>) => {
+    setBusy(id);
+    setMessage(null);
+    try {
+      await work();
+      findings.reload();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Não foi possível concluir.');
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <div class="page-body">
-      <h1 class="page-title">Fontes e divergências</h1>
+      <h1 class="page-title">Fontes e conferência</h1>
       <section class="panel">
         <h2>Última sincronização de cada banco</h2>
         {!fresh.data ? (
@@ -52,26 +66,38 @@ export function StatusPage({ now }: { now: Date }) {
         )}
       </section>
       <section class="panel">
-        <h2>Divergências entre as fontes ({findings.data?.items.length ?? 0})</h2>
+        <h2>Para conferir ({findings.data?.items.length ?? 0})</h2>
+        <div class="muted">
+          Uma fonte não ter uma transação é normal e não aparece aqui. Aqui ficam só os pares que parecem ser a mesma transação com data ou descrição diferente. Se for a mesma, junte; se não for, descarte.
+        </div>
         {!findings.data ? (
           <Loading error={findings.error} />
         ) : findings.data.items.length === 0 ? (
-          <div class="empty">As fontes concordam entre si.</div>
+          <div class="empty">Nada para conferir.</div>
         ) : (
-          <ul class="rows tall tx-list">
+          <ul class="rows tall">
             {findings.data.items.map((f) => (
-              <li key={f.id} class="tx" onClick={() => patchParams({ tx: f.transactionId })} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && patchParams({ tx: f.transactionId })}>
-                <span class={f.severity === 'warning' ? 'swatch warn' : 'swatch'} />
+              <li key={f.id} class="suggestion">
                 <div class="grow">
                   <div>{f.summary}</div>
-                  <div class="muted">
-                    {KIND_LABEL[f.kind] ?? f.kind} · aberta {ago(f.openedAt, now)}
-                  </div>
+                  <div class="muted">aberta {ago(f.openedAt, now)}</div>
+                </div>
+                <div class="links" data-no-nav>
+                  <button class="link" onClick={() => patchParams({ tx: f.transactionId })}>
+                    Ver
+                  </button>
+                  <button class="primary small" disabled={busy === f.id} onClick={() => void act(f.id, () => api.join(f.transactionId, String(f.details.otherTransactionId)))}>
+                    É a mesma
+                  </button>
+                  <button class="icon small" disabled={busy === f.id} onClick={() => void act(f.id, () => api.dismiss(f.id))}>
+                    Não é
+                  </button>
                 </div>
               </li>
             ))}
           </ul>
         )}
+        {message && <div class="error">{message}</div>}
       </section>
     </div>
   );
