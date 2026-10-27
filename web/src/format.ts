@@ -74,3 +74,16 @@ export function cumulative(daily: Array<{ day: string; amount: number }>, from: 
   }
   return out;
 }
+
+const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+/** "out/2026" from YYYY-MM. */
+export function monthName(key: string): string {
+  const [year, month] = key.split('-');
+  return `${MONTHS[Number(month) - 1] ?? month}/${year}`;
+}
+
+/** Local day N days before another local day. */
+export function daysBefore(day: string, n: number): string {
+  return new Date(Date.parse(`${day}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+}

@@ -173,6 +173,11 @@ test('routes: explorer filters, detail, writes and validation', () => {
   assert.equal(call('DELETE', '/api/categories/Compras')?.status, 404);
   assert.equal(call('GET', '/api/cards', 'cycle=bad')?.status, 400);
   assert.equal(call('GET', '/api/cycles', 'accountId=chk')?.status, 404);
+  setTransactionCategory(store, 'market1', 'Mercado', true, NOW);
+  const rules = (call('GET', '/api/categories')?.body as { rules: Array<{ match: string; category: string }> }).rules;
+  assert.deepEqual(rules, [{ match: 'market', category: 'Mercado' }]);
+  assert.equal(call('DELETE', '/api/category-rules/market')?.status, 200);
+  assert.equal(call('DELETE', '/api/category-rules/market')?.status, 404);
   assert.equal(call('GET', '/api/nothing'), null);
   assert.equal(call('POST', '/api/balances')?.status, 405);
 });

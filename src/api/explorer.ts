@@ -28,6 +28,8 @@ export interface ExplorerQuery {
   cycle?: string;
   /** Leave out card payments, moves between own accounts and investments, as the spending view does. */
   spendingOnly?: boolean;
+  /** Leave out moves between the user's own accounts, as the cash flow view does. */
+  hideOwnTransfers?: boolean;
   sort: SortKey;
   limit: number;
   offset: number;
@@ -90,6 +92,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     if (query.min !== undefined && size < query.min) return false;
     if (query.max !== undefined && size > query.max) return false;
     if (query.spendingOnly && isNonSpending(t.category)) return false;
+    if (query.hideOwnTransfers && t.category !== null && /mesma titularidade/i.test(t.category)) return false;
     if (query.cycle !== undefined) {
       const range = cycleRanges[t.accountId];
       if (!range || day < range.from || day > range.to) return false;

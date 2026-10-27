@@ -1,14 +1,36 @@
-import type { Layout } from '../../src/api/layout.ts';
+import type { TransactionDetail } from '../../src/api/detail.ts';
+import type { Layout, LayoutItem, WidgetId } from '../../src/api/layout.ts';
+import type { CategoryRow } from '../../src/api/mutations.ts';
+import type { Cycle } from '../../src/api/cycles.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
 import type { BalancesView, CardsView, CashFlowView, FreshnessView, InstallmentsView, SpendingView } from '../../src/api/views.ts';
 
-export type { BalancesView, CardsView, CashFlowView, ExplorerResult, FreshnessView, InstallmentsView, Layout, SpendingView };
+export type { BalancesView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+
+export interface AccountItem {
+  id: string;
+  institution: string;
+  kind: 'checking' | 'savings' | 'credit_card';
+  name: string;
+  last4: string | null;
+  balance: number;
+  creditLimit: number | null;
+  limitGroupId: string | null;
+  asOf: string | null;
+  hidden: boolean;
+}
+
+export interface CategoriesResponse {
+  items: CategoryRow[];
+  rules: Array<{ match: string; category: string }>;
+}
 
 export interface FindingItem {
   id: string;
   kind: string;
   severity: 'info' | 'warning';
   accountId: string;
+  transactionId: string;
   summary: string;
   openedAt: string;
 }
@@ -56,6 +78,19 @@ export const api = {
   spending: (from: string, to: string, by: 'category' | 'merchant') => request<SpendingView>(`/api/spending${query({ from, to, by })}`),
   installments: () => request<InstallmentsView>('/api/installments'),
   transactions: (from: string, to: string, limit: number) => request<ExplorerResult>(`/api/transactions${query({ from, to, limit })}`),
+  /** Explorer with any filters, given as URL parameters. */
+  explore: (params: URLSearchParams) => request<ExplorerResult>(`/api/transactions?${params.toString()}`),
+  detail: (id: string) => request<TransactionDetail>(`/api/transactions/${encodeURIComponent(id)}`),
+  setCategory: (id: string, category: string | null, applyToSimilar: boolean) =>
+    request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/category`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category, applyToSimilar }) }),
+  accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
+  setHidden: (id: string, hidden: boolean) =>
+    request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),
+  categories: () => request<CategoriesResponse>('/api/categories'),
+  addCategory: (name: string) => request<{ ok: true }>('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  deleteCategory: (name: string) => request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  deleteRule: (match: string) => request<{ ok: true }>(`/api/category-rules/${encodeURIComponent(match)}`, { method: 'DELETE' }),
+  cycles: (accountId: string) => request<{ accountId: string; cycles: Cycle[] }>(`/api/cycles${query({ accountId })}`),
   freshness: () => request<FreshnessView>('/api/freshness'),
   findings: () => request<{ items: FindingItem[] }>('/api/findings'),
   layout: () => request<Layout>('/api/layout'),
