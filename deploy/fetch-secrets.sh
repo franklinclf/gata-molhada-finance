@@ -32,7 +32,12 @@ while IFS= read -r name || [[ -n "$name" ]]; do
     echo "secret $name has a newline; only single-line values are supported" >&2
     exit 1
   fi
-  printf '%s=%s\n' "${name//-/_}" "$value" >> "$tmp"
+  if [[ "$value" == *"'"* ]]; then
+    echo "secret $name has a single quote; it cannot be written to the environment file safely" >&2
+    exit 1
+  fi
+  # Single quotes keep Compose from expanding "$" in the value (password hashes contain it).
+  printf "%s='%s'\n" "${name//-/_}" "$value" >> "$tmp"
 done < "$SECRETS_LIST"
 
 chmod 600 "$tmp"

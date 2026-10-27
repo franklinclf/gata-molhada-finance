@@ -32,7 +32,7 @@ new_env
 printf '# comment\n\nPIERRE-API-KEY\nGMF-SMOKE-TEST\n' > "$GMF_SECRETS_LIST"
 bash "$script"
 check "writes mapped variable names and values" \
-  $'PIERRE_API_KEY=value-of-PIERRE-API-KEY\nGMF_SMOKE_TEST=value-of-GMF-SMOKE-TEST' "$(cat "$GMF_ENV_OUT")"
+  $'PIERRE_API_KEY=\'value-of-PIERRE-API-KEY\'\nGMF_SMOKE_TEST=\'value-of-GMF-SMOKE-TEST\'' "$(cat "$GMF_ENV_OUT")"
 check "output file is readable only by the owner" "-rw-------" "$(ls -l "$GMF_ENV_OUT" | cut -c1-10)"
 
 # 2. A missing secret fails and keeps the previous file untouched.
@@ -54,6 +54,11 @@ new_env
 printf 'MULTILINE-SECRET\n' > "$GMF_SECRETS_LIST"
 if bash "$script" 2> /dev/null; then rc=0; else rc=$?; fi
 check "rejects a multi-line value" "nonzero" "$([[ $rc -ne 0 ]] && echo nonzero || echo zero)"
+
+new_env
+printf 'QUOTE-SECRET\n' > "$GMF_SECRETS_LIST"
+if bash "$script" 2> /dev/null; then rc=0; else rc=$?; fi
+check "rejects a value with a single quote" "nonzero" "$([[ $rc -ne 0 ]] && echo nonzero || echo zero)"
 
 if (( failures > 0 )); then
   echo "$failures check(s) failed"
