@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { AuthService, loadAuthConfig } from './auth/service.ts';
 import { loadConfig } from './config.ts';
 import { createHttpServer } from './http/server.ts';
 import { fetchHttpClient, retryingClient } from './core/http.ts';
@@ -13,7 +14,10 @@ import { loadAdapterEnv } from './sync/config.ts';
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
 const config = loadConfig(process.env);
 const store = openSqliteStore(config.dbPath, migrationsDir);
-const server = createHttpServer({ store, version: config.version });
+const authConfig = loadAuthConfig(process.env);
+if (!authConfig) console.warn('AUTH_PASSWORD_HASH or AUTH_TOTP_SECRET is not set, so login is disabled and the API stays closed');
+const auth = new AuthService(store, authConfig, () => new Date());
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies });
 
 const observerStop = new AbortController();
 if (config.observer) {

@@ -4,6 +4,8 @@ export interface Config {
   version: string;
   /** Run the observer that keeps the data fresh. Off unless OBSERVER is on, 1 or true. */
   observer: boolean;
+  /** Send the session cookie only over HTTPS. Set COOKIE_SECURE=off for local development over HTTP. */
+  secureCookies: boolean;
 }
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
@@ -16,6 +18,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     port,
     dbPath: env.DB_PATH ?? 'data/gmf.sqlite',
     version: env.APP_VERSION ?? 'dev',
+    secureCookies: (env.COOKIE_SECURE ?? '').trim().toLowerCase() !== 'off',
     observer: ['on', '1', 'true'].includes((env.OBSERVER ?? '').trim().toLowerCase()),
   };
 }

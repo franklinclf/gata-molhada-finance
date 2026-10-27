@@ -81,5 +81,15 @@ export interface Store {
   /** Upserts the current findings, keeps their opening time, and marks the ones no longer present as resolved. */
   syncFindings(findings: Finding[], now: string): void;
   listFindings(options?: { includeResolved?: boolean }): StoredFinding[];
+  createSession(tokenHash: string, createdAt: string, expiresAt: string): void;
+  /** True when the session exists and has not expired at `now`. */
+  hasValidSession(tokenHash: string, now: string): boolean;
+  deleteSession(tokenHash: string): void;
+  purgeExpiredSessions(now: string): void;
+  isRecoveryCodeUsed(codeHash: string): boolean;
+  /** Marks a recovery code as used. Returns false when it was already used. */
+  useRecoveryCode(codeHash: string, usedAt: string): boolean;
+  getAuthState(key: string): string | null;
+  setAuthState(key: string, value: string): void;
   close(): void;
 }
