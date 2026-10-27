@@ -87,6 +87,7 @@ function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
       max: (max as { value?: number }).value,
       cycle,
       spendingOnly: params.get('spendingOnly') === 'true',
+      hideOwnTransfers: params.get('hideOwnTransfers') === 'true',
       sort,
       limit: (limit as { value: number }).value,
       offset: (offset as { value: number }).value,
@@ -207,7 +208,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
     }
     case 'categories': {
       if (parts.length === 2) {
-        if (method === 'GET') return { status: 200, body: { items: listCategories(store) } };
+        if (method === 'GET') return { status: 200, body: { items: listCategories(store), rules: [...store.listCategoryRules()].map(([match, category]) => ({ match, category })) } };
         if (method !== 'POST') return methodNotAllowed();
         const input = parseBody(body);
         if (!input) return badRequest('body must be { name }');
@@ -224,6 +225,19 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         return fromMutation(removeCategory(store, name));
       }
       return null;
+    }
+    case 'category-rules': {
+      if (parts.length !== 3 || id === undefined) return null;
+      if (method !== 'DELETE') return methodNotAllowed();
+      let match: string;
+      try {
+        match = decodeURIComponent(id);
+      } catch {
+        return badRequest('bad rule key');
+      }
+      if (!store.listCategoryRules().has(match)) return { status: 404, body: { error: 'not_found' } };
+      store.setCategoryRule(match, null, now.toISOString());
+      return { status: 200, body: { ok: true } };
     }
     default:
       return null;

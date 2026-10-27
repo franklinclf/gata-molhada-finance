@@ -1,8 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ago, brl, brlShort, cumulative, dayMonth, isStale, localDay, MASK, periodRange } from '../../web/src/format.ts';
-import { moveWidget, toggleWidget } from '../../web/src/layout.ts';
-import { defaultLayout } from '../../src/api/layout.ts';
 
 const NOW = new Date('2026-10-27T15:00:00Z');
 
@@ -39,15 +37,4 @@ test('periodRange starts on the first day of the month, counting back', () => {
 
 test('cumulative gives one running total per day, filling days without spending', () => {
   assert.deepEqual(cumulative([{ day: '2026-10-02', amount: 100 }, { day: '2026-10-04', amount: 50 }], '2026-10-01', '2026-10-05'), [0, 100, 100, 150, 150]);
-});
-
-test('layout helpers move and toggle widgets without changing the original', () => {
-  const layout = defaultLayout();
-  const first = layout.widgets[0]!.id;
-  const second = layout.widgets[1]!.id;
-  const moved = moveWidget(layout, first, 1);
-  assert.deepEqual(moved.widgets.slice(0, 2).map((w) => w.id), [second, first]);
-  assert.equal(layout.widgets[0]!.id, first);
-  assert.equal(moveWidget(layout, first, -1), layout);
-  assert.equal(toggleWidget(layout, first).widgets[0]!.hidden, true);
 });

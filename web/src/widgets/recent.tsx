@@ -1,35 +1,27 @@
 import { api } from '../api.ts';
-import { brl, dayMonth, localDay, periodRange } from '../format.ts';
+import { periodRange } from '../format.ts';
+import { rowsFit } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
+import { patchParams } from '../router.ts';
+import { Go, TxRow } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
-const STATE_LABEL: Record<string, string> = { single_source: 'uma fonte', conflict: 'conflito', stale_pending: 'pendente antiga' };
-
-export function RecentWidget({ now, hidden }: WidgetProps) {
+export function RecentWidget({ item, now, hidden, size }: WidgetProps) {
   const range = periodRange('3m', now);
-  const { data, error, loading } = useLoad(() => api.transactions(range.from, range.to, 10), [range.from, range.to], 120_000);
+  const count = Math.min(Math.max(rowsFit(item.h, 2), 3), 25);
+  const { data, error, loading } = useLoad(() => api.transactions(range.from, range.to, count), [range.from, range.to, count], 120_000);
   return (
-    <Widget title="Transações recentes" asOf={data?.oldestDataAt} now={now} loading={loading && !data} error={error}>
+    <Widget title="Transações recentes" to={{ page: 'transactions' }} asOf={data?.oldestDataAt} now={now} loading={loading && !data} error={error}>
       {data && (
-        <ul class="rows tall">
-          {data.items.map((t) => {
-            const account = t.account;
-            return (
-              <li key={t.id}>
-                <div class="grow">
-                  <div class="clip">{t.description}</div>
-                  <div class="muted clip">
-                    {dayMonth(localDay(t.occurredAt))} · {account ? `${account.institution}${account.last4 ? ` •••• ${account.last4}` : ''}` : ''}
-                    {t.status === 'pending' ? ' · pendente' : ''}
-                    {STATE_LABEL[t.state] ? ` · ${STATE_LABEL[t.state]}` : ''}
-                  </div>
-                </div>
-                <strong class={t.amount >= 0 ? 'good-text' : ''}>{brl(t.amount, hidden)}</strong>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          <ul class="rows tall tx-list">
+            {data.items.slice(0, size === 'sm' ? 3 : count).map((t) => (
+              <TxRow key={t.id} t={t} hidden={hidden} onOpen={(id) => patchParams({ tx: id })} />
+            ))}
+          </ul>
+          {size !== 'sm' && <Go page="transactions">Ver todas ({data.total})</Go>}
+        </>
       )}
     </Widget>
   );
