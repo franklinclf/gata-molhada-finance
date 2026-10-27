@@ -10,7 +10,10 @@ import type {
 } from '../core/canonical.ts';
 import { formatBRL } from '../core/money.ts';
 import type { Freshness, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
+import { localDay } from '../core/time.ts';
 import { institutionKey, normalizeName } from './names.ts';
+
+export { localDay };
 
 export interface TransactionSource {
   sourceId: SourceId;
@@ -56,15 +59,9 @@ interface Group {
   records: Record_[];
 }
 
-const BRAZIL_OFFSET_MS = 3 * 3_600_000;
 const FUZZY_WINDOW_MS = 36 * 3_600_000;
 const DAY_MS = 86_400_000;
 const INSTALLMENT_SUFFIX = /\d{1,2}\s*\/\s*\d{1,2}\s*$/;
-
-/** Calendar day in Brazil (UTC-3, no daylight saving), which is how purchases are dated on statements. */
-export function localDay(instant: string): string {
-  return new Date(new Date(instant).getTime() - BRAZIL_OFFSET_MS).toISOString().slice(0, 10);
-}
 
 const descOf = (tx: SourceTransaction) => normalizeName(tx.descriptionRaw ?? tx.description);
 const time = (tx: SourceTransaction) => new Date(tx.occurredAt).getTime();

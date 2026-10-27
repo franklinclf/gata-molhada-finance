@@ -12,6 +12,8 @@ export interface Freshness {
   lastUpdatedAt: string;
   /** When our observer saw that value (ISO 8601 UTC). */
   observedAt: string;
+  /** True when the source reports that the bank refused further reads this month. Omitted otherwise. */
+  quotaExhausted?: boolean;
 }
 
 export interface SourceAccount {

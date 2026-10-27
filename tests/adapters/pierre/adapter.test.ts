@@ -112,3 +112,14 @@ test('skips accounts and transactions of unsupported types and reports them', as
   assert.deepEqual(txs.map((t) => t.externalId), ['p-tx-1']);
   assert.equal(adapter.drainWarnings().length, 2);
 });
+
+test('fetchFreshness reads only the account list and records nothing', async () => {
+  const { http, snapshots, adapter } = build();
+  const freshness = await adapter.fetchFreshness();
+  assert.deepEqual(freshness, [
+    { sourceId: 'pierre', institution: 'Bank A', lastUpdatedAt: '2026-10-26T13:34:07.676Z', observedAt: '2026-10-26T15:00:00.000Z' },
+  ]);
+  assert.equal(http.calls.length, 1);
+  assert.equal(http.callsTo('GET', 'get-accounts').length, 1);
+  assert.deepEqual(snapshots, []);
+});

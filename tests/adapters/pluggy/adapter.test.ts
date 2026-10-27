@@ -160,3 +160,31 @@ test('fetchBills reads only credit card accounts and all pages', async () => {
   assert.deepEqual(bills.map((b) => b.externalId), ['bill-1', 'bill-2']);
   assert.equal(http.callsTo('GET', 'acc-bank-1').filter((c) => c.url.includes('/bills')).length, 0);
 });
+
+test('fetchFreshness reads only the items and records nothing', async () => {
+  const { http, snapshots, adapter } = build();
+  const freshness = await adapter.fetchFreshness();
+  assert.deepEqual(freshness, [
+    { sourceId: 'pluggy', institution: 'Bank A', lastUpdatedAt: '2026-10-26T14:53:55.112Z', observedAt: '2026-10-26T15:00:00.000Z' },
+  ]);
+  assert.equal(http.calls.filter((c) => c.method === 'GET').length, 1);
+  assert.deepEqual(snapshots, []);
+});
+
+test('fetchFreshness flags an item whose bank read limit was reached', async () => {
+  const limited = {
+    ...pluggyItem,
+    status: 'PARTIAL_SUCCESS',
+    statusDetail: { accounts: { isUpdated: false, warnings: [{ code: '423', message: 'Open Finance monthly rate limit reached' }] } },
+  };
+  const { adapter } = build(baseRoutes([{ method: 'GET', match: '/items/item-1', respond: () => ok(limited) }]));
+  const [entry] = await adapter.fetchFreshness();
+  assert.equal(entry?.quotaExhausted, true);
+});
+
+test('a partial success without the 423 warning is not a quota problem', async () => {
+  const other = { ...pluggyItem, status: 'PARTIAL_SUCCESS', statusDetail: { accounts: { warnings: [{ code: '500', message: 'other' }] } } };
+  const { adapter } = build(baseRoutes([{ method: 'GET', match: '/items/item-1', respond: () => ok(other) }]));
+  const [entry] = await adapter.fetchFreshness();
+  assert.equal('quotaExhausted' in (entry ?? {}), false);
+});

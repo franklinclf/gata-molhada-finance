@@ -12,7 +12,10 @@
     "typecheck": "tsc -p tsconfig.json",
     "sync": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/sync/cli.ts",
     "accounts": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/reconcile/cli.ts",
-    "reconcile": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/reconcile/reconcile-cli.ts"
+    "reconcile": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/reconcile/reconcile-cli.ts",
+    "refresh": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/refresh-cli.ts",
+    "watch": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/watch-cli.ts",
+    "quota": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/quota-cli.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

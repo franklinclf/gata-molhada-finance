@@ -14,7 +14,7 @@ function newStore() {
 
 test('applies the real migrations on open', () => {
   const store = newStore();
-  assert.equal(store.schemaVersion(), 4);
+  assert.equal(store.schemaVersion(), 5);
 });
 
 test('saveSnapshot stores the body and latestSnapshot returns the newest one', () => {

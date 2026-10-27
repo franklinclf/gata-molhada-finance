@@ -55,30 +55,37 @@ export class PierreAdapter implements SourceAdapter {
     const credit = extractCardCredit(await this.rawTransactions(since));
 
     const accounts: SourceAccount[] = [];
-    const freshness = new Map<string, Freshness>();
-    const observedAt = this.now().toISOString();
-
     for (const raw of rawAccounts) {
-      const record = asRecord(raw, 'pierre.account');
       try {
-        const account = normalizeAccount(raw, credit.get(optString(record, 'id') ?? ''));
-        accounts.push(account);
+        accounts.push(normalizeAccount(raw, credit.get(optString(asRecord(raw, 'pierre.account'), 'id') ?? '')));
       } catch (error) {
         if (!(error instanceof UnsupportedAccountError)) throw error;
         this.warnings.push(`skipped an account (${error.message})`);
-        continue;
-      }
-      const connector = optString(record, 'connectorName');
-      if (connector !== null && !freshness.has(connector)) {
-        freshness.set(connector, {
-          sourceId: this.id,
-          institution: connector,
-          lastUpdatedAt: reqIsoInstant(record, 'itemLastUpdatedAt', 'pierre.account'),
-          observedAt,
-        });
       }
     }
-    return { accounts, freshness: [...freshness.values()] };
+    return { accounts, freshness: this.freshnessFrom(rawAccounts) };
+  }
+
+  /** One light read of the account list. Manual accounts have no connector and are left out. */
+  async fetchFreshness(): Promise<Freshness[]> {
+    return this.freshnessFrom(dataArray(await this.get('get-accounts', false), 'pierre.accounts'));
+  }
+
+  private freshnessFrom(rawAccounts: unknown[]): Freshness[] {
+    const observedAt = this.now().toISOString();
+    const byConnector = new Map<string, Freshness>();
+    for (const raw of rawAccounts) {
+      const record = asRecord(raw, 'pierre.account');
+      const connector = optString(record, 'connectorName');
+      if (connector === null || byConnector.has(connector)) continue;
+      byConnector.set(connector, {
+        sourceId: this.id,
+        institution: connector,
+        lastUpdatedAt: reqIsoInstant(record, 'itemLastUpdatedAt', 'pierre.account'),
+        observedAt,
+      });
+    }
+    return [...byConnector.values()];
   }
 
   async fetchTransactions(since: Date): Promise<SourceTransaction[]> {
@@ -122,10 +129,10 @@ export class PierreAdapter implements SourceAdapter {
     return { Authorization: `Bearer ${this.config.apiKey}` };
   }
 
-  private async get(path: string): Promise<unknown> {
+  private async get(path: string, record = true): Promise<unknown> {
     const url = `${this.baseUrl}/${path}`;
     const response = await this.http.request('GET', url, { headers: this.headers() });
-    this.sink({ endpoint: path, httpStatus: response.status, body: response.body });
+    if (record) this.sink({ endpoint: path, httpStatus: response.status, body: response.body });
     if (response.status < 200 || response.status >= 300) throw new SourceHttpError(response.status, url);
     return response.body;
   }
