@@ -30,3 +30,18 @@ A ordem e a visibilidade dos widgets ficam no banco (`/api/layout`), então vale
 ## Como o ciclo da fatura é calculado
 
 Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um ciclo: do dia seguinte ao fechamento anterior até o fechamento. Depois do último fechamento começa o ciclo em aberto. Um pagamento vale para a fatura em cujo período ele cai (do dia do fechamento até o dia anterior ao próximo fechamento), e o mesmo pagamento informado duas vezes no mesmo dia conta uma vez. A fatura fica paga quando os pagamentos cobrem o total com tolerância de R$ 1; abaixo disso fica paga em parte, a pagar ou vencida. Faturas anteriores à primeira transação que temos ficam "sem dados", porque não dá para ver os pagamentos. Para o ciclo em aberto, o total é o saldo que o emissor informa menos as faturas fechadas ainda não pagas, o que pode incluir parcelas futuras; por isso a tela mostra também o que já foi lançado.
+
+## Conferência entre fontes
+
+- Uma fonte não ter uma transação é normal e não gera aviso. A transação mostra um selo "só pierre" ou "só pluggy", e os totais a incluem.
+- Um relato de "lançada" de qualquer fonte vence o de "pendente". Pendente que só uma fonte vê e que tem mais de 7 dias fica fora dos totais (também quando existe uma gêmea lançada com o mesmo valor a até 5 dias). Pendente que as duas fontes veem vale, porque o banco diz o mesmo.
+- Dados anteriores a 2026-01-01 são apagados a cada reconciliação (`DEFAULT_DATA_START` em `src/reconcile/run.ts`).
+- Em "Fontes e conferência" aparecem só os pares que parecem a mesma transação em fontes diferentes (mesmo valor, até 5 dias de diferença). "É a mesma" junta os dois; "Não é" descarta a sugestão para sempre.
+- No painel de uma transação: "Juntar com outra transação" (lista as candidatas da outra fonte na mesma conta), "Separar o que juntei" e "Ignorar (tirar dos totais)". As escolhas ficam gravadas por registro da fonte e sobrevivem a cada nova reconciliação.
+
+## Interação
+
+- O card inteiro de um widget abre a sua tela; controles e links dentro dele mantêm a própria ação.
+- Barras são clicáveis: na tela de Cartões escolhem o ciclo da fatura, em Gastos e Fluxo escolhem o mês. Fatias do anel de gastos abrem a categoria. Os pontos do fluxo de caixa escolhem o dia.
+- Passar o mouse mostra o valor exato (barras, anel, linha de gastos, pontos do fluxo) e o texto completo de linhas cortadas.
+- Os widgets mostram a lista inteira com rolagem interna em vez de cortar linhas pelo tamanho; o tamanho define só que blocos aparecem.

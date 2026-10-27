@@ -1,11 +1,11 @@
 import type { TransactionDetail } from '../../src/api/detail.ts';
 import type { Layout, LayoutItem, WidgetId } from '../../src/api/layout.ts';
-import type { CategoryRow } from '../../src/api/mutations.ts';
+import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
-import type { BalancesView, CardsView, CashFlowView, FreshnessView, InstallmentsView, SpendingView } from '../../src/api/views.ts';
+import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, InstallmentsView, SpendingView } from '../../src/api/views.ts';
 
-export type { BalancesView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface AccountItem {
   id: string;
@@ -31,6 +31,7 @@ export interface FindingItem {
   severity: 'info' | 'warning';
   accountId: string;
   transactionId: string;
+  details: { otherTransactionId?: string; sources?: string[]; amount?: number };
   summary: string;
   openedAt: string;
 }
@@ -76,6 +77,7 @@ export const api = {
   cards: (cycle = 'open') => request<CardsView>(`/api/cards${query({ cycle })}`),
   cashflow: (from: string, to: string) => request<CashFlowView>(`/api/cashflow${query({ from, to })}`),
   spending: (from: string, to: string, by: 'category' | 'merchant') => request<SpendingView>(`/api/spending${query({ from, to, by })}`),
+  bills: () => request<BillsView>('/api/cards/bills'),
   installments: () => request<InstallmentsView>('/api/installments'),
   transactions: (from: string, to: string, limit: number) => request<ExplorerResult>(`/api/transactions${query({ from, to, limit })}`),
   /** Explorer with any filters, given as URL parameters. */
@@ -83,6 +85,13 @@ export const api = {
   detail: (id: string) => request<TransactionDetail>(`/api/transactions/${encodeURIComponent(id)}`),
   setCategory: (id: string, category: string | null, applyToSimilar: boolean) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/category`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category, applyToSimilar }) }),
+  candidates: (id: string) => request<{ items: Candidate[] }>(`/api/transactions/${encodeURIComponent(id)}/candidates`),
+  join: (id: string, otherId: string) =>
+    request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/merge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherId }) }),
+  separate: (id: string) => request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/merge`, { method: 'DELETE' }),
+  setIgnored: (id: string, ignored: boolean) =>
+    request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/ignore`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ignored }) }),
+  dismiss: (findingId: string) => request<{ ok: true }>(`/api/findings/${encodeURIComponent(findingId)}/dismiss`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
   setHidden: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),

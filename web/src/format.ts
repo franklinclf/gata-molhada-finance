@@ -87,3 +87,27 @@ export function monthName(key: string): string {
 export function daysBefore(day: string, n: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
 }
+
+/** First and last local day of a month (YYYY-MM); the last day is capped at `today` for the current month. */
+export function monthBounds(key: string, today: string): { from: string; to: string } {
+  const [y, m] = key.split('-').map(Number) as [number, number];
+  const last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  return { from: `${key}-01`, to: last > today ? today : last };
+}
+
+/** Totals of daily amounts per month (YYYY-MM), oldest first. */
+export function sumByMonth(daily: Array<{ day: string; amount: number }>): Array<{ month: string; amount: number }> {
+  const map = new Map<string, number>();
+  for (const d of daily) map.set(d.day.slice(0, 7), (map.get(d.day.slice(0, 7)) ?? 0) + d.amount);
+  return [...map].sort(([a], [b]) => a.localeCompare(b)).map(([month, amount]) => ({ month, amount }));
+}
+
+/** The last `count` months as YYYY-MM, ending with the month of `today`. */
+export function lastMonths(today: string, count: number): string[] {
+  const [y, m] = today.split('-').map(Number) as [number, number];
+  const base = y * 12 + (m - 1);
+  return Array.from({ length: count }, (_, i) => {
+    const index = base - (count - 1 - i);
+    return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
+  });
+}

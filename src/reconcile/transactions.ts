@@ -151,7 +151,7 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
   };
 
   const addFinding = (kind: FindingKind, severity: FindingSeverity, account: CanonicalAccount, transactionId: string, summary: string, details: Record<string, unknown>) => {
-    findings.push({ id: `fd_${hash(`${kind}|${transactionId}`)}`, kind, severity, accountId: account.id, transactionId, summary, details });
+    findings.push({ id: `fd_${hash(`${kind}|${transactionId}|${String(details.otherTransactionId ?? '')}`)}`, kind, severity, accountId: account.id, transactionId, summary, details });
   };
 
   for (const account of [...input.accounts].sort((a, b) => a.id.localeCompare(b.id))) {
@@ -235,10 +235,15 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
 
     // A pending entry whose posted twin is already there (same amount, a few days apart) is the authorization that
     // settled, seen separately because the sources never joined them. It is not a second charge.
+    // Each posted twin settles at most one pending entry, and only one that another source reported.
+    const settled = new Set<string>();
     for (const t of mine) {
       if (t.status !== 'pending' || t.sourceIds.length > 1 || t.state === 'ignored' || t.state === 'stale_pending') continue;
-      const twin = mine.find((o) => o !== t && o.status === 'posted' && o.amount === t.amount && Math.abs(new Date(o.occurredAt).getTime() - new Date(t.occurredAt).getTime()) <= SUPERSEDED_WINDOW_DAYS * DAY_MS);
+      const twin = mine.find(
+        (o) => o !== t && o.status === 'posted' && o.state !== 'ignored' && !settled.has(o.id) && o.amount === t.amount && !o.sourceIds.includes(t.sourceIds[0] ?? '') && Math.abs(new Date(o.occurredAt).getTime() - new Date(t.occurredAt).getTime()) <= SUPERSEDED_WINDOW_DAYS * DAY_MS,
+      );
       if (twin) {
+        settled.add(twin.id);
         t.state = 'stale_pending';
         t.excluded = true;
       }

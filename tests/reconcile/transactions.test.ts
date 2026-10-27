@@ -214,3 +214,14 @@ test('canonical ids are stable and do not depend on input order', () => {
 });
 
 
+
+test('one posted twin settles only one pending entry, and an ignored twin settles none', () => {
+  const pending = (id: string) => tx({ externalId: id, status: 'pending', amount: 1000, occurredAt: '2026-10-24T01:00:00.000Z', descriptionRaw: `P ${id}` });
+  const posted = tx({ externalId: 'z', status: 'posted', amount: 1000, occurredAt: '2026-10-22T11:00:00.000Z', descriptionRaw: 'POSTED' });
+  const two = run([pending('a'), pending('b')], [posted]);
+  assert.equal(two.transactions.filter((t) => t.state === 'stale_pending').length, 1);
+  const ignored = run([pending('a')], [posted], { manual: { pairs: [], ignored: [{ sourceId: 'pluggy', externalId: 'z' }] } });
+  assert.equal(ignored.transactions.filter((t) => t.state === 'stale_pending').length, 0);
+  const sameSource = run([pending('a'), { ...posted, externalId: 'y' }], []);
+  assert.equal(sameSource.transactions.filter((t) => t.state === 'stale_pending').length, 0);
+});

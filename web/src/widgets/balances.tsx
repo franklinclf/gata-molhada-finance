@@ -1,7 +1,6 @@
 import { api } from '../api.ts';
 import { PALETTE, StackBar } from '../charts.tsx';
 import { brl, percent } from '../format.ts';
-import { rowsFit } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { Go } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
@@ -9,7 +8,7 @@ import type { WidgetProps } from './index.ts';
 
 export function BalancesWidget({ item, now, hidden, size }: WidgetProps) {
   const { data, error, loading } = useLoad(() => api.balances(), [], 120_000);
-  const limit = Math.max(rowsFit(item.h, 4), 2);
+  const limit = 60;
   return (
     <Widget title="Saldo em contas" to={{ page: 'accounts' }} asOf={data?.oldestDataAt} now={now} loading={loading && !data} error={error}>
       {data && (

@@ -5,6 +5,79 @@ import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { Loading, STATE_LABEL, StatusBadge } from './ui.tsx';
 
+function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onChange: (closes: boolean) => void }) {
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const candidates = useLoad(() => (picking ? api.candidates(id) : Promise.resolve(null)), [picking, id]);
+  // Joining or separating rebuilds the transaction under a new id, so the panel closes instead of showing a stale one.
+  const run = async (work: () => Promise<unknown>, closes = false) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+      setPicking(false);
+      onChange(closes);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível concluir.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const ignored = d.transaction.state === 'ignored';
+  return (
+    <>
+      <h3>Mapeamento entre as fontes</h3>
+      <div class="muted">
+        {d.transaction.sourceIds.length > 1 ? `Vista no ${d.transaction.sourceIds.join(' e no ')}.` : `Só o ${d.transaction.sourceIds[0]} tem esta transação. Isso é normal e não afeta os totais.`}
+      </div>
+      <div class="links">
+        {d.joinedByHand && (
+          <button class="link" disabled={busy} onClick={() => void run(() => api.separate(id), true)}>
+            Separar o que juntei
+          </button>
+        )}
+        {d.transaction.sourceIds.length === 1 && !ignored && (
+          <button class="link" disabled={busy} onClick={() => setPicking(!picking)}>
+            {picking ? 'Cancelar' : 'Juntar com outra transação'}
+          </button>
+        )}
+        <button class="link" disabled={busy} onClick={() => void run(() => api.setIgnored(id, !ignored))}>
+          {ignored ? 'Voltar a considerar nos totais' : 'Ignorar (tirar dos totais)'}
+        </button>
+      </div>
+      {picking && (
+        <div class="candidates">
+          {!candidates.data ? (
+            <Loading error={candidates.error} />
+          ) : candidates.data.items.length === 0 ? (
+            <div class="muted">Nenhuma transação de outra fonte, nesta conta, em até 10 dias.</div>
+          ) : (
+            <ul class="rows">
+              {candidates.data.items.map((c) => (
+                <li key={c.id}>
+                  <div class="grow">
+                    <div class="clip">{c.description}</div>
+                    <div class="muted">
+                      {dayMonth(localDay(c.occurredAt))} · {c.sourceIds.join(', ')} · {c.daysApart === 0 ? 'mesmo dia' : `${c.daysApart} dia(s) de diferença`}
+                      {c.amount === d.transaction.amount ? ' · mesmo valor' : ''}
+                    </div>
+                  </div>
+                  <strong>{brl(c.amount, hidden)}</strong>
+                  <button class="primary small" disabled={busy} onClick={() => void run(() => api.join(id, c.id), true)}>
+                    Juntar
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {error && <div class="error">{error}</div>}
+    </>
+  );
+}
+
 const ORIGIN: Record<string, string> = { source: 'definida pela fonte', override: 'escolhida por você', rule: 'regra para esta descrição' };
 
 /** Side panel with everything known about one transaction, and the controls to recategorize it. */
@@ -162,6 +235,8 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
             >
               Ver todas deste estabelecimento
             </button>
+
+            <Mapping id={id} hidden={hidden} d={d} onChange={(closes) => (closes ? patchParams({ tx: null }) : detail.reload())} />
 
             <h3>O que cada fonte reporta</h3>
             {d.sources.map((s) => (

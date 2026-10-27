@@ -1,7 +1,6 @@
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { ago, isStale } from '../format.ts';
-import { rowsFit } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { Go } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
@@ -9,7 +8,7 @@ import type { WidgetProps } from './index.ts';
 
 export function FreshnessWidget({ item, now, size }: WidgetProps) {
   const { data, error, loading } = useLoad(() => api.freshness(), [], 60_000);
-  const limit = Math.max(rowsFit(item.h, 3), 2);
+  const limit = 60;
   const stale = data?.sources.filter((s) => isStale(s.lastUpdatedAt, now)).length ?? 0;
   return (
     <Widget title="Atualização das fontes" to={{ page: 'status' }} now={now} loading={loading && !data} error={error}>

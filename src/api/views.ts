@@ -206,6 +206,47 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
   };
 }
 
+// ---------- card bills over time ----------
+
+export interface BillBar {
+  /** Cycle to select on the cards screen: `open` or a due month (YYYY-MM). */
+  key: string;
+  open: boolean;
+  total: Cents;
+  paid: Cents;
+  outstanding: Cents;
+  status: 'open' | 'paid' | 'partial' | 'unpaid' | 'overdue';
+}
+
+export interface BillsView extends Stamped {
+  bars: BillBar[];
+}
+
+/** One bar per due month with the bills of all visible cards added, plus the open cycle. This is what the bill chart draws. */
+export function cardBills(store: Store, now: Date, opts: ViewOptions = {}, months = 12): BillsView {
+  const accounts = visibleAccounts(store, opts);
+  const cardAccounts = accounts.filter((a) => a.kind === 'credit_card');
+  const transactions = effectiveTransactions(store, opts, accounts);
+  const today = localDay(now.toISOString());
+  const byKey = new Map<string, BillBar>();
+  for (const account of cardAccounts) {
+    for (const c of cyclesFor(store, account, transactions, today)) {
+      if (c.status === 'open' || c.status === 'unknown' || c.billTotal === null) continue;
+      const bar = byKey.get(c.key) ?? { key: c.key, open: false, total: 0, paid: 0, outstanding: 0, status: 'paid' as BillBar['status'] };
+      bar.total += c.billTotal;
+      bar.paid += c.paid;
+      bar.outstanding += c.outstanding;
+      if (c.status === 'overdue') bar.status = 'overdue';
+      else if (c.outstanding > 0 && bar.status !== 'overdue') bar.status = c.paid > 0 ? 'partial' : 'unpaid';
+      byKey.set(c.key, bar);
+    }
+  }
+  const closed = [...byKey.values()].filter((b) => b.total > 0).sort((a, b) => a.key.localeCompare(b.key)).slice(-months);
+  const open = cards(store, now, opts, 'open');
+  const bars: BillBar[] = [...closed, { key: 'open', open: true, total: open.totals.cycleTotal, paid: 0, outstanding: 0, status: 'open' }];
+  return { ...stamp(cardAccounts, now), bars };
+}
+
 // ---------- cash flow ----------
 
 export interface CashFlowView extends Stamped, DateRange {

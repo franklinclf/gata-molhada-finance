@@ -1,6 +1,5 @@
 import { api } from '../api.ts';
 import { periodRange } from '../format.ts';
-import { rowsFit } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
 import { Go, TxRow } from '../ui.tsx';
@@ -9,14 +8,14 @@ import type { WidgetProps } from './index.ts';
 
 export function RecentWidget({ item, now, hidden, size }: WidgetProps) {
   const range = periodRange('3m', now);
-  const count = Math.min(Math.max(rowsFit(item.h, 2), 3), 25);
+  const count = 40;
   const { data, error, loading } = useLoad(() => api.transactions(range.from, range.to, count), [range.from, range.to, count], 120_000);
   return (
     <Widget title="Transações recentes" to={{ page: 'transactions' }} asOf={data?.oldestDataAt} now={now} loading={loading && !data} error={error}>
       {data && (
         <>
           <ul class="rows tall tx-list">
-            {data.items.slice(0, size === 'sm' ? 3 : count).map((t) => (
+            {data.items.slice(0, size === 'sm' ? 4 : count).map((t) => (
               <TxRow key={t.id} t={t} hidden={hidden} onOpen={(id) => patchParams({ tx: id })} />
             ))}
           </ul>

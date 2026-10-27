@@ -25,7 +25,7 @@ const TABS: Array<[string, string, string]> = [
 const MORE: Array<[string, string]> = [
   ['accounts', 'Contas'],
   ['cashflow', 'Fluxo de caixa'],
-  ['status', 'Fontes e divergências'],
+  ['status', 'Fontes e conferência'],
   ['settings', 'Ajustes'],
 ];
 

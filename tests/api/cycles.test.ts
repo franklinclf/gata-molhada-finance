@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { addDays, addMonthsToDay, cyclesFor, isCardPayment } from '../../src/api/cycles.ts';
 import { effectiveTransactions } from '../../src/api/scope.ts';
-import { cards } from '../../src/api/views.ts';
+import { cardBills, cards } from '../../src/api/views.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url));
@@ -151,4 +151,12 @@ test('hidden cards drop out of the totals and the limit', () => {
   assert.equal(v.cards.length, 0);
   assert.deepEqual([v.totals.cycleTotal, v.totals.creditLimit, v.totals.used], [0, 0, 0]);
   assert.equal(cards(store, NOW, { includeHidden: true }).cards.length, 1);
+});
+
+test('bill bars: one per due month with the cards added, then the open cycle', () => {
+  const { store } = setup();
+  const v = cardBills(store, NOW);
+  assert.deepEqual(v.bars.map((b) => [b.key, b.status, b.total, b.outstanding]), [['2026-09', 'paid', 80000, 0], ['2026-10', 'paid', 68000, 0], ['open', 'open', 28090, 0]]);
+  const unpaid = setup({ payments: false });
+  assert.deepEqual(cardBills(unpaid.store, NOW).bars.map((b) => [b.key, b.status]), [['2026-09', 'overdue'], ['2026-10', 'overdue'], ['open', 'open']]);
 });

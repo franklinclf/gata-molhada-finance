@@ -1,6 +1,6 @@
 import { api } from '../api.ts';
 import { Bars, DayDots } from '../charts.tsx';
-import { brl, dayMonth, localDay } from '../format.ts';
+import { brl, lastMonths, localDay, monthBounds, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { PeriodPicker, PRESETS } from '../period.tsx';
 import { patchParams, type Route } from '../router.ts';
@@ -21,14 +21,17 @@ export function CashflowPage({ route, now, hidden }: { route: Route; now: Date; 
   if (tab !== 'all') query.set('kind', tab === 'in' ? 'income' : 'expense');
   const list = useLoad(() => (ids.length > 0 ? api.explore(query) : Promise.resolve(null)), [query.toString()]);
 
-  const weekly = new Map<string, { inflow: number; outflow: number }>();
-  for (const d of flow.data?.days ?? []) {
-    const week = d.day.slice(0, 7);
-    const row = weekly.get(week) ?? { inflow: 0, outflow: 0 };
-    row.inflow += d.inflow;
-    row.outflow += d.outflow;
-    weekly.set(week, row);
+  const months = lastMonths(today, 12);
+  const yearAgo = useLoad(() => api.cashflow(`${months[0]}-01`, today), [today]);
+  const perMonth = new Map<string, { inflow: number; outflow: number }>(months.map((m) => [m, { inflow: 0, outflow: 0 }]));
+  for (const d of yearAgo.data?.days ?? []) {
+    const row = perMonth.get(d.day.slice(0, 7));
+    if (row) {
+      row.inflow += d.inflow;
+      row.outflow += d.outflow;
+    }
   }
+  const selectedMonth = from.slice(0, 7) === to.slice(0, 7) && from.endsWith('-01') && to === monthBounds(from.slice(0, 7), today).to ? from.slice(0, 7) : null;
 
   return (
     <div class="page-body">
@@ -53,13 +56,18 @@ export function CashflowPage({ route, now, hidden }: { route: Route; now: Date; 
             </div>
           </div>
           <div class="panel">
-            <DayDots days={flow.data.days} from={flow.data.from} to={flow.data.to} />
-            {weekly.size > 1 && (
-              <>
-                <h3>Por mês</h3>
-                <Bars hidden={hidden} data={[...weekly].flatMap(([m, v]) => [{ label: `${m.slice(5)}↑`, value: v.inflow, color: 'var(--good)' }, { label: `${m.slice(5)}↓`, value: v.outflow, color: 'var(--bad)' }])} />
-              </>
-            )}
+            <DayDots days={flow.data.days} from={flow.data.from} to={flow.data.to} hidden={hidden} onSelect={(day) => patchParams({ from: day, to: day })} />
+            <h3>Últimos 12 meses (clique em um mês)</h3>
+            <Bars
+              hidden={hidden}
+              height={150}
+              selected={selectedMonth}
+              onSelect={(month) => patchParams({ ...Object.fromEntries(Object.entries(monthBounds(month, today))) })}
+              data={months.flatMap((m) => [
+                { key: `${m}:in`, group: m, label: monthName(m).slice(0, 3), value: perMonth.get(m)!.inflow, color: 'var(--good)', tip: `${monthName(m)}\nEntrou ${hidden ? '••••' : brl(perMonth.get(m)!.inflow)}` },
+                { key: `${m}:out`, group: m, label: '', value: perMonth.get(m)!.outflow, color: 'var(--bad)', tip: `${monthName(m)}\nSaiu ${hidden ? '••••' : brl(perMonth.get(m)!.outflow)}` },
+              ])}
+            />
             <div class="note">Considera só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga. Transferências entre suas contas ficam de fora.</div>
           </div>
           <div class="tabs">
@@ -82,7 +90,6 @@ export function CashflowPage({ route, now, hidden }: { route: Route; now: Date; 
                 <Go page="transactions" params={{ from, to, hideOwnTransfers: 'true', ...(tab !== 'all' ? { kind: tab === 'in' ? 'income' : 'expense' } : {}) }}>
                   Ver todas ({list.data.total}) em Transações
                 </Go>
-                <div class="muted">Primeiro dia do período: {dayMonth(from)}</div>
               </>
             )}
           </div>

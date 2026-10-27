@@ -129,6 +129,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (parts.length !== 2) return null;
       return method === 'GET' ? { status: 200, body: views.balances(store, now, opts) } : methodNotAllowed();
     case 'cards': {
+      if (parts.length === 3 && id === 'bills') return method === 'GET' ? { status: 200, body: views.cardBills(store, now, opts) } : methodNotAllowed();
       if (parts.length !== 2) return null;
       if (method !== 'GET') return methodNotAllowed();
       const cycle = params.get('cycle') ?? 'open';

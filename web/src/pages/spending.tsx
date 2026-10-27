@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
-import { LineChart, PALETTE, Ring } from '../charts.tsx';
-import { brl, cumulative, percent } from '../format.ts';
+import { Bars, LineChart, PALETTE, Ring } from '../charts.tsx';
+import { brl, cumulative, lastMonths, monthBounds, monthName, percent, sumByMonth } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { PeriodPicker, PRESETS } from '../period.tsx';
 import { patchParams, type Route } from '../router.ts';
@@ -28,6 +28,12 @@ function Members({ name, by, from, to, hidden }: { name: string; by: 'category' 
   );
 }
 
+function daysBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`); t += 86_400_000) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+}
+
 export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; hidden: boolean }) {
   const today = localDay(now.toISOString());
   const month = PRESETS.find((p) => p.id === 'month')!.range(today);
@@ -36,6 +42,11 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
   const by = route.params.get('by') === 'merchant' ? 'merchant' : 'category';
   const [open, setOpen] = useState<string | null>(null);
   const { data, error, loading } = useLoad(() => api.spending(from, to, by), [from, to, by]);
+  const months = lastMonths(today, 12);
+  const year = useLoad(() => api.spending(`${months[0]}-01`, today, 'category'), [today]);
+  const perMonth = new Map(months.map((m) => [m, 0]));
+  for (const row of sumByMonth(year.data?.daily ?? [])) perMonth.set(row.month, row.amount);
+  const selectedMonth = from.slice(0, 7) === to.slice(0, 7) && from.endsWith('-01') && to === monthBounds(from.slice(0, 7), today).to ? from.slice(0, 7) : null;
 
   return (
     <div class="page-body">
@@ -54,10 +65,18 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
             <div class="muted">
               {data.groups.length} {by === 'category' ? 'categorias' : 'estabelecimentos'} · compras no cartão entram na data da compra
             </div>
-            <LineChart points={cumulative(data.daily, data.from, data.to)} hidden={hidden} />
+            <LineChart points={cumulative(data.daily, data.from, data.to)} hidden={hidden} days={daysBetween(data.from, data.to)} />
+            <h3>Últimos 12 meses (clique em um mês)</h3>
+            <Bars
+              hidden={hidden}
+              height={140}
+              selected={selectedMonth}
+              onSelect={(m) => patchParams(monthBounds(m, today))}
+              data={months.map((m) => ({ key: m, label: monthName(m).slice(0, 3), value: perMonth.get(m) ?? 0, tip: `${monthName(m)}: ${hidden ? '••••' : brl(perMonth.get(m) ?? 0)}` }))}
+            />
           </div>
           <div class="panel split top">
-            <Ring size={170} segments={data.groups.slice(0, 8).map((g, i) => ({ value: g.amount, color: PALETTE[i % PALETTE.length]! }))} />
+            <Ring size={170} selected={open} onSelect={(k) => setOpen(open === k ? null : k)} segments={data.groups.slice(0, 8).map((g, i) => ({ key: g.name, value: g.amount, color: PALETTE[i % PALETTE.length]!, tip: `${g.name}\n${hidden ? '••••' : brl(g.amount)} · ${percent(g.share)}` }))} />
             <ul class="rows grow big-rows">
               {data.groups.map((g, i) => (
                 <li key={g.name} class="expandable">
