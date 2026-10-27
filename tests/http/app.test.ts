@@ -85,3 +85,13 @@ test('secure cookies can be turned off for local development', () => {
   const res = handle(post('/api/auth/login', { password: PASSWORD, code: code() }), { ...deps, secureCookies: false });
   assert.doesNotMatch(res.headers['Set-Cookie'] ?? '', /Secure/);
 });
+
+test('an authenticated session reaches the data endpoints with their query string', () => {
+  const { deps, code } = setup();
+  const cookie = cookieOf(handle(post('/api/auth/login', { password: PASSWORD, code: code() }), deps).headers['Set-Cookie']);
+  const ok = handle({ ...get('/api/balances', { cookie }), search: '' }, deps);
+  assert.equal(ok.status, 200);
+  assert.equal(JSON.parse(ok.body ?? '').total, 0);
+  assert.equal(handle({ ...get('/api/cashflow', { cookie }), search: 'from=bad' }, deps).status, 400);
+  assert.equal(handle(get('/api/balances'), deps).status, 401);
+});

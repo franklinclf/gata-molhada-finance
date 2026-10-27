@@ -33,7 +33,7 @@ export function createHttpServer(deps: Partial<AppDeps> & Pick<AppDeps, 'store' 
         req.destroy();
         return;
       }
-      const result = handle({ method: req.method ?? 'GET', pathname: url.pathname, headers: req.headers as Record<string, string | undefined>, body }, full);
+      const result = handle({ method: req.method ?? 'GET', pathname: url.pathname, search: url.search.slice(1), headers: req.headers as Record<string, string | undefined>, body }, full);
       res.writeHead(result.status, result.headers);
       res.end(result.body ?? undefined);
     })().catch(() => {

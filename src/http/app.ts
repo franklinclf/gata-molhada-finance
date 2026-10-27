@@ -1,9 +1,12 @@
 import type { AuthService } from '../auth/service.ts';
+import { apiRoute } from '../api/routes.ts';
 import { route, type RouteResult, type RouterDeps } from './router.ts';
 
 export interface AppRequest {
   method: string;
   pathname: string;
+  /** Query string without the leading question mark. */
+  search?: string;
   headers: Record<string, string | undefined>;
   body: string;
 }
@@ -78,7 +81,8 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
 
   if (pathname.startsWith('/api/')) {
     if (!authenticated) return json(401, { error: 'unauthorized' });
-    return json(404, { error: 'not_found' });
+    const result = apiRoute(method, pathname, new URLSearchParams(request.search ?? ''), deps.store, deps.now());
+    return result ? json(result.status, result.body) : json(404, { error: 'not_found' });
   }
   return json(404, { error: 'not_found' });
 }
