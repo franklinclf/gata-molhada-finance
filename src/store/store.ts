@@ -37,12 +37,32 @@ export interface StoredFinding extends Finding {
   resolvedAt: string | null;
 }
 
+export type RefreshStatus = 'requested' | 'completed' | 'timeout' | 'failed';
+
+export interface RefreshLogEntry {
+  id: number;
+  sourceId: SourceId;
+  requestedAt: string;
+  finishedAt: string | null;
+  status: RefreshStatus;
+  detail: Record<string, unknown>;
+}
+
 export interface Store {
   schemaVersion(): number;
   registerSource(source: SourceRegistration, now: string): void;
   saveSnapshot(snapshot: NewSnapshot): number;
   latestSnapshot(sourceId: SourceId, endpoint: string): Snapshot | null;
-  upsertFreshness(freshness: Freshness): void;
+  /**
+   * Saves what a source reports for an institution. `changed` is true when the last-synced time differs from
+   * the one saved before (or none was saved). Each distinct time is also counted as one bank read for the month.
+   */
+  upsertFreshness(freshness: Freshness): { changed: boolean; previous: string | null };
+  /** Bank reads seen in a month (YYYY-MM), per institution key, summed over all sources. */
+  quotaUsage(month: string): Array<{ institutionKey: string; events: number }>;
+  startRefresh(sourceId: SourceId, requestedAt: string): number;
+  finishRefresh(id: number, finishedAt: string, status: RefreshStatus, detail: Record<string, unknown>): void;
+  lastRefresh(sourceId: SourceId): RefreshLogEntry | null;
   listFreshness(): Freshness[];
   /** Inserts new records and refreshes existing ones; first_seen_at is kept, last_seen_at becomes seenAt. */
   upsertSourceAccounts(sourceId: SourceId, accounts: SourceAccount[], seenAt: string): void;

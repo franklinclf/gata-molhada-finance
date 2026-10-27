@@ -4,6 +4,8 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
+import { institutionKey } from '../core/names.ts';
+import { localMonth } from '../core/time.ts';
 import { currentVersion, migrate } from './migrations.ts';
 import type {
   NewSnapshot,
@@ -12,6 +14,8 @@ import type {
   Store,
   StoredSourceAccount,
   StoredSourceBill,
+  RefreshLogEntry,
+  RefreshStatus,
   StoredFinding,
   StoredSourceTransaction,
 } from './store.ts';
@@ -31,6 +35,16 @@ interface FreshnessRow {
   institution: string;
   last_updated_at: string;
   observed_at: string;
+  quota_exhausted: number;
+}
+
+interface RefreshRow {
+  id: number;
+  source_id: string;
+  requested_at: string;
+  finished_at: string | null;
+  status: string;
+  detail: string;
 }
 
 interface SourceAccountRow {
@@ -194,12 +208,47 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       };
     },
 
-    upsertFreshness(f: Freshness): void {
-      db.prepare(
-        `INSERT INTO freshness (source_id, institution, last_updated_at, observed_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT (source_id, institution) DO UPDATE SET
-           last_updated_at = excluded.last_updated_at, observed_at = excluded.observed_at`,
-      ).run(f.sourceId, f.institution, f.lastUpdatedAt, f.observedAt);
+    upsertFreshness(f: Freshness): { changed: boolean; previous: string | null } {
+      const row = db.prepare('SELECT last_updated_at FROM freshness WHERE source_id = ? AND institution = ?').get(f.sourceId, f.institution) as { last_updated_at: string } | undefined;
+      const previous = row?.last_updated_at ?? null;
+      inTransaction(() => {
+        db.prepare(
+          `INSERT INTO freshness (source_id, institution, last_updated_at, observed_at, quota_exhausted) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (source_id, institution) DO UPDATE SET
+             last_updated_at = excluded.last_updated_at, observed_at = excluded.observed_at, quota_exhausted = excluded.quota_exhausted`,
+        ).run(f.sourceId, f.institution, f.lastUpdatedAt, f.observedAt, f.quotaExhausted ? 1 : 0);
+        db.prepare(
+          `INSERT OR IGNORE INTO quota_events (source_id, institution_key, last_updated_at, observed_at, month) VALUES (?, ?, ?, ?, ?)`,
+        ).run(f.sourceId, institutionKey(f.institution), f.lastUpdatedAt, f.observedAt, localMonth(f.lastUpdatedAt));
+      });
+      return { changed: previous !== f.lastUpdatedAt, previous };
+    },
+
+    quotaUsage(month: string): Array<{ institutionKey: string; events: number }> {
+      const rows = db.prepare('SELECT institution_key, COUNT(*) AS events FROM quota_events WHERE month = ? GROUP BY institution_key ORDER BY institution_key').all(month) as unknown as Array<{ institution_key: string; events: number }>;
+      return rows.map((r) => ({ institutionKey: r.institution_key, events: r.events }));
+    },
+
+    startRefresh(sourceId: SourceId, requestedAt: string): number {
+      const result = db.prepare("INSERT INTO refresh_log (source_id, requested_at, status) VALUES (?, ?, 'requested')").run(sourceId, requestedAt);
+      return Number(result.lastInsertRowid);
+    },
+
+    finishRefresh(id: number, finishedAt: string, status: RefreshStatus, detail: Record<string, unknown>): void {
+      db.prepare('UPDATE refresh_log SET finished_at = ?, status = ?, detail = ? WHERE id = ?').run(finishedAt, status, JSON.stringify(detail), id);
+    },
+
+    lastRefresh(sourceId: SourceId): RefreshLogEntry | null {
+      const r = db.prepare('SELECT * FROM refresh_log WHERE source_id = ? ORDER BY id DESC LIMIT 1').get(sourceId) as RefreshRow | undefined;
+      if (!r) return null;
+      return {
+        id: r.id,
+        sourceId: r.source_id,
+        requestedAt: r.requested_at,
+        finishedAt: r.finished_at,
+        status: r.status as RefreshStatus,
+        detail: JSON.parse(r.detail) as Record<string, unknown>,
+      };
     },
 
     listFreshness(): Freshness[] {
@@ -209,6 +258,7 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         institution: r.institution,
         lastUpdatedAt: r.last_updated_at,
         observedAt: r.observed_at,
+        ...(r.quota_exhausted === 1 ? { quotaExhausted: true } : {}),
       }));
     },
 
