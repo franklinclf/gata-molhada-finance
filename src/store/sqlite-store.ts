@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { AccountRef, CanonicalAccount, LimitGroup } from '../core/canonical.ts';
+import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import { currentVersion, migrate } from './migrations.ts';
 import type {
@@ -12,6 +12,7 @@ import type {
   Store,
   StoredSourceAccount,
   StoredSourceBill,
+  StoredFinding,
   StoredSourceTransaction,
 } from './store.ts';
 
@@ -104,6 +105,34 @@ interface LimitGroupRow {
   id: string;
   institution: string;
   credit_limit: number;
+}
+
+interface TransactionRow {
+  id: string;
+  account_id: string;
+  occurred_at: string;
+  amount: number;
+  description: string;
+  description_raw: string | null;
+  status: string;
+  installment_number: number | null;
+  installment_total: number | null;
+  category: string | null;
+  state: string;
+  excluded: number;
+}
+
+interface FindingRow {
+  id: string;
+  kind: string;
+  severity: string;
+  account_id: string | null;
+  transaction_id: string | null;
+  summary: string;
+  details: string;
+  opened_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
 }
 
 export function openSqliteStore(path: string, migrationsDir: string): Store {
@@ -352,6 +381,86 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         institution: g.institution,
         creditLimit: g.credit_limit,
         memberIds: members.filter((m) => m.limit_group_id === g.id).map((m) => m.id),
+      }));
+    },
+
+    replaceCanonicalTransactions(transactions: CanonicalTransaction[], links: TransactionLink[], builtAt: string): void {
+      inTransaction(() => {
+        db.exec('DELETE FROM transaction_links');
+        db.exec('DELETE FROM transactions');
+        const insertTx = db.prepare(
+          `INSERT INTO transactions (id, account_id, occurred_at, amount, description, description_raw, status,
+             installment_number, installment_total, category, state, excluded, built_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        for (const t of transactions) {
+          insertTx.run(t.id, t.accountId, t.occurredAt, t.amount, t.description, t.descriptionRaw, t.status,
+            t.installment?.number ?? null, t.installment?.total ?? null, t.category, t.state, t.excluded ? 1 : 0, builtAt);
+        }
+        const insertLink = db.prepare('INSERT INTO transaction_links (source_id, external_id, transaction_id, match_pass) VALUES (?, ?, ?, ?)');
+        for (const l of links) insertLink.run(l.sourceId, l.externalId, l.transactionId, l.matchPass);
+      });
+    },
+
+    listCanonicalTransactions(options: { accountId?: string; includeExcluded?: boolean } = {}): CanonicalTransaction[] {
+      const where: string[] = [];
+      const params: string[] = [];
+      if (options.accountId !== undefined) {
+        where.push('account_id = ?');
+        params.push(options.accountId);
+      }
+      if (!options.includeExcluded) where.push('excluded = 0');
+      const sql = `SELECT * FROM transactions${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY occurred_at DESC, id`;
+      const rows = db.prepare(sql).all(...params) as unknown as TransactionRow[];
+      const linkRows = db.prepare('SELECT source_id, transaction_id FROM transaction_links ORDER BY match_pass, source_id').all() as unknown as Array<{ source_id: string; transaction_id: string }>;
+      const sourcesByTx = new Map<string, string[]>();
+      for (const l of linkRows) sourcesByTx.set(l.transaction_id, [...(sourcesByTx.get(l.transaction_id) ?? []), l.source_id]);
+      return rows.map((r) => ({
+        id: r.id,
+        accountId: r.account_id,
+        occurredAt: r.occurred_at,
+        amount: r.amount,
+        description: r.description,
+        descriptionRaw: r.description_raw,
+        status: r.status as TransactionStatus,
+        installment: r.installment_number !== null && r.installment_total !== null ? { number: r.installment_number, total: r.installment_total } : null,
+        category: r.category,
+        state: r.state as TransactionState,
+        sourceIds: sourcesByTx.get(r.id) ?? [],
+        excluded: r.excluded === 1,
+      }));
+    },
+
+    syncFindings(findings: Finding[], now: string): void {
+      inTransaction(() => {
+        const upsert = db.prepare(
+          `INSERT INTO reconciliation_findings (id, kind, severity, account_id, transaction_id, summary, details, opened_at, last_seen_at, resolved_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+           ON CONFLICT (id) DO UPDATE SET
+             severity = excluded.severity, summary = excluded.summary, details = excluded.details,
+             last_seen_at = excluded.last_seen_at,
+             opened_at = CASE WHEN reconciliation_findings.resolved_at IS NULL THEN reconciliation_findings.opened_at ELSE excluded.opened_at END,
+             resolved_at = NULL`,
+        );
+        for (const f of findings) upsert.run(f.id, f.kind, f.severity, f.accountId, f.transactionId, f.summary, JSON.stringify(f.details), now, now);
+        db.prepare('UPDATE reconciliation_findings SET resolved_at = ? WHERE resolved_at IS NULL AND last_seen_at <> ?').run(now, now);
+      });
+    },
+
+    listFindings(options: { includeResolved?: boolean } = {}): StoredFinding[] {
+      const sql = `SELECT * FROM reconciliation_findings${options.includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY severity DESC, kind, id`;
+      const rows = db.prepare(sql).all() as unknown as FindingRow[];
+      return rows.map((r) => ({
+        id: r.id,
+        kind: r.kind as Finding['kind'],
+        severity: r.severity as Finding['severity'],
+        accountId: r.account_id ?? '',
+        transactionId: r.transaction_id ?? '',
+        summary: r.summary,
+        details: JSON.parse(r.details) as Record<string, unknown>,
+        openedAt: r.opened_at,
+        lastSeenAt: r.last_seen_at,
+        resolvedAt: r.resolved_at,
       }));
     },
 

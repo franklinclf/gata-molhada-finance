@@ -1,5 +1,6 @@
 import type { Store } from '../store/store.ts';
 import { reconcileAccounts } from './accounts.ts';
+import { reconcileTransactions, type TransactionReconciliation } from './transactions.ts';
 import type { AccountReconciliation, SourceView } from './types.ts';
 
 /** Earlier entries win ties. Pierre is the primary source for recent data and Pluggy the cross-check. */
@@ -34,4 +35,26 @@ export function runAccountReconciliation(store: Store, options: RunOptions = {})
   const result = reconcileAccounts(loadSourceViews(store, options.priority ?? DEFAULT_SOURCE_PRIORITY));
   store.replaceCanonicalAccounts(result.accounts, result.groups, now().toISOString());
   return result;
+}
+
+export interface FullReconciliation {
+  accounts: AccountReconciliation;
+  transactions: TransactionReconciliation;
+}
+
+/** Rebuilds canonical accounts, then canonical transactions and findings, and saves all of them. */
+export function runReconciliation(store: Store, options: RunOptions & { staleDays?: { bank?: number; card?: number } } = {}): FullReconciliation {
+  const now = options.now ?? (() => new Date());
+  const accounts = runAccountReconciliation(store, options);
+  const views = loadSourceViews(store, options.priority ?? DEFAULT_SOURCE_PRIORITY);
+  const transactions = reconcileTransactions({
+    accounts: accounts.accounts,
+    sources: views.map((v) => ({ sourceId: v.sourceId, priority: v.priority, transactions: v.transactions, freshness: v.freshness })),
+    now: now(),
+    staleDays: options.staleDays,
+  });
+  const stamp = now().toISOString();
+  store.replaceCanonicalTransactions(transactions.transactions, transactions.links, stamp);
+  store.syncFindings(transactions.findings, stamp);
+  return { accounts, transactions };
 }

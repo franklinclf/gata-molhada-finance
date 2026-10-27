@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
-import { loadSourceViews, runAccountReconciliation } from '../../src/reconcile/run.ts';
+import { loadSourceViews, runAccountReconciliation, runReconciliation } from '../../src/reconcile/run.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
-import { account, history } from '../support/builders.ts';
+import { account, history, tx } from '../support/builders.ts';
 
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url));
 const NOW = new Date('2026-10-26T16:00:00.000Z');
@@ -54,4 +54,48 @@ test('with no synced data it saves nothing', () => {
   const result = runAccountReconciliation(store, { now: () => NOW });
   assert.deepEqual(result.accounts, []);
   assert.deepEqual(store.listCanonicalAccounts(), []);
+});
+
+
+function seededTransactions() {
+  const store = seeded();
+  const at = NOW.toISOString();
+  const shared = history('p1', 'pt');
+  store.upsertSourceTransactions('pierre', [...shared, tx({ externalId: 'pierre-only', accountExternalId: 'p1', occurredAt: '2026-10-22T12:00:00.000Z', amount: -777, descriptionRaw: 'ONLY HERE' })], at);
+  store.upsertSourceTransactions('pluggy', history('g1', 'gt'), at);
+  return store;
+}
+
+test('the full reconciliation saves accounts, transactions, links and findings', () => {
+  const store = seededTransactions();
+  const result = runReconciliation(store, { now: () => NOW });
+  assert.equal(result.accounts.accounts.length, 1);
+  assert.equal(result.transactions.stats.byState.confirmed, 4);
+  assert.equal(result.transactions.stats.byState.single_source, 1);
+  assert.equal(store.listCanonicalTransactions().length, 5);
+  const findings = store.listFindings();
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0]?.kind, 'missing_in_source');
+});
+
+test('running it again keeps ids and the opening time of open findings', () => {
+  const store = seededTransactions();
+  runReconciliation(store, { now: () => NOW });
+  const before = store.listFindings()[0];
+  const later = new Date('2026-10-26T18:00:00.000Z');
+  runReconciliation(store, { now: () => later });
+  const after = store.listFindings()[0];
+  assert.equal(after?.id, before?.id);
+  assert.equal(after?.openedAt, before?.openedAt);
+  assert.equal(after?.lastSeenAt, later.toISOString());
+  assert.equal(store.listCanonicalTransactions().length, 5);
+});
+
+test('a finding is resolved once the other source reports the transaction', () => {
+  const store = seededTransactions();
+  runReconciliation(store, { now: () => NOW });
+  store.upsertSourceTransactions('pluggy', [tx({ externalId: 'pluggy-has-it', accountExternalId: 'g1', occurredAt: '2026-10-22T12:00:00.000Z', amount: -777, descriptionRaw: 'ONLY HERE' })], NOW.toISOString());
+  runReconciliation(store, { now: () => new Date('2026-10-26T18:00:00.000Z') });
+  assert.deepEqual(store.listFindings(), []);
+  assert.equal(store.listFindings({ includeResolved: true }).length, 1);
 });
