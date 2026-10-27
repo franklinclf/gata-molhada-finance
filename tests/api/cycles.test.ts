@@ -36,6 +36,7 @@ function setup(options: { payments?: boolean } = {}) {
   );
   const card1 = account('card1');
   const list = [
+    tx('start', 'card1', '2026-08-01', -100),
     tx('buy-aug', 'card1', '2026-08-20', -50000),
     tx('buy-sep', 'card1', '2026-09-02', -80000),
     tx('buy-oct', 'card1', '2026-10-02', -68000),
@@ -85,12 +86,19 @@ test('cycles: an unpaid bill is unpaid before the due date and overdue after it'
 test('cycles: a payment smaller than the bill leaves it partial', () => {
   const { store, card1 } = setup({ payments: false });
   store.replaceCanonicalTransactions(
-    [tx('buy-oct', 'card1', '2026-10-02', -68000), tx('part', 'card1', '2026-10-14', 20000, 'Pagamento de cartão de crédito')],
+    [tx('start', 'card1', '2026-08-01', -100), tx('buy-oct', 'card1', '2026-10-02', -68000), tx('part', 'card1', '2026-10-14', 20000, 'Pagamento de cartão de crédito')],
     [],
     NOW.toISOString(),
   );
   const oct = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-14')[1]!;
   assert.deepEqual([oct.status, oct.paid, oct.outstanding], ['partial', 20000, 48000]);
+});
+
+test('cycles: a bill from before the first transaction we hold is not judged', () => {
+  const { store, card1 } = setup({ payments: false });
+  store.replaceCanonicalTransactions([tx('late', 'card1', '2026-09-05', -68000)], [], NOW.toISOString());
+  const cycles = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27');
+  assert.deepEqual(cycles.map((c) => [c.key, c.status, c.outstanding]), [['2026-09', 'unknown', 0], ['2026-10', 'overdue', 68000], ['2026-11', 'open', 0]]);
 });
 
 test('cycles: a card without bills has no cycles', () => {

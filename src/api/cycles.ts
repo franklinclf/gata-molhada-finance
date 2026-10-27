@@ -5,7 +5,7 @@ import { DEFAULT_SOURCE_PRIORITY } from '../reconcile/run.ts';
 import type { Store, StoredSourceBill } from '../store/store.ts';
 import type { EffectiveTransaction } from './scope.ts';
 
-export type CycleStatus = 'open' | 'paid' | 'partial' | 'unpaid' | 'overdue' | 'empty';
+export type CycleStatus = 'open' | 'paid' | 'partial' | 'unpaid' | 'overdue' | 'empty' | 'unknown';
 
 /** One billing cycle of one card: from the day after the previous closing to the closing day. */
 export interface Cycle {
@@ -108,6 +108,11 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
   const bills = billsOf(store, account);
   if (bills.length === 0) return [];
   const own = transactions.filter((t) => t.accountId === account.id && !t.excluded);
+  // Before the first transaction we hold, no payment can be seen, so a bill from that time is not judged.
+  const coverageStart = transactions.reduce<string | null>((min, t) => {
+    const day = localDay(t.occurredAt);
+    return min === null || day < min ? day : min;
+  }, null);
   const payments = paymentsOf(own);
 
   const windows: Array<{ from: string; to: string; due: string; total: Cents | null }> = [];
@@ -138,6 +143,7 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     let status: CycleStatus;
     let outstanding = 0;
     if (w.total === null) status = 'open';
+    else if (coverageStart === null || w.from < coverageStart) status = 'unknown';
     else {
       outstanding = Math.max(w.total - paid, 0);
       if (w.total === 0) status = 'empty';

@@ -81,6 +81,9 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
 
   if (pathname.startsWith('/api/')) {
     if (!authenticated) return json(401, { error: 'unauthorized' });
+    if ((method === 'POST' || method === 'PUT') && !(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+      return json(415, { error: 'unsupported_media_type' });
+    }
     const result = apiRoute(method, pathname, new URLSearchParams(request.search ?? ''), deps.store, deps.now(), request.body);
     return result ? json(result.status, result.body) : json(404, { error: 'not_found' });
   }

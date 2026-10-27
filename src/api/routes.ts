@@ -1,6 +1,11 @@
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
+import { cyclesFor } from './cycles.ts';
+import { transactionDetail } from './detail.ts';
+import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
+import { addCategory, listCategories, removeCategory, setAccountHidden, setTransactionCategory, type MutationResult } from './mutations.ts';
+import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
 export interface ApiResult {
@@ -9,9 +14,14 @@ export interface ApiResult {
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const CYCLE = /^(open|\d{4}-\d{2})$/;
+const STATES = ['confirmed', 'single_source', 'conflict', 'stale_pending'] as const;
+const SORTS: SortKey[] = ['date_desc', 'date_asc', 'amount_desc', 'amount_asc'];
 
 function isRealDay(value: string): boolean {
-  return DAY.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
+  if (!DAY.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
 }
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -25,73 +35,197 @@ function parseRange(params: URLSearchParams, now: Date): Parsed<views.DateRange>
   return { ok: true, value: { from, to } };
 }
 
-function parseInteger(params: URLSearchParams, name: string, fallback: number, min: number, max: number): Parsed<number> {
+function parseInteger(params: URLSearchParams, name: string, fallback: number | undefined, min: number, max: number): Parsed<number | undefined> {
   const raw = params.get(name);
-  if (raw === null) return { ok: true, value: fallback };
+  if (raw === null || raw === '') return { ok: true, value: fallback };
   const value = Number(raw);
   if (!Number.isInteger(value) || value < min || value > max) return { ok: false, error: `${name} must be an integer from ${min} to ${max}` };
   return { ok: true, value };
 }
 
+const list = (params: URLSearchParams, name: string): string[] | undefined => {
+  const all = params.getAll(name).flatMap((v) => v.split(',')).map((v) => v.trim()).filter((v) => v !== '');
+  return all.length > 0 ? all : undefined;
+};
+
+/** Reads the explorer filters. A day filter is applied only when given, unlike the fixed-period views. */
+function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
+  const from = params.get('from') ?? undefined;
+  const to = params.get('to') ?? undefined;
+  if ((from !== undefined && !isRealDay(from)) || (to !== undefined && !isRealDay(to))) return { ok: false, error: 'from and to must be dates like 2026-10-27' };
+  if (from !== undefined && to !== undefined && from > to) return { ok: false, error: 'from must not be after to' };
+  const kind = params.get('kind') ?? 'all';
+  if (kind !== 'all' && kind !== 'expense' && kind !== 'income') return { ok: false, error: 'kind must be all, expense or income' };
+  const status = params.get('status') ?? undefined;
+  if (status !== undefined && status !== 'pending' && status !== 'posted') return { ok: false, error: 'status must be pending or posted' };
+  const states = list(params, 'state');
+  if (states?.some((s) => !(STATES as readonly string[]).includes(s))) return { ok: false, error: `state must be one of ${STATES.join(', ')}` };
+  const cycle = params.get('cycle') ?? undefined;
+  if (cycle !== undefined && !CYCLE.test(cycle)) return { ok: false, error: 'cycle must be open or a month like 2026-10' };
+  const sort = (params.get('sort') ?? 'date_desc') as SortKey;
+  if (!SORTS.includes(sort)) return { ok: false, error: `sort must be one of ${SORTS.join(', ')}` };
+  const limit = parseInteger(params, 'limit', 50, 1, 500);
+  const offset = parseInteger(params, 'offset', 0, 0, 1_000_000);
+  const min = parseInteger(params, 'min', undefined, 0, 1_000_000_000);
+  const max = parseInteger(params, 'max', undefined, 0, 1_000_000_000);
+  for (const parsed of [limit, offset, min, max]) if (!parsed.ok) return parsed;
+  // Category names can contain commas, so each one is its own parameter. An empty value means "no category".
+  const categories = params.has('category') ? params.getAll('category') : undefined;
+  return {
+    ok: true,
+    value: {
+      from,
+      to,
+      accountIds: list(params, 'accountId'),
+      institutions: params.has('institution') ? params.getAll('institution') : undefined,
+      categories,
+      kind,
+      q: params.get('q') ?? undefined,
+      status,
+      states: states as ExplorerQuery['states'],
+      min: (min as { value?: number }).value,
+      max: (max as { value?: number }).value,
+      cycle,
+      spendingOnly: params.get('spendingOnly') === 'true',
+      sort,
+      limit: (limit as { value: number }).value,
+      offset: (offset as { value: number }).value,
+      includeExcluded: params.get('includeExcluded') === 'true',
+    },
+  };
+}
+
 const badRequest = (message: string): ApiResult => ({ status: 400, body: { error: 'bad_request', message } });
+const methodNotAllowed = (): ApiResult => ({ status: 405, body: { error: 'method_not_allowed' } });
+const fromMutation = (result: MutationResult): ApiResult => (result.ok ? { status: 200, body: { ok: true } } : { status: result.status, body: { error: result.error } });
+
+function parseBody(body: string): Record<string, unknown> | null {
+  try {
+    const value = JSON.parse(body) as unknown;
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function apiRoute(method: string, pathname: string, params: URLSearchParams, store: Store, now: Date, body = ''): ApiResult | null {
-  const known = [
-    '/api/balances', '/api/cards', '/api/transactions', '/api/cashflow', '/api/spending',
-    '/api/installments', '/api/freshness', '/api/findings',
-  ];
-  if (pathname === '/api/layout') {
-    if (method === 'GET') return { status: 200, body: loadLayout(store) };
-    if (method !== 'PUT') return { status: 405, body: { error: 'method_not_allowed' } };
-    let raw: unknown;
-    try {
-      raw = JSON.parse(body);
-    } catch {
-      return badRequest('body must be JSON');
-    }
-    const layout = parseLayout(raw);
-    if (!layout) return badRequest('layout must be { widgets: [{ id, hidden }] } with known widget ids');
-    saveLayout(store, layout, now);
-    return { status: 200, body: layout };
-  }
-  if (!known.includes(pathname)) return null;
-  if (method !== 'GET') return { status: 405, body: { error: 'method_not_allowed' } };
+  const opts: ViewOptions = { includeHidden: params.get('includeHidden') === 'true' };
+  const parts = pathname.split('/').filter(Boolean); // ['api', 'transactions', ':id', ...]
+  const [, resource, id, sub] = parts;
 
-  switch (pathname) {
-    case '/api/balances':
-      return { status: 200, body: views.balances(store, now) };
-    case '/api/cards':
-      return { status: 200, body: views.cards(store, now) };
-    case '/api/installments':
-      return { status: 200, body: views.installments(store, now) };
-    case '/api/freshness':
-      return { status: 200, body: views.freshness(store, now) };
-    case '/api/findings':
-      return { status: 200, body: { items: views.findings(store, params.get('includeResolved') === 'true') } };
-    case '/api/cashflow': {
-      const range = parseRange(params, now);
-      if (!range.ok) return badRequest(range.error);
-      return { status: 200, body: views.cashFlow(store, range.value, now) };
+  switch (resource) {
+    case 'layout': {
+      if (parts.length !== 2) return null;
+      if (method === 'GET') return { status: 200, body: loadLayout(store) };
+      if (method !== 'PUT') return methodNotAllowed();
+      const raw = parseBody(body);
+      const layout = raw ? parseLayout(raw) : null;
+      if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
+      saveLayout(store, layout, now);
+      return { status: 200, body: layout };
     }
-    case '/api/spending': {
+    case 'balances':
+      if (parts.length !== 2) return null;
+      return method === 'GET' ? { status: 200, body: views.balances(store, now, opts) } : methodNotAllowed();
+    case 'cards': {
+      if (parts.length !== 2) return null;
+      if (method !== 'GET') return methodNotAllowed();
+      const cycle = params.get('cycle') ?? 'open';
+      if (!CYCLE.test(cycle)) return badRequest('cycle must be open or a month like 2026-10');
+      return { status: 200, body: views.cards(store, now, opts, cycle) };
+    }
+    case 'cycles': {
+      if (parts.length !== 2) return null;
+      if (method !== 'GET') return methodNotAllowed();
+      const accountId = params.get('accountId');
+      const account = store.listCanonicalAccounts().find((a) => a.id === accountId && a.kind === 'credit_card');
+      if (!account) return { status: 404, body: { error: 'not_found' } };
+      const cycles = cyclesFor(store, account, effectiveTransactions(store, { includeHidden: true }), localDay(now.toISOString()));
+      return { status: 200, body: { accountId: account.id, cycles: [...cycles].reverse() } };
+    }
+    case 'installments':
+      if (parts.length !== 2) return null;
+      return method === 'GET' ? { status: 200, body: views.installments(store, now, opts) } : methodNotAllowed();
+    case 'freshness':
+      if (parts.length !== 2) return null;
+      return method === 'GET' ? { status: 200, body: views.freshness(store, now) } : methodNotAllowed();
+    case 'findings':
+      if (parts.length !== 2) return null;
+      return method === 'GET' ? { status: 200, body: { items: views.findings(store, params.get('includeResolved') === 'true') } } : methodNotAllowed();
+    case 'cashflow':
+    case 'spending': {
+      if (parts.length !== 2) return null;
+      if (method !== 'GET') return methodNotAllowed();
       const range = parseRange(params, now);
       if (!range.ok) return badRequest(range.error);
+      if (resource === 'cashflow') return { status: 200, body: views.cashFlow(store, range.value, now, opts) };
       const by = params.get('by') ?? 'category';
       if (by !== 'category' && by !== 'merchant') return badRequest('by must be category or merchant');
-      return { status: 200, body: views.spending(store, range.value, by, now) };
+      return { status: 200, body: views.spending(store, range.value, by, now, opts) };
     }
-    default: {
-      const range = parseRange(params, now);
-      if (!range.ok) return badRequest(range.error);
-      const limit = parseInteger(params, 'limit', 50, 1, 500);
-      const offset = parseInteger(params, 'offset', 0, 0, 1_000_000);
-      if (!limit.ok) return badRequest(limit.error);
-      if (!offset.ok) return badRequest(offset.error);
-      const accountId = params.get('accountId') ?? undefined;
-      return {
-        status: 200,
-        body: views.transactions(store, { ...range.value, accountId, limit: limit.value, offset: offset.value, includeExcluded: params.get('includeExcluded') === 'true' }, now),
-      };
+    case 'transactions': {
+      if (parts.length === 2) {
+        if (method !== 'GET') return methodNotAllowed();
+        const query = parseExplorer(params);
+        if (!query.ok) return badRequest(query.error);
+        return { status: 200, body: explore(store, query.value, now, opts) };
+      }
+      if (parts.length === 3 && id !== undefined) {
+        if (method !== 'GET') return methodNotAllowed();
+        const detail = transactionDetail(store, id, now);
+        return detail ? { status: 200, body: detail } : { status: 404, body: { error: 'not_found' } };
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'category') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input || !('category' in input)) return badRequest('body must be { category, applyToSimilar? }');
+        return fromMutation(setTransactionCategory(store, id, input.category, input.applyToSimilar === true, now));
+      }
+      return null;
     }
+    case 'accounts': {
+      if (parts.length === 2) {
+        if (method !== 'GET') return methodNotAllowed();
+        const hidden = store.listHiddenAccountIds();
+        return {
+          status: 200,
+          body: {
+            items: store.listCanonicalAccounts().map((a) => ({
+              id: a.id, institution: a.institution, kind: a.kind, name: a.name, last4: a.last4, balance: a.balance, creditLimit: a.creditLimit,
+              limitGroupId: a.limitGroupId, asOf: a.balanceAsOf, hidden: hidden.has(a.id),
+            })),
+          },
+        };
+      }
+      if (parts.length === 3 && id !== undefined) {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { hidden }');
+        return fromMutation(setAccountHidden(store, id, input.hidden, now));
+      }
+      return null;
+    }
+    case 'categories': {
+      if (parts.length === 2) {
+        if (method === 'GET') return { status: 200, body: { items: listCategories(store) } };
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { name }');
+        return fromMutation(addCategory(store, input.name, now));
+      }
+      if (parts.length === 3 && id !== undefined) {
+        if (method !== 'DELETE') return methodNotAllowed();
+        let name: string;
+        try {
+          name = decodeURIComponent(id);
+        } catch {
+          return badRequest('bad category name');
+        }
+        return fromMutation(removeCategory(store, name));
+      }
+      return null;
+    }
+    default:
+      return null;
   }
 }

@@ -109,20 +109,6 @@ test('installments: latest seen per purchase, finished ones dropped, remaining a
   assert.equal(v.remainingTotal, 70000);
 });
 
-test('transactions: newest first, paged, stale entries only on request', () => {
-  const store = seeded();
-  const page = views.transactions(store, { ...THIS_MONTH, limit: 3, offset: 0, includeExcluded: false }, NOW);
-  assert.equal(page.total, 9);
-  assert.equal(page.items.length, 3);
-  assert.ok(Object.keys(page.accounts).length >= 1);
-  assert.ok(page.items.every((t) => page.accounts[t.accountId]));
-  assert.ok(page.items[0]!.occurredAt >= page.items[2]!.occurredAt);
-  const withStale = views.transactions(store, { ...THIS_MONTH, limit: 50, offset: 0, includeExcluded: true }, NOW);
-  assert.equal(withStale.total, 10);
-  const one = views.transactions(store, { ...THIS_MONTH, accountId: 'sav', limit: 50, offset: 0, includeExcluded: false }, NOW);
-  assert.equal(one.total, 0);
-});
-
 test('routes validate dates and numbers', () => {
   const store = seeded();
   const call = (path: string, q = '') => apiRoute('GET', path, new URLSearchParams(q), store, NOW);

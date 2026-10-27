@@ -6,19 +6,8 @@ import { summarizeAccounts } from '../reconcile/accounts.ts';
 import { cyclesFor, type Cycle } from './cycles.ts';
 import { quotaReport } from '../scheduler/quota.ts';
 import type { Store } from '../store/store.ts';
+import { stamp, type Stamped } from './stamp.ts';
 import { effectiveTransactions, visibleAccounts, visibleLimitGroups, type EffectiveTransaction, type ViewOptions } from './scope.ts';
-
-/** Every view says when it was built and how old the oldest data behind it is. */
-export interface Stamped {
-  generatedAt: string;
-  /** Oldest "last synced" time among the accounts used, or null when no source reported one. */
-  oldestDataAt: string | null;
-}
-
-function stamp(accounts: CanonicalAccount[], now: Date): Stamped {
-  const times = accounts.map((a) => a.balanceAsOf).filter((t): t is string => t !== null).sort();
-  return { generatedAt: now.toISOString(), oldestDataAt: times[0] ?? null };
-}
 
 const isBank = (a: CanonicalAccount) => a.kind !== 'credit_card';
 
@@ -55,6 +44,8 @@ function liveTransactions(store: Store, range: DateRange, opts: ViewOptions): Ef
 }
 
 // ---------- balances ----------
+
+export type { Stamped };
 
 export interface BalancesView extends Stamped {
   total: Cents;
@@ -213,34 +204,6 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     cards: rows,
     limitGroups,
   };
-}
-
-// ---------- transactions ----------
-
-export interface TransactionsQuery extends DateRange {
-  accountId?: string;
-  limit: number;
-  offset: number;
-  includeExcluded: boolean;
-}
-
-export interface TransactionsView extends Stamped {
-  total: number;
-  items: CanonicalTransaction[];
-  /** Names of the accounts the items belong to, so a screen can label them without another request. */
-  accounts: Record<string, { institution: string; name: string; last4: string | null }>;
-}
-
-export function transactions(store: Store, query: TransactionsQuery, now: Date): TransactionsView {
-  const matching = store
-    .listCanonicalTransactions({ accountId: query.accountId, includeExcluded: query.includeExcluded })
-    .filter((t) => inRange(t, query))
-    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || a.id.localeCompare(b.id));
-  const accounts = store.listCanonicalAccounts();
-  const items = matching.slice(query.offset, query.offset + query.limit);
-  const names: TransactionsView['accounts'] = {};
-  for (const a of accounts) if (items.some((t) => t.accountId === a.id)) names[a.id] = { institution: a.institution, name: a.name, last4: a.last4 };
-  return { ...stamp(accounts, now), total: matching.length, items, accounts: names };
 }
 
 // ---------- cash flow ----------
