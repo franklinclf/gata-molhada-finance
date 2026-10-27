@@ -514,6 +514,40 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       }));
     },
 
+    createSession(tokenHash: string, createdAt: string, expiresAt: string): void {
+      db.prepare('INSERT INTO auth_sessions (token_hash, created_at, expires_at) VALUES (?, ?, ?)').run(tokenHash, createdAt, expiresAt);
+    },
+
+    hasValidSession(tokenHash: string, now: string): boolean {
+      return db.prepare('SELECT 1 FROM auth_sessions WHERE token_hash = ? AND expires_at > ?').get(tokenHash, now) !== undefined;
+    },
+
+    deleteSession(tokenHash: string): void {
+      db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').run(tokenHash);
+    },
+
+    purgeExpiredSessions(now: string): void {
+      db.prepare('DELETE FROM auth_sessions WHERE expires_at <= ?').run(now);
+    },
+
+    isRecoveryCodeUsed(codeHash: string): boolean {
+      return db.prepare('SELECT 1 FROM auth_used_recovery WHERE code_hash = ?').get(codeHash) !== undefined;
+    },
+
+    useRecoveryCode(codeHash: string, usedAt: string): boolean {
+      const result = db.prepare('INSERT OR IGNORE INTO auth_used_recovery (code_hash, used_at) VALUES (?, ?)').run(codeHash, usedAt);
+      return Number(result.changes) === 1;
+    },
+
+    getAuthState(key: string): string | null {
+      const row = db.prepare('SELECT value FROM auth_state WHERE key = ?').get(key) as { value: string } | undefined;
+      return row ? row.value : null;
+    },
+
+    setAuthState(key: string, value: string): void {
+      db.prepare('INSERT INTO auth_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+    },
+
     close(): void {
       db.close();
     },
