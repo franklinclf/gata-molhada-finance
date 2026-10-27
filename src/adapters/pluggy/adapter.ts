@@ -30,6 +30,18 @@ export interface PluggyDeps {
 
 const MAX_PAGES = 200;
 
+/**
+ * The bank network limits reads per month. When the limit is hit, the item ends as PARTIAL_SUCCESS and a
+ * product in statusDetail carries a warning with code 423.
+ */
+function hasQuotaWarning(item: Record<string, unknown>): boolean {
+  if (item.status !== 'PARTIAL_SUCCESS' || typeof item.statusDetail !== 'object' || item.statusDetail === null) return false;
+  return Object.values(item.statusDetail as Record<string, unknown>).some((product) => {
+    const warnings = typeof product === 'object' && product !== null ? (product as Record<string, unknown>).warnings : null;
+    return Array.isArray(warnings) && warnings.some((w) => typeof w === 'object' && w !== null && String((w as Record<string, unknown>).code) === '423');
+  });
+}
+
 export class PluggyAdapter implements SourceAdapter {
   readonly id = 'pluggy';
   readonly capabilities: AdapterCapabilities = {
@@ -69,13 +81,7 @@ export class PluggyAdapter implements SourceAdapter {
     const observedAt = this.now().toISOString();
 
     for (const item of this.config.items) {
-      const itemBody = asRecord(await this.get(`/items/${item.itemId}`), 'pluggy.item');
-      freshness.push({
-        sourceId: this.id,
-        institution: item.label,
-        lastUpdatedAt: reqIsoInstant(itemBody, 'lastUpdatedAt', 'pluggy.item'),
-        observedAt,
-      });
+      freshness.push(this.freshnessOf(item, asRecord(await this.get(`/items/${item.itemId}`), 'pluggy.item'), observedAt));
 
       const list = asRecord(await this.get(`/accounts?itemId=${item.itemId}`), 'pluggy.accounts');
       for (const raw of asArray(list.results, 'pluggy.accounts.results')) {
@@ -90,6 +96,26 @@ export class PluggyAdapter implements SourceAdapter {
       }
     }
     return { accounts, freshness };
+  }
+
+  /** Reads only the items, which is cheap and does not touch the banks. */
+  async fetchFreshness(): Promise<Freshness[]> {
+    const observedAt = this.now().toISOString();
+    const out: Freshness[] = [];
+    for (const item of this.config.items) {
+      out.push(this.freshnessOf(item, asRecord(await this.get(`/items/${item.itemId}`, false), 'pluggy.item'), observedAt));
+    }
+    return out;
+  }
+
+  private freshnessOf(item: PluggyItemConfig, body: Record<string, unknown>, observedAt: string): Freshness {
+    return {
+      sourceId: this.id,
+      institution: item.label,
+      lastUpdatedAt: reqIsoInstant(body, 'lastUpdatedAt', 'pluggy.item'),
+      observedAt,
+      ...(hasQuotaWarning(body) ? { quotaExhausted: true } : {}),
+    };
   }
 
   async fetchTransactions(since: Date): Promise<SourceTransaction[]> {
@@ -145,7 +171,7 @@ export class PluggyAdapter implements SourceAdapter {
     return key;
   }
 
-  private async get(path: string): Promise<unknown> {
+  private async get(path: string, record = true): Promise<unknown> {
     const url = `${this.baseUrl}${path}`;
     let usedCachedKey = this.apiKey !== null;
     let key = this.apiKey ?? (await this.authenticate());
@@ -156,7 +182,7 @@ export class PluggyAdapter implements SourceAdapter {
         key = await this.authenticate();
         continue;
       }
-      this.sink({ endpoint: path, httpStatus: response.status, body: response.body });
+      if (record) this.sink({ endpoint: path, httpStatus: response.status, body: response.body });
       if (response.status < 200 || response.status >= 300) throw new SourceHttpError(response.status, url);
       return response.body;
     }
