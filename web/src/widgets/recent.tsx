@@ -14,7 +14,7 @@ export function RecentWidget({ now, hidden }: WidgetProps) {
       {data && (
         <ul class="rows tall">
           {data.items.map((t) => {
-            const account = data.accounts[t.accountId];
+            const account = t.account;
             return (
               <li key={t.id}>
                 <div class="grow">

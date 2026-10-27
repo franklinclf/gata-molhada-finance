@@ -91,6 +91,20 @@ export interface Store {
   useRecoveryCode(codeHash: string, usedAt: string): boolean;
   getAuthState(key: string): string | null;
   setAuthState(key: string, value: string): void;
+  /** Canonical account ids the user chose to hide. */
+  listHiddenAccountIds(): Set<string>;
+  setAccountHidden(accountId: string, hidden: boolean, now: string): void;
+  listTransactionLinks(transactionId: string): Array<{ sourceId: SourceId; externalId: string; matchPass: number }>;
+  /** Manual category per canonical transaction id (taken from the newest override among its source records). */
+  listCategoryOverrides(): Map<string, string>;
+  /** Sets (or with null clears) the category on every source record of a canonical transaction. */
+  setCategoryOverride(transactionId: string, category: string | null, now: string): void;
+  listCategoryRules(): Map<string, string>;
+  setCategoryRule(matchKey: string, category: string | null, now: string): void;
+  listCustomCategories(): string[];
+  addCustomCategory(name: string, now: string): void;
+  /** Removes a custom category and every override and rule that points to it. */
+  deleteCustomCategory(name: string): void;
   getSetting(key: string): string | null;
   setSetting(key: string, value: string, updatedAt: string): void;
   close(): void;

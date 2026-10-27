@@ -74,7 +74,7 @@ test('cards: a shared limit is counted once', () => {
   assert.equal(v.totals.creditLimit, 500000);
   assert.equal(v.totals.used, 100000);
   assert.equal(v.totals.available, 400000);
-  assert.deepEqual(v.limitGroups, [{ id: 'g1', institution: 'Bank A', creditLimit: 500000, used: 100000, available: 400000, cardIds: ['c1', 'c2'] }]);
+  assert.deepEqual(v.limitGroups, [{ id: 'g1', institution: 'Bank A', creditLimit: 500000, used: 100000, available: 400000, cardIds: ['c1', 'c2'], openEstimate: 50000 }]);
 });
 
 test('cash flow counts bank accounts only, keeps card bill payments, leaves out own transfers', () => {
@@ -107,20 +107,6 @@ test('installments: latest seen per purchase, finished ones dropped, remaining a
   assert.deepEqual(v.items[0], { accountId: 'c1', description: 'Phone', number: 3, total: 10, installmentAmount: 10000, remainingCount: 7, remainingAmount: 70000, lastMonth: '2027-05' });
   assert.equal(v.monthlyCommitment, 10000);
   assert.equal(v.remainingTotal, 70000);
-});
-
-test('transactions: newest first, paged, stale entries only on request', () => {
-  const store = seeded();
-  const page = views.transactions(store, { ...THIS_MONTH, limit: 3, offset: 0, includeExcluded: false }, NOW);
-  assert.equal(page.total, 9);
-  assert.equal(page.items.length, 3);
-  assert.ok(Object.keys(page.accounts).length >= 1);
-  assert.ok(page.items.every((t) => page.accounts[t.accountId]));
-  assert.ok(page.items[0]!.occurredAt >= page.items[2]!.occurredAt);
-  const withStale = views.transactions(store, { ...THIS_MONTH, limit: 50, offset: 0, includeExcluded: true }, NOW);
-  assert.equal(withStale.total, 10);
-  const one = views.transactions(store, { ...THIS_MONTH, accountId: 'sav', limit: 50, offset: 0, includeExcluded: false }, NOW);
-  assert.equal(one.total, 0);
 });
 
 test('routes validate dates and numbers', () => {

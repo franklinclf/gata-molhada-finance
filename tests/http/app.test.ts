@@ -95,3 +95,12 @@ test('an authenticated session reaches the data endpoints with their query strin
   assert.equal(handle({ ...get('/api/cashflow', { cookie }), search: 'from=bad' }, deps).status, 400);
   assert.equal(handle(get('/api/balances'), deps).status, 401);
 });
+
+test('writes need a JSON content type', () => {
+  const { deps, code } = setup();
+  const cookie = cookieOf(handle(post('/api/auth/login', { password: PASSWORD, code: code() }), deps).headers['Set-Cookie']);
+  const plain: AppRequest = { method: 'PUT', pathname: '/api/accounts/x', headers: { cookie, 'content-type': 'text/plain' }, body: '{"hidden":true}' };
+  assert.equal(handle(plain, deps).status, 415);
+  const json: AppRequest = { ...plain, headers: { cookie, 'content-type': 'application/json' } };
+  assert.equal(handle(json, deps).status, 404);
+});
