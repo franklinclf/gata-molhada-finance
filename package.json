@@ -15,6 +15,7 @@
     "reconcile": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/reconcile/reconcile-cli.ts",
     "refresh": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/refresh-cli.ts",
     "watch": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/watch-cli.ts",
+    "auth:setup": "node --disable-warning=ExperimentalWarning src/auth/setup-cli.ts",
     "quota": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/quota-cli.ts"
   },
   "devDependencies": {
