@@ -548,6 +548,15 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       db.prepare('INSERT INTO auth_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
     },
 
+    getSetting(key: string): string | null {
+      const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+      return row ? row.value : null;
+    },
+
+    setSetting(key: string, value: string, updatedAt: string): void {
+      db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').run(key, value, updatedAt);
+    },
+
     close(): void {
       db.close();
     },

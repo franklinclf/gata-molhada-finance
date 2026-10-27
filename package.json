@@ -9,17 +9,22 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/main.ts",
     "test": "node --test --disable-warning=ExperimentalWarning \"tests/**/*.test.ts\"",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p web/tsconfig.json",
     "sync": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/sync/cli.ts",
     "accounts": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/reconcile/cli.ts",
     "reconcile": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/reconcile/reconcile-cli.ts",
     "refresh": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/refresh-cli.ts",
     "watch": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/watch-cli.ts",
     "auth:setup": "node --disable-warning=ExperimentalWarning src/auth/setup-cli.ts",
-    "quota": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/quota-cli.ts"
+    "quota": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/scheduler/quota-cli.ts",
+    "build:web": "vite build --config web/vite.config.ts",
+    "dev:web": "vite --config web/vite.config.ts"
   },
   "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
     "@types/node": "^22.20.5",
-    "typescript": "^7.0.2"
+    "preact": "^11.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
   }
 }

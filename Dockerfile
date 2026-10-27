@@ -1,3 +1,12 @@
+FROM node:22-slim AS web
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src ./src
+COPY web ./web
+RUN npm run build:web
+
 FROM node:22-slim
 
 ARG GIT_SHA=dev
@@ -11,6 +20,7 @@ WORKDIR /app
 COPY package.json ./
 COPY src ./src
 COPY migrations ./migrations
+COPY --from=web /build/dist/web ./dist/web
 
 RUN mkdir -p /data && chown node:node /data
 USER node

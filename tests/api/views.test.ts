@@ -90,6 +90,8 @@ test('spending: card purchases and bank outflows, minus refunds, without card pa
   const byName = Object.fromEntries(v.groups.map((g) => [g.name, g.amount]));
   assert.deepEqual(byName, { Aluguel: 150000, Compras: 15000, Supermercado: 4500 });
   assert.equal(v.total, 169500);
+  assert.equal(v.daily.reduce((sum, d) => sum + d.amount, 0), 169500);
+  assert.deepEqual(v.daily.map((d) => d.day), [...v.daily.map((d) => d.day)].sort());
   assert.equal(Math.round(v.groups[0]!.share * 1000), Math.round((150000 / 169500) * 1000));
 });
 
@@ -112,6 +114,8 @@ test('transactions: newest first, paged, stale entries only on request', () => {
   const page = views.transactions(store, { ...THIS_MONTH, limit: 3, offset: 0, includeExcluded: false }, NOW);
   assert.equal(page.total, 9);
   assert.equal(page.items.length, 3);
+  assert.ok(Object.keys(page.accounts).length >= 1);
+  assert.ok(page.items.every((t) => page.accounts[t.accountId]));
   assert.ok(page.items[0]!.occurredAt >= page.items[2]!.occurredAt);
   const withStale = views.transactions(store, { ...THIS_MONTH, limit: 50, offset: 0, includeExcluded: true }, NOW);
   assert.equal(withStale.total, 10);

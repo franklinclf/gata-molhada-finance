@@ -1,5 +1,6 @@
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
+import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import * as views from './views.ts';
 
 export interface ApiResult {
@@ -34,11 +35,25 @@ function parseInteger(params: URLSearchParams, name: string, fallback: number, m
 
 const badRequest = (message: string): ApiResult => ({ status: 400, body: { error: 'bad_request', message } });
 
-export function apiRoute(method: string, pathname: string, params: URLSearchParams, store: Store, now: Date): ApiResult | null {
+export function apiRoute(method: string, pathname: string, params: URLSearchParams, store: Store, now: Date, body = ''): ApiResult | null {
   const known = [
     '/api/balances', '/api/cards', '/api/transactions', '/api/cashflow', '/api/spending',
     '/api/installments', '/api/freshness', '/api/findings',
   ];
+  if (pathname === '/api/layout') {
+    if (method === 'GET') return { status: 200, body: loadLayout(store) };
+    if (method !== 'PUT') return { status: 405, body: { error: 'method_not_allowed' } };
+    let raw: unknown;
+    try {
+      raw = JSON.parse(body);
+    } catch {
+      return badRequest('body must be JSON');
+    }
+    const layout = parseLayout(raw);
+    if (!layout) return badRequest('layout must be { widgets: [{ id, hidden }] } with known widget ids');
+    saveLayout(store, layout, now);
+    return { status: 200, body: layout };
+  }
   if (!known.includes(pathname)) return null;
   if (method !== 'GET') return { status: 405, body: { error: 'method_not_allowed' } };
 

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { AuthService } from '../auth/service.ts';
 import { handle, type AppDeps } from './app.ts';
+import { serveStatic } from './static.ts';
 
 const MAX_BODY_BYTES = 16 * 1024;
 
@@ -15,7 +16,7 @@ async function readBody(req: IncomingMessage): Promise<string | null> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-export function createHttpServer(deps: Partial<AppDeps> & Pick<AppDeps, 'store' | 'version'>): Server {
+export function createHttpServer(deps: Partial<AppDeps> & Pick<AppDeps, 'store' | 'version'>, webRoot: string | null = null): Server {
   const now = deps.now ?? (() => new Date());
   const full: AppDeps = {
     now,
@@ -26,6 +27,16 @@ export function createHttpServer(deps: Partial<AppDeps> & Pick<AppDeps, 'store' 
   return createServer((req, res) => {
     void (async () => {
       const url = new URL(req.url ?? '/', 'http://localhost');
+      const method = req.method ?? 'GET';
+      const isApp = url.pathname === '/healthz' || url.pathname.startsWith('/api/');
+      if (webRoot && !isApp && (method === 'GET' || method === 'HEAD')) {
+        const file = await serveStatic(webRoot, url.pathname);
+        if (file) {
+          res.writeHead(file.status, { ...file.headers, 'Content-Length': String(file.body.length) });
+          res.end(method === 'HEAD' ? undefined : file.body);
+          return;
+        }
+      }
       const body = await readBody(req);
       if (body === null) {
         res.writeHead(413, { 'Content-Type': 'application/json' });
@@ -33,7 +44,7 @@ export function createHttpServer(deps: Partial<AppDeps> & Pick<AppDeps, 'store' 
         req.destroy();
         return;
       }
-      const result = handle({ method: req.method ?? 'GET', pathname: url.pathname, search: url.search.slice(1), headers: req.headers as Record<string, string | undefined>, body }, full);
+      const result = handle({ method, pathname: url.pathname, search: url.search.slice(1), headers: req.headers as Record<string, string | undefined>, body }, full);
       res.writeHead(result.status, result.headers);
       res.end(result.body ?? undefined);
     })().catch(() => {

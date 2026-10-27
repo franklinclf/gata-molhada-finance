@@ -145,6 +145,8 @@ export interface TransactionsQuery extends DateRange {
 export interface TransactionsView extends Stamped {
   total: number;
   items: CanonicalTransaction[];
+  /** Names of the accounts the items belong to, so a screen can label them without another request. */
+  accounts: Record<string, { institution: string; name: string; last4: string | null }>;
 }
 
 export function transactions(store: Store, query: TransactionsQuery, now: Date): TransactionsView {
@@ -153,7 +155,10 @@ export function transactions(store: Store, query: TransactionsQuery, now: Date):
     .filter((t) => inRange(t, query))
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt) || a.id.localeCompare(b.id));
   const accounts = store.listCanonicalAccounts();
-  return { ...stamp(accounts, now), total: matching.length, items: matching.slice(query.offset, query.offset + query.limit) };
+  const items = matching.slice(query.offset, query.offset + query.limit);
+  const names: TransactionsView['accounts'] = {};
+  for (const a of accounts) if (items.some((t) => t.accountId === a.id)) names[a.id] = { institution: a.institution, name: a.name, last4: a.last4 };
+  return { ...stamp(accounts, now), total: matching.length, items, accounts: names };
 }
 
 // ---------- cash flow ----------
@@ -192,14 +197,22 @@ export interface SpendingView extends Stamped, DateRange {
   total: Cents;
   groupBy: SpendingGroup;
   groups: Array<{ name: string; amount: Cents; count: number; share: number }>;
+  /** Spending per day (net of refunds), oldest first, for a running-total chart. */
+  daily: Array<{ day: string; amount: Cents }>;
 }
 
 /** What was spent, dated by purchase (accrual): card purchases on the purchase day, bank outflows on their day. Refunds subtract. */
 export function spending(store: Store, range: DateRange, groupBy: SpendingGroup, now: Date): SpendingView {
   const accounts = store.listCanonicalAccounts();
+  const bankIds = new Set(accounts.filter(isBank).map((a) => a.id));
   const rows = new Map<string, { amount: Cents; count: number }>();
+  const perDay = new Map<string, Cents>();
   for (const t of liveTransactions(store, range)) {
     if (isNonSpending(t.category)) continue;
+    // Money coming into a bank account is income. Only card credits (refunds) reduce spending.
+    if (t.amount > 0 && bankIds.has(t.accountId)) continue;
+    const day = localDay(t.occurredAt);
+    perDay.set(day, (perDay.get(day) ?? 0) - t.amount);
     const name = groupBy === 'category' ? (t.category ?? 'Sem categoria') : t.description;
     const row = rows.get(name) ?? { amount: 0, count: 0 };
     row.amount += -t.amount;
@@ -211,7 +224,8 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
     .filter((g) => g.amount > 0)
     .sort((a, b) => b.amount - a.amount);
   const total = groups.reduce((s, g) => s + g.amount, 0);
-  return { ...stamp(accounts, now), ...range, total, groupBy, groups: groups.map((g) => ({ ...g, share: total > 0 ? g.amount / total : 0 })) };
+  return { ...stamp(accounts, now), ...range, total, groupBy, groups: groups.map((g) => ({ ...g, share: total > 0 ? g.amount / total : 0 })),
+    daily: [...perDay].sort(([a], [b]) => a.localeCompare(b)).map(([day, amount]) => ({ day, amount })) };
 }
 
 // ---------- installments ----------

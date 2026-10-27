@@ -17,7 +17,7 @@ const store = openSqliteStore(config.dbPath, migrationsDir);
 const authConfig = loadAuthConfig(process.env);
 if (!authConfig) console.warn('AUTH_PASSWORD_HASH or AUTH_TOTP_SECRET is not set, so login is disabled and the API stays closed');
 const auth = new AuthService(store, authConfig, () => new Date());
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies });
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {
