@@ -1,5 +1,5 @@
 import { localDay, localMonth } from '../core/time.ts';
-import { effectiveTransactions, type EffectiveTransaction } from '../api/scope.ts';
+import { counterpartyHashes, effectiveTransactions, type EffectiveTransaction } from '../api/scope.ts';
 import type { AiMatch, Store } from '../store/store.ts';
 import { parseJson, type AiClient } from './openrouter.ts';
 import { PAIR_SCHEMA, PAIR_SYSTEM, pairPayload, type Pair } from './pair-prompt.ts';
@@ -48,6 +48,8 @@ export async function matchPending(store: Store, options: MatcherOptions): Promi
   const all = effectiveTransactions(store, { includeHidden: true });
   const byId = new Map(all.map((t) => [t.id, t]));
   const accounts = new Map(store.listCanonicalAccounts().map((a) => [a.id, a]));
+  const documents = counterpartyHashes(store);
+  const sameDocument = (a: string, b: string): 'yes' | 'no' | 'unknown' => (documents.has(a) && documents.has(b) ? (documents.get(a) === documents.get(b) ? 'yes' : 'no') : 'unknown');
 
   interface Candidate { findingId: string; a: EffectiveTransaction; b: EffectiveTransaction; pair: Pair }
   const todo: Candidate[] = [];
@@ -57,7 +59,7 @@ export async function matchPending(store: Store, options: MatcherOptions): Promi
     const b = byId.get(String(f.details.otherTransactionId));
     const account = a ? accounts.get(a.accountId) : undefined;
     if (!a || !b || !account) continue;
-    const record = (t: EffectiveTransaction) => ({ source: t.sourceIds[0] ?? '', text: t.description, date: localDay(t.occurredAt), status: t.status, category: t.sourceCategory });
+    const record = (t: EffectiveTransaction) => ({ source: t.sourceIds[0] ?? '', text: t.description, date: localDay(t.occurredAt), status: t.status, category: t.sourceCategory, operation: t.operation, merchantCode: t.mcc });
     todo.push({
       findingId: f.id,
       a,
@@ -68,6 +70,7 @@ export async function matchPending(store: Store, options: MatcherOptions): Promi
         daysApart: Math.round(Math.abs(new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()) / DAY),
         accountKind: account.kind === 'credit_card' ? 'card' : 'bank',
         direction: a.amount < 0 ? 'out' : 'in',
+        sameCounterpartyDocument: sameDocument(a.id, b.id),
       },
     });
   }
@@ -112,7 +115,7 @@ export async function matchPending(store: Store, options: MatcherOptions): Promi
       }
       const first = store.listTransactionLinks(c.a.id)[0];
       if (!first) continue;
-      const stillValid = c.a.accountId === c.b.accountId && c.a.amount === c.b.amount && c.a.state === 'single_source' && c.b.state === 'single_source' && c.pair.daysApart <= WINDOW_DAYS && counterparts(c.a, all) <= 1 && counterparts(c.b, all) <= 1;
+      const stillValid = c.a.accountId === c.b.accountId && c.a.amount === c.b.amount && c.a.state === 'single_source' && c.b.state === 'single_source' && c.pair.daysApart <= WINDOW_DAYS && counterparts(c.a, all) <= 1 && counterparts(c.b, all) <= 1 && c.pair.sameCounterpartyDocument !== 'no';
       let action: AiMatch['action'] = 'suggested';
       if (same === 'yes' && confidence === 'high' && stillValid && store.addManualLink(c.a.id, c.b.id, options.now().toISOString(), 'ai')) {
         action = 'joined';
