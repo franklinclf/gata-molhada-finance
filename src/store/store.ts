@@ -1,4 +1,5 @@
 import type { CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, TransactionLink } from '../core/canonical.ts';
+import type { Parties } from '../core/parties.ts';
 import type { Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction } from '../core/types.ts';
 
 export interface NewSnapshot {
@@ -112,6 +113,8 @@ export interface Store {
   registerSource(source: SourceRegistration, now: string): void;
   saveSnapshot(snapshot: NewSnapshot): number;
   latestSnapshot(sourceId: SourceId, endpoint: string): Snapshot | null;
+  /** Every saved snapshot of a source whose endpoint starts with the prefix, oldest first. */
+  listSnapshots(sourceId: SourceId, endpointPrefix: string): Snapshot[];
   /**
    * Saves what a source reports for an institution. `changed` is true when the last-synced time differs from
    * the one saved before (or none was saved). Each distinct time is also counted as one bank read for the month.
@@ -125,6 +128,8 @@ export interface Store {
   listFreshness(): Freshness[];
   /** Inserts new records and refreshes existing ones; first_seen_at is kept, last_seen_at becomes seenAt. */
   upsertSourceAccounts(sourceId: SourceId, accounts: SourceAccount[], seenAt: string): void;
+  /** Fills who paid, who received and the merchant code on a record that was saved before they were read. */
+  setSourceTransactionParties(sourceId: SourceId, externalId: string, parties: Parties): void;
   upsertSourceTransactions(sourceId: SourceId, transactions: SourceTransaction[], seenAt: string): void;
   upsertSourceBills(sourceId: SourceId, bills: SourceBill[], seenAt: string): void;
   listSourceAccounts(sourceId: SourceId): StoredSourceAccount[];

@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
+import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
 import { currentVersion, migrate } from './migrations.ts';
@@ -83,8 +84,22 @@ interface SourceTransactionRow {
   installment_number: number | null;
   installment_total: number | null;
   category: string | null;
+  operation: string | null;
+  mcc: string | null;
+  payer_hash: string | null;
+  payer_last4: string | null;
+  payer_name: string | null;
+  receiver_hash: string | null;
+  receiver_last4: string | null;
+  receiver_name: string | null;
   first_seen_at: string;
   last_seen_at: string;
+}
+
+function partiesOfRow(r: SourceTransactionRow): { parties?: Parties } {
+  if (r.operation === null && r.mcc === null && r.payer_hash === null && r.payer_name === null && r.receiver_hash === null && r.receiver_name === null) return {};
+  const side = (name: string | null, hash: string | null, last4: string | null): Party | null => (name === null && hash === null ? null : { name, hash, last4 });
+  return { parties: { operation: r.operation, mcc: r.mcc, payer: side(r.payer_name, r.payer_hash, r.payer_last4), receiver: side(r.receiver_name, r.receiver_hash, r.receiver_last4) } };
 }
 
 interface SourceBillRow {
@@ -291,20 +306,27 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     upsertSourceTransactions(sourceId: SourceId, transactions: SourceTransaction[], seenAt: string): void {
       const statement = db.prepare(
         `INSERT INTO source_transactions (source_id, external_id, account_external_id, occurred_at, amount, description,
-           description_raw, status, installment_number, installment_total, category, first_seen_at, last_seen_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           description_raw, status, installment_number, installment_total, category, first_seen_at, last_seen_at,
+           operation, mcc, payer_hash, payer_last4, payer_name, receiver_hash, receiver_last4, receiver_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (source_id, external_id) DO UPDATE SET
            account_external_id = excluded.account_external_id, occurred_at = excluded.occurred_at,
            amount = excluded.amount, description = excluded.description, description_raw = excluded.description_raw,
            status = excluded.status, installment_number = excluded.installment_number,
            installment_total = excluded.installment_total, category = excluded.category,
-           last_seen_at = excluded.last_seen_at`,
+           last_seen_at = excluded.last_seen_at,
+           operation = COALESCE(excluded.operation, operation), mcc = COALESCE(excluded.mcc, mcc),
+           payer_hash = COALESCE(excluded.payer_hash, payer_hash), payer_last4 = COALESCE(excluded.payer_last4, payer_last4),
+           payer_name = COALESCE(excluded.payer_name, payer_name), receiver_hash = COALESCE(excluded.receiver_hash, receiver_hash),
+           receiver_last4 = COALESCE(excluded.receiver_last4, receiver_last4), receiver_name = COALESCE(excluded.receiver_name, receiver_name)`,
       );
       inTransaction(() => {
         for (const t of transactions) {
+          const p = t.parties;
           statement.run(sourceId, t.externalId, t.accountExternalId, t.occurredAt, t.amount, t.description,
             t.descriptionRaw, t.status, t.installment?.number ?? null, t.installment?.total ?? null, t.category,
-            seenAt, seenAt);
+            seenAt, seenAt, p?.operation ?? null, p?.mcc ?? null, p?.payer?.hash ?? null, p?.payer?.last4 ?? null,
+            p?.payer?.name ?? null, p?.receiver?.hash ?? null, p?.receiver?.last4 ?? null, p?.receiver?.name ?? null);
         }
       });
     },
@@ -362,9 +384,23 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
           ? { number: r.installment_number, total: r.installment_total }
           : null,
         category: r.category,
+        ...partiesOfRow(r),
         firstSeenAt: r.first_seen_at,
         lastSeenAt: r.last_seen_at,
       }));
+    },
+
+    setSourceTransactionParties(sourceId: SourceId, externalId: string, parties: Parties): void {
+      db.prepare(
+        `UPDATE source_transactions SET operation = ?, mcc = ?, payer_hash = ?, payer_last4 = ?, payer_name = ?,
+           receiver_hash = ?, receiver_last4 = ?, receiver_name = ? WHERE source_id = ? AND external_id = ?`,
+      ).run(parties.operation, parties.mcc, parties.payer?.hash ?? null, parties.payer?.last4 ?? null, parties.payer?.name ?? null,
+        parties.receiver?.hash ?? null, parties.receiver?.last4 ?? null, parties.receiver?.name ?? null, sourceId, externalId);
+    },
+
+    listSnapshots(sourceId: SourceId, endpointPrefix: string): Snapshot[] {
+      const rows = db.prepare('SELECT * FROM raw_snapshots WHERE source_id = ? AND endpoint LIKE ? ORDER BY fetched_at, id').all(sourceId, `${endpointPrefix.replace(/[%_]/g, '')}%`) as unknown as SnapshotRow[];
+      return rows.map((row) => ({ id: row.id, sourceId: row.source_id, endpoint: row.endpoint, fetchedAt: row.fetched_at, httpStatus: row.http_status, body: JSON.parse(row.body) as unknown, sha256: row.sha256 }));
     },
 
     listSourceBills(sourceId: SourceId): StoredSourceBill[] {

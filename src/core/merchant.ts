@@ -59,3 +59,8 @@ export function merchantName(description: string): string {
   const name = words.join(' ');
   return name === '' ? description.trim() : titleCase(name);
 }
+
+/** The merchant of a transaction: the other party's name when the source gave a document-backed name, else cleaned text. */
+export function merchantOf(t: { description: string; counterparty?: { name: string | null } | null }): string {
+  return merchantName(t.counterparty?.name ?? t.description);
+}

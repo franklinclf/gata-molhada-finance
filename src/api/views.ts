@@ -2,7 +2,7 @@ import type { CanonicalAccount, CanonicalTransaction } from '../core/canonical.t
 import type { Cents } from '../core/money.ts';
 import { institutionKey } from '../core/names.ts';
 import { categoryParents } from './category-groups.ts';
-import { merchantName } from '../core/merchant.ts';
+import { merchantOf } from '../core/merchant.ts';
 import { localDay } from '../core/time.ts';
 import { summarizeAccounts } from '../reconcile/accounts.ts';
 import { cyclesFor, type Cycle } from './cycles.ts';
@@ -309,7 +309,7 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
     if (t.amount > 0 && bankIds.has(t.accountId)) continue;
     const day = localDay(t.occurredAt);
     perDay.set(day, (perDay.get(day) ?? 0) - t.amount);
-    const name = groupBy === 'category' ? (t.category ?? 'Sem categoria') : merchantName(t.description);
+    const name = groupBy === 'category' ? (t.category ?? 'Sem categoria') : merchantOf(t);
     const row = rows.get(name) ?? { amount: 0, count: 0 };
     row.amount += -t.amount;
     row.count += 1;

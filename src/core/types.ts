@@ -1,4 +1,5 @@
 import type { Cents } from './money.ts';
+import type { Parties } from './parties.ts';
 
 export type SourceId = string;
 export type AccountKind = 'checking' | 'savings' | 'credit_card';
@@ -41,6 +42,8 @@ export interface SourceTransaction {
   status: TransactionStatus;
   installment: { number: number; total: number } | null;
   category: string | null;
+  /** Who paid and who received, the operation kind and the merchant code, when the source gives them. */
+  parties?: Parties;
 }
 
 export interface SourceBill {

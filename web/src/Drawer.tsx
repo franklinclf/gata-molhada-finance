@@ -174,6 +174,16 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
                 {d.account.last4 ? ` •••• ${d.account.last4}` : ''}
                 {d.account.last4 && <CopyButton value={d.account.last4} label="Copiar final do cartão" />}
               </dd>
+              {d.transaction.counterparty && (
+                <>
+                  <dt>{d.transaction.amount < 0 ? 'Para' : 'De'}</dt>
+                  <dd>
+                    {d.transaction.counterparty.name ?? 'Nome não informado'}
+                    {d.transaction.counterparty.last4 ? ` · documento final ${d.transaction.counterparty.last4}` : ''}
+                    {d.transaction.counterparty.isOwner ? ' · você mesmo' : ''}
+                  </dd>
+                </>
+              )}
               <dt>Status</dt>
               <dd>{d.transaction.status === 'pending' ? 'Pendente' : 'Lançada'}</dd>
               <dt>Fontes</dt>
