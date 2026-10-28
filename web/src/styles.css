@@ -399,8 +399,8 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .copy svg { width: 15px; height: 15px; }
 @media (max-width: 760px) { .copy { width: 32px; height: 32px; } .copy svg { width: 18px; height: 18px; } }
 
-.stack { display: flex; flex-direction: column-reverse; width: 100%; border-radius: 6px 6px 3px 3px; overflow: hidden; min-height: 2px; transition: height 0.2s, opacity 0.15s; }
-.stack > span { display: block; min-height: 0; }
+.stacked { display: flex; flex-direction: column-reverse; width: 100%; border-radius: 6px 6px 3px 3px; overflow: hidden; min-height: 2px; transition: height 0.2s, opacity 0.15s; }
+.stacked > span { display: block; min-height: 0; }
 
 .clickable-row { cursor: pointer; }
 .clickable-row:hover td { background: rgb(255 255 255 / 0.04); }

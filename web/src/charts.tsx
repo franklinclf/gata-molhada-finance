@@ -199,7 +199,7 @@ export function StackedBars({ data, hidden, height = 150, selected, onSelect }: 
           >
             <span class="bar-value">{brlShort(total, hidden)}</span>
             <span class="bar-track">
-              <span class="stack" style={{ height: `${(total / max) * 100}%`, opacity: on ? 1 : 0.35 }}>
+              <span class="stacked" style={{ height: `${(total / max) * 100}%`, opacity: on ? 1 : 0.35 }}>
                 {d.parts.map((p, i) => (
                   <span key={i} style={{ flex: p.value, background: p.color }} />
                 ))}

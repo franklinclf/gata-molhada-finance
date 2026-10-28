@@ -115,3 +115,7 @@ A aba Cartões → Futuras mostra as próximas seis faturas por mês de vencimen
 ## Gastos sem pagamento de fatura em dobro
 
 A fatura paga pela conta aparece lá como "GASTOS CARTAO DE CREDITO" (Bradesco) ou "PAGTO ELETRON COBRANCA - BANCO BRADESCARD" (Bradescard, que o banco chama de IBI). A Pierre rotulou isso como taxa de cartão e o Meu Pluggy como pagamento de cartão. O papel de uma transação agora olha os rótulos das duas fontes e esses textos, então esses débitos não entram em gastos, que contam as compras no cartão pelo dia da compra.
+
+## Fotos das telas para revisar o visual
+
+`npm run shots` fotografa o app em quatro tamanhos (desktop 1440, notebook 1024, tablet 768 e celular 390) para 13 telas, com dados inventados e sem servidor nem login. Usa o Chrome sem tela (o `chrome-headless-shell` que o Playwright guarda em `~/Library/Caches/ms-playwright`, ou o Chrome em si via `CHROME=...`). As fotos vão para `shots/` (fora do git). `npm run shots -- painel --size phone` tira só uma. Não mostra hover, arrastar nem animação; serve para conferir layout, quebra de texto e responsividade.

@@ -5,3 +5,5 @@ data/
 scripts/audit/
 dist/
 eval/results/
+shots/
+dist
