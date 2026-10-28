@@ -85,3 +85,7 @@ A categoria que aparece na tela pode mudar: a IA a troca pela lista padrão, e v
 Foi isso que quebrou as faturas depois da categorização por IA: a IA trocou "Credit card payment" por "Pagamento de fatura", as regras antigas só reconheciam os nomes das fontes, e nenhum pagamento era visto. As faturas apareciam todas vencidas, os créditos entravam como estorno e o ciclo em aberto ficava negativo.
 
 Em Fontes e conferência, um aviso "Algo nos dados não fecha" aparece quando o ciclo em aberto de um cartão dá negativo ou as faturas em aberto passam do limite dele, que são sinais de pagamentos não reconhecidos.
+
+## De onde vem o total das faturas em aberto
+
+O valor que o emissor informa como saldo do cartão é o que está sendo usado do limite: as compras do ciclo em aberto mais as parcelas de compras antigas que ainda vão cair em faturas futuras. Esse saldo não é a fatura. O app mostra como "fatura do ciclo" o saldo do emissor menos as faturas fechadas não pagas e menos as parcelas de faturas futuras (que vêm do plano de parcelas), nunca menos que o já lançado. Para cartões de limite compartilhado (os Bradesco), o saldo é um só para o grupo e entra uma vez. A tela de Cartões mostra, ao lado, as parcelas de faturas futuras e o saldo devedor total no emissor, para o número poder ser conferido.

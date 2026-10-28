@@ -247,3 +247,19 @@ test('data health flags a negative cycle and bills owed beyond the limit, and st
   const issues = dataHealth(broken.store, NOW);
   assert.ok(issues.length > 0 || cards(broken.store, NOW).totals.outstanding > 0);
 });
+
+test('the open cycle leaves out installments that belong to later bills, which the issuer balance includes', () => {
+  const { store, card1 } = setup();
+  // Installment 4 of 6 was charged in October (bill due in November); 5 and 6 are still to come.
+  const phone = (n: number, day: string) => ({ ...tx(`phone-${n}`, 'card1', day, -3000), description: 'Phone', installment: { number: n, total: 6 } });
+  store.replaceCanonicalTransactions(
+    [tx('start', 'card1', '2026-08-01', -100), tx('pay-oct', 'card1', '2026-10-15', 68000, 'Pagamento de cartão de crédito'), tx('pay-sep', 'card1', '2026-09-15', 80000, 'Pagamento de cartão de crédito'), tx('buy-open', 'card1', '2026-10-10', -600), phone(4, '2026-10-12')],
+    [],
+    NOW.toISOString(),
+  );
+  // The issuer says 28.090 is owed in total: this cycle, plus 2 installments of 3.000 that belong to later bills.
+  const row = cards(store, NOW).cards[0]!;
+  assert.deepEqual([row.futureInstallments, row.posted, row.total, row.estimated], [6000, 3600, 28090 - 6000, true]);
+  assert.equal(cards(store, NOW).totals.futureInstallments, 6000);
+  assert.equal(cards(store, NOW).totals.reportedByIssuer, 28090);
+});
