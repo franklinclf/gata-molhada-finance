@@ -160,3 +160,37 @@ test('bill bars: one per due month with the cards added, then the open cycle', (
   const unpaid = setup({ payments: false });
   assert.deepEqual(cardBills(unpaid.store, NOW).bars.map((b) => [b.key, b.status]), [['2026-09', 'overdue'], ['2026-10', 'overdue'], ['open', 'open']]);
 });
+
+test('a leftover on an old bill is written off when every later bill was paid in full, and the user can overrule it', () => {
+  const { store, card1 } = setup();
+  store.upsertSourceBills('pierre', [{ externalId: 'b-jun', accountExternalId: 'ext-card1', dueDate: '2026-06-15', closingDate: '2026-06-08', total: 20000, minimumPayment: null }], NOW.toISOString());
+  const txs = [
+    tx('start', 'card1', '2026-05-01', -100),
+    tx('pay-jun', 'card1', '2026-06-14', 17000, 'Pagamento de cartão de crédito'),
+    tx('pay-sep', 'card1', '2026-09-15', 80000, 'Pagamento de cartão de crédito'),
+    tx('pay-oct', 'card1', '2026-10-15', 68000, 'Pagamento de cartão de crédito'),
+  ];
+  store.replaceCanonicalTransactions(txs, [], NOW.toISOString());
+  const find = () => cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-06')!;
+  assert.deepEqual([find().status, find().outstanding, find().adjusted], ['paid', 0, { amount: 3000, by: 'auto' }]);
+
+  store.setCycleOverride('card1', '2026-06', false, NOW.toISOString());
+  assert.deepEqual([find().status, find().outstanding, find().adjusted], ['overdue', 3000, null]);
+
+  store.setCycleOverride('card1', '2026-06', true, NOW.toISOString());
+  assert.equal(find().adjusted?.by, 'manual');
+  store.setCycleOverride('card1', '2026-06', null, NOW.toISOString());
+  assert.equal(find().adjusted?.by, 'auto');
+});
+
+test('a leftover is not written off when a later bill is also unpaid, when it is large, or when it is recent', () => {
+  const { store, card1 } = setup({ payments: false });
+  const result = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27');
+  assert.deepEqual(result.map((c) => c.adjusted), [null, null, null]);
+});
+
+test('a card with no bill in the chosen month adds nothing to the totals', () => {
+  const { store } = setup();
+  const v = cards(store, NOW, {}, '2026-03');
+  assert.deepEqual([v.cards[0]!.cycle, v.cards[0]!.total, v.totals.cycleTotal], [null, 0, 0]);
+});

@@ -6,16 +6,23 @@ import { Go, TxRow } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
-export function RecentWidget({ item, now, hidden, size }: WidgetProps) {
+export function RecentWidget({ now, hidden, size }: WidgetProps) {
   const range = periodRange('3m', now);
-  const count = 40;
-  const { data, error, loading } = useLoad(() => api.transactions(range.from, range.to, count), [range.from, range.to, count], 120_000);
+  const { data, error, loading } = useLoad(() => api.transactions(range.from, range.to, 40), [range.from, range.to], 120_000);
   return (
-    <Widget title="Transações recentes" to={{ page: 'transactions' }} asOf={data?.oldestDataAt} now={now} loading={loading && !data} error={error}>
+    <Widget
+      title="Transações recentes"
+      to={{ page: 'transactions' }}
+      asOf={data?.oldestDataAt}
+      now={now}
+      loading={loading && !data}
+      error={error}
+      head={data && size !== 'sm' && <div class="muted">{data.total} transações em 3 meses · mais recentes primeiro</div>}
+    >
       {data && (
         <>
           <ul class="rows tall tx-list">
-            {data.items.slice(0, size === 'sm' ? 4 : count).map((t) => (
+            {data.items.slice(0, size === 'sm' ? 4 : 40).map((t) => (
               <TxRow key={t.id} t={t} hidden={hidden} onOpen={(id) => patchParams({ tx: id })} />
             ))}
           </ul>

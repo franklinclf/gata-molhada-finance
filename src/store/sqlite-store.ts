@@ -656,6 +656,16 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return Number(db.prepare('DELETE FROM source_transactions WHERE occurred_at < ?').run(instant).changes);
     },
 
+    listCycleOverrides(): Map<string, boolean> {
+      const rows = db.prepare('SELECT account_id, cycle_key, settled FROM cycle_overrides').all() as Array<{ account_id: string; cycle_key: string; settled: number }>;
+      return new Map(rows.map((r) => [`${r.account_id}|${r.cycle_key}`, r.settled === 1]));
+    },
+
+    setCycleOverride(accountId: string, cycleKey: string, settled: boolean | null, now: string): void {
+      if (settled === null) db.prepare('DELETE FROM cycle_overrides WHERE account_id = ? AND cycle_key = ?').run(accountId, cycleKey);
+      else db.prepare('INSERT INTO cycle_overrides (account_id, cycle_key, settled, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(account_id, cycle_key) DO UPDATE SET settled = excluded.settled, updated_at = excluded.updated_at').run(accountId, cycleKey, settled ? 1 : 0, now);
+    },
+
     getSetting(key: string): string | null {
       const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
       return row ? row.value : null;

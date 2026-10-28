@@ -150,3 +150,12 @@ export function joinCandidates(store: Store, id: string): Candidate[] | null {
     .sort((a, b) => (a.amount === target.amount ? 0 : 1) - (b.amount === target.amount ? 0 : 1) || a.daysApart - b.daysApart || Math.abs(a.amount - target.amount) - Math.abs(b.amount - target.amount))
     .slice(0, 12);
 }
+
+/** The user's word on a card bill: true writes off the leftover, false keeps it owed, null goes back to the automatic rule. */
+export function setCycleSettled(store: Store, accountId: unknown, cycleKey: unknown, settled: unknown, now: Date): MutationResult {
+  if (typeof accountId !== 'string' || typeof cycleKey !== 'string' || !/^\d{4}-\d{2}$/.test(cycleKey)) return { ok: false, status: 400, error: 'accountId and cycleKey (YYYY-MM) are required' };
+  if (settled !== true && settled !== false && settled !== null) return { ok: false, status: 400, error: 'settled must be true, false or null' };
+  if (!store.listCanonicalAccounts().some((a) => a.id === accountId && a.kind === 'credit_card')) return { ok: false, status: 404, error: 'not_found' };
+  store.setCycleOverride(accountId, cycleKey, settled, now.toISOString());
+  return { ok: true };
+}

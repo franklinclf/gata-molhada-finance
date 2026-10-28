@@ -135,7 +135,9 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     const cycle = (cycleChoice === 'open' ? list.find((c) => c.status === 'open') : list.find((c) => c.key === cycleChoice)) ?? null;
     const outstanding = outstandingOf(a.id);
     const posted = cycle ? cycle.charges - cycle.credits : 0;
-    let total = a.balance;
+    // A card that has no bill in the chosen month (for example it did not exist yet) contributes nothing. Only a card
+    // with no bills at all falls back to the balance the issuer reports.
+    let total = list.length === 0 ? a.balance : 0;
     let estimated = false;
     if (cycle) {
       if (cycle.billTotal !== null) total = cycle.billTotal;
@@ -312,55 +314,6 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
   const total = groups.reduce((s, g) => s + g.amount, 0);
   return { ...stamp(accounts, now), ...range, total, groupBy, groups: groups.map((g) => ({ ...g, share: total > 0 ? g.amount / total : 0 })),
     daily: [...perDay].sort(([a], [b]) => a.localeCompare(b)).map(([day, amount]) => ({ day, amount })) };
-}
-
-// ---------- installments ----------
-
-export interface InstallmentsView extends Stamped {
-  /** Sum of one installment of every purchase that still has installments after the latest one seen. */
-  monthlyCommitment: Cents;
-  remainingTotal: Cents;
-  items: Array<{ accountId: string; description: string; number: number; total: number; installmentAmount: Cents; remainingCount: number; remainingAmount: Cents; lastMonth: string }>;
-}
-
-function addMonths(day: string, months: number): string {
-  const [y, m] = day.split('-').map(Number) as [number, number];
-  const index = y * 12 + (m - 1) + months;
-  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`;
-}
-
-export function installments(store: Store, now: Date, opts: ViewOptions = {}): InstallmentsView {
-  const accounts = visibleAccounts(store, opts);
-  const latest = new Map<string, CanonicalTransaction>();
-  for (const t of effectiveTransactions(store, opts, accounts)) {
-    if (!t.installment || t.excluded || t.installment.total < 2) continue;
-    const key = `${t.accountId}|${t.description}|${t.installment.total}|${-t.amount}`;
-    const current = latest.get(key);
-    if (!current || t.installment.number > current.installment!.number) latest.set(key, t);
-  }
-  const items = [...latest.values()]
-    .filter((t) => t.installment!.number < t.installment!.total)
-    .map((t) => {
-      const { number, total } = t.installment!;
-      const remainingCount = total - number;
-      return {
-        accountId: t.accountId,
-        description: t.description,
-        number,
-        total,
-        installmentAmount: -t.amount,
-        remainingCount,
-        remainingAmount: remainingCount * -t.amount,
-        lastMonth: addMonths(localDay(t.occurredAt), remainingCount),
-      };
-    })
-    .sort((a, b) => b.remainingAmount - a.remainingAmount);
-  return {
-    ...stamp(accounts, now),
-    monthlyCommitment: items.reduce((s, i) => s + i.installmentAmount, 0),
-    remainingTotal: items.reduce((s, i) => s + i.remainingAmount, 0),
-    items,
-  };
 }
 
 // ---------- freshness and findings ----------

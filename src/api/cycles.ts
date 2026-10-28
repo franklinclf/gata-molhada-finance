@@ -26,6 +26,11 @@ export interface Cycle {
   /** What is still owed on a closed cycle. */
   outstanding: Cents;
   status: CycleStatus;
+  /**
+   * Set when a leftover on a closed bill was written off: the issuer's total included something that was never
+   * charged (for example a purchase "under review" that dropped out). `by` says who decided.
+   */
+  adjusted: { amount: Cents; by: 'auto' | 'manual' } | null;
 }
 
 const PAYMENT = /pagamento de cart|credit card payment|pagamento recebido/i;
@@ -129,7 +134,7 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
   }
   windows.push({ from: addDays(last.closing, 1), to: openClosing, due: openDue, total: null });
 
-  return windows.map((w, i) => {
+  const cycles: Cycle[] = windows.map((w, i) => {
     let charges = 0;
     let credits = 0;
     for (const t of own) {
@@ -151,6 +156,36 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
       else status = w.due < today ? 'overdue' : paid > 0 ? 'partial' : 'unpaid';
       if (status === 'paid') outstanding = 0;
     }
-    return { key: w.due.slice(0, 7), accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, status };
+    return { key: w.due.slice(0, 7), accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, status, adjusted: null };
   });
+  return settleLeftovers(store, account.id, cycles, today);
+}
+
+const WRITE_OFF_AFTER_DAYS = 30;
+const WRITE_OFF_MAX_SHARE = 0.25;
+
+/**
+ * A small leftover on an old bill, with every later bill paid in full, was never charged: if the issuer still wanted
+ * it, the later bills (or the balance) would carry it and the user would have been unable to pay them in full. So it is
+ * written off automatically. The user can overrule this either way from the bill history.
+ */
+function settleLeftovers(store: Store, accountId: string, cycles: Cycle[], today: string): Cycle[] {
+  const overrides = store.listCycleOverrides();
+  for (let i = cycles.length - 1; i >= 0; i--) {
+    const c = cycles[i]!;
+    if (c.billTotal === null || c.outstanding <= 0 || (c.status !== 'overdue' && c.status !== 'unpaid' && c.status !== 'partial')) continue;
+    const word = overrides.get(`${accountId}|${c.key}`);
+    let by: 'auto' | 'manual' | null = null;
+    if (word === true) by = 'manual';
+    else if (word === undefined) {
+      const later = cycles.slice(i + 1).filter((x) => x.billTotal !== null && x.status !== 'open' && x.status !== 'unknown' && x.status !== 'empty');
+      if (c.dueDate < addDays(today, -WRITE_OFF_AFTER_DAYS) && c.outstanding <= c.billTotal * WRITE_OFF_MAX_SHARE && later.length >= 1 && later.every((x) => x.outstanding <= TOLERANCE)) by = 'auto';
+    }
+    if (by !== null) {
+      c.adjusted = { amount: c.outstanding, by };
+      c.outstanding = 0;
+      c.status = 'paid';
+    }
+  }
+  return cycles;
 }

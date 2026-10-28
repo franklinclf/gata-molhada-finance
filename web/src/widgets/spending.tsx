@@ -29,36 +29,39 @@ export function SpendingWidget({ item, now, hidden, size, config, setConfig }: W
       loading={loading && !data}
       error={error}
       actions={<PeriodSelect value={period} options={PERIODS} onChange={(id) => setConfig({ period: id })} />}
+      head={
+        data && (
+          <>
+            <div class="big">{brl(data.total, hidden)}</div>
+            {size !== 'sm' && (
+              <>
+                <LineChart points={cumulative(data.daily, data.from, data.to)} hidden={hidden} days={daysIn(data.from, data.to)} />
+                <div class="tabs">
+                  <button class={by === 'category' ? 'tab on' : 'tab'} onClick={() => setConfig({ by: 'category' })}>Categorias</button>
+                  <button class={by === 'merchant' ? 'tab on' : 'tab'} onClick={() => setConfig({ by: 'merchant' })}>Estabelecimentos</button>
+                </div>
+              </>
+            )}
+          </>
+        )
+      }
     >
-      {data && (
-        <>
-          <div class="big">{brl(data.total, hidden)}</div>
-          {size !== 'sm' && (
-            <>
-              <LineChart points={cumulative(data.daily, data.from, data.to)} hidden={hidden} days={daysIn(data.from, data.to)} />
-              <div class="tabs">
-                <button class={by === 'category' ? 'tab on' : 'tab'} onClick={() => setConfig({ by: 'category' })}>Categorias</button>
-                <button class={by === 'merchant' ? 'tab on' : 'tab'} onClick={() => setConfig({ by: 'merchant' })}>Estabelecimentos</button>
-              </div>
-              <div class="split">
-                {size === 'lg' && <Ring size={120} segments={groups.slice(0, 8).map((g, i) => ({ value: g.amount, color: PALETTE[i % PALETTE.length]!, tip: `${g.name}\n${hidden ? '••••' : brl(g.amount)} · ${percent(g.share)}` }))} />}
-                <ul class="rows grow">
-                  {groups.map((g, i) => (
-                    <li key={g.name}>
-                      <span class="swatch" style={{ background: PALETTE[i % PALETTE.length] }} />
-                      <Go class="grow clip" page="transactions" params={link(g.name)}>
-                        {g.name}
-                      </Go>
-                      <span class="muted">{percent(g.share)}</span>
-                      <strong>{brl(g.amount, hidden)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              {data.groups.length > limit && <Go page="spending" params={{ from: range.from, to: range.to, by }}>Ver mais {data.groups.length - limit}</Go>}
-            </>
-          )}
-        </>
+      {data && size !== 'sm' && (
+        <div class="split top">
+          {size === 'lg' && <Ring size={120} segments={groups.slice(0, 8).map((g, i) => ({ value: g.amount, color: PALETTE[i % PALETTE.length]!, tip: `${g.name}\n${hidden ? '••••' : brl(g.amount)} · ${percent(g.share)}` }))} />}
+          <ul class="rows grow">
+            {groups.map((g, i) => (
+              <li key={g.name}>
+                <span class="swatch" style={{ background: PALETTE[i % PALETTE.length] }} />
+                <Go class="grow clip" page="transactions" params={link(g.name)}>
+                  {g.name}
+                </Go>
+                <span class="muted">{percent(g.share)}</span>
+                <strong>{brl(g.amount, hidden)}</strong>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </Widget>
   );
