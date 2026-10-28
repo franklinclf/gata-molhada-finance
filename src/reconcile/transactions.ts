@@ -146,7 +146,7 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
   const findings: Finding[] = [];
   const stats: TransactionStats = {
     groups: 0,
-    byState: { confirmed: 0, single_source: 0, conflict: 0, stale_pending: 0, ignored: 0 },
+    byState: { confirmed: 0, single_source: 0, conflict: 0, stale_pending: 0, billed: 0, ignored: 0 },
     byPass: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   };
 

@@ -169,3 +169,18 @@ export function setCycleSettled(store: Store, accountId: unknown, cycleKey: unkn
   store.setCycleOverride(accountId, cycleKey, settled, now.toISOString());
   return { ok: true };
 }
+
+/** The user says which installment a charge is, for charges the sources deliver without it. `null` clears what was set. */
+export function setTransactionInstallment(store: Store, transactionId: string, number: unknown, total: unknown, now: Date): MutationResult {
+  const transaction = effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).find((t) => t.id === transactionId);
+  if (!transaction) return { ok: false, status: 404, error: 'not_found' };
+  if (number === null && total === null) {
+    store.setInstallmentOverride(transactionId, null, now.toISOString());
+    return { ok: true };
+  }
+  if (!Number.isInteger(number) || !Number.isInteger(total) || (number as number) < 1 || (total as number) < 2 || (total as number) > 120 || (number as number) > (total as number)) {
+    return { ok: false, status: 400, error: 'number must be from 1 to total, and total from 2 to 120' };
+  }
+  store.setInstallmentOverride(transactionId, { number: number as number, total: total as number }, now.toISOString());
+  return { ok: true };
+}

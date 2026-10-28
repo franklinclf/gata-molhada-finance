@@ -6,7 +6,7 @@ import { PeriodPicker } from '../period.tsx';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { CheckList, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
 
-const STATES = ['confirmed', 'single_source', 'stale_pending', 'ignored'].map((value) => ({ value, label: STATE_LABEL[value] ?? value }));
+const STATES = ['confirmed', 'single_source', 'billed', 'stale_pending', 'ignored'].map((value) => ({ value, label: STATE_LABEL[value] ?? value }));
 
 const SORTS = [
   { value: 'date_desc', label: 'Mais recentes' },

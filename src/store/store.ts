@@ -205,6 +205,12 @@ export interface Store {
   recordAiUsage(entry: { kind: string; model: string; items: number; costUsd: number; at: string }): void;
   /** Money spent on model calls in a month (YYYY-MM). */
   aiSpent(month: string): number;
+  /** Installment the user set by hand, per canonical transaction id. */
+  listInstallmentOverrides(): Map<string, { number: number; total: number }>;
+  /** Sets (or with null clears) the installment on every source record of a canonical transaction. */
+  setInstallmentOverride(transactionId: string, installment: { number: number; total: number } | null, now: string): void;
+  /** Restores pending transactions that a card bill proved real: they count again. */
+  markTransactionsBilled(ids: string[]): void;
   getSetting(key: string): string | null;
   setSetting(key: string, value: string, updatedAt: string): void;
   close(): void;

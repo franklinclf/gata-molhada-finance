@@ -103,6 +103,7 @@ export const STATE_LABEL: Record<string, string> = {
   single_source: 'Só uma fonte tem (normal)',
   conflict: 'Fontes discordam do status',
   stale_pending: 'Pendente que o banco não mostra (fora dos totais)',
+  billed: 'Pendente confirmada pela fatura do cartão',
   ignored: 'Ignorada por você (fora dos totais)',
 };
 

@@ -51,9 +51,10 @@ export interface LimitGroup {
 /**
  * confirmed: more than one source reports it. single_source: only one does, which is common and not a problem.
  * stale_pending: pending for longer than the banks keep things pending, so left out of totals.
+ * billed: it was pending and seen by one source only, but a card bill (or a repeat of a bill-proven charge) shows it is real.
  * ignored: set aside by the user. conflict is no longer produced (a posted report always wins) and only exists in old data.
  */
-export type TransactionState = 'confirmed' | 'single_source' | 'conflict' | 'stale_pending' | 'ignored';
+export type TransactionState = 'confirmed' | 'single_source' | 'conflict' | 'stale_pending' | 'billed' | 'ignored';
 
 export interface CanonicalTransaction {
   id: string;

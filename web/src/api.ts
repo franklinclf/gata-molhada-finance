@@ -116,6 +116,8 @@ export const api = {
   acceptAi: (key: string, category?: string) => request<{ ok: true }>('/api/ai/accept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, category }) }),
   rejectAi: (key: string) => request<{ ok: true }>('/api/ai/reject', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key }) }),
   acceptAllAi: () => request<{ accepted: number }>('/api/ai/accept-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+  setInstallment: (id: string, number: number | null, total: number | null) =>
+    request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/installment`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ number, total }) }),
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
   setHidden: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),

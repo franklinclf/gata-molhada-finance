@@ -5,6 +5,43 @@ import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { Loading, STATE_LABEL, StatusBadge } from './ui.tsx';
 
+function InstallmentEditor({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
+  const [number, setNumber] = useState(String(d.transaction.installment?.number ?? ''));
+  const [total, setTotal] = useState(String(d.transaction.installment?.total ?? ''));
+  const [error, setError] = useState<string | null>(null);
+  const save = async (clear: boolean) => {
+    setError(null);
+    try {
+      await (clear ? api.setInstallment(id, null, null) : api.setInstallment(id, Number(number), Number(total)));
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
+    }
+  };
+  return (
+    <>
+      <h3>Parcelamento</h3>
+      <div class="muted">
+        {d.transaction.installment ? `Parcela ${d.transaction.installment.number} de ${d.transaction.installment.total}${d.installmentByUser ? ' (informada por você)' : ' (vinda da fonte)'}` : 'A fonte não diz se é parcelada. Se for, informe aqui: o app passa a contar as parcelas das próximas faturas e tira esse valor da fatura em aberto.'}
+      </div>
+      <div class="recat">
+        <input inputMode="numeric" placeholder="Parcela" aria-label="Número da parcela" value={number} onInput={(e) => setNumber((e.currentTarget as HTMLInputElement).value)} />
+        <span class="muted">de</span>
+        <input inputMode="numeric" placeholder="Total" aria-label="Total de parcelas" value={total} onInput={(e) => setTotal((e.currentTarget as HTMLInputElement).value)} />
+        <button class="primary" disabled={number === '' || total === ''} onClick={() => void save(false)}>
+          Salvar
+        </button>
+      </div>
+      {d.installmentByUser && (
+        <button class="link" onClick={() => void save(true)}>
+          Remover o que informei
+        </button>
+      )}
+      {error && <div class="error">{error}</div>}
+    </>
+  );
+}
+
 function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onChange: (closes: boolean) => void }) {
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -235,6 +272,8 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
             >
               Ver todas deste estabelecimento
             </button>
+
+            {d.account.kind === 'credit_card' && d.transaction.amount < 0 && <InstallmentEditor id={id} d={d} onSaved={() => detail.reload()} />}
 
             <Mapping id={id} hidden={hidden} d={d} onChange={(closes) => (closes ? patchParams({ tx: null }) : detail.reload())} />
 

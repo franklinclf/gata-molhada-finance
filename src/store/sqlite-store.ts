@@ -776,6 +776,27 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return row.total;
     },
 
+    listInstallmentOverrides(): Map<string, { number: number; total: number }> {
+      const rows = db.prepare('SELECT l.transaction_id AS id, o.number AS number, o.total AS total FROM transaction_links l JOIN installment_overrides o ON o.source_id = l.source_id AND o.external_id = l.external_id ORDER BY o.updated_at').all() as Array<{ id: string; number: number; total: number }>;
+      return new Map(rows.map((r) => [r.id, { number: r.number, total: r.total }]));
+    },
+
+    setInstallmentOverride(transactionId: string, installment: { number: number; total: number } | null, now: string): void {
+      inTransaction(() => {
+        const links = db.prepare('SELECT source_id, external_id FROM transaction_links WHERE transaction_id = ?').all(transactionId) as Array<{ source_id: string; external_id: string }>;
+        for (const l of links) {
+          if (installment === null) db.prepare('DELETE FROM installment_overrides WHERE source_id = ? AND external_id = ?').run(l.source_id, l.external_id);
+          else db.prepare('INSERT INTO installment_overrides (source_id, external_id, number, total, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET number = excluded.number, total = excluded.total, updated_at = excluded.updated_at').run(l.source_id, l.external_id, installment.number, installment.total, now);
+        }
+      });
+    },
+
+    markTransactionsBilled(ids: string[]): void {
+      inTransaction(() => {
+        for (const id of ids) db.prepare("UPDATE transactions SET state = 'billed', excluded = 0 WHERE id = ?").run(id);
+      });
+    },
+
     getSetting(key: string): string | null {
       const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
       return row ? row.value : null;

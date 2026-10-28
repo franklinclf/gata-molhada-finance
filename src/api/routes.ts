@@ -6,7 +6,7 @@ import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, rejectSuggestion } from './ai.ts';
 import { installments } from './installments.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
-import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCycleSettled, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -17,7 +17,7 @@ export interface ApiResult {
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const CYCLE = /^(open|\d{4}-\d{2})$/;
-const STATES = ['confirmed', 'single_source', 'conflict', 'stale_pending', 'ignored'] as const;
+const STATES = ['confirmed', 'single_source', 'conflict', 'stale_pending', 'billed', 'ignored'] as const;
 const SORTS: SortKey[] = ['date_desc', 'date_asc', 'amount_desc', 'amount_asc'];
 
 function isRealDay(value: string): boolean {
@@ -196,6 +196,12 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const input = parseBody(body);
         if (!input) return badRequest('body must be { otherId }');
         return fromMutation(joinTransactions(store, id, input.otherId, now));
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'installment') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { number, total } or both null');
+        return fromMutation(setTransactionInstallment(store, id, input.number, input.total, now));
       }
       if (parts.length === 4 && id !== undefined && sub === 'ignore') {
         if (method !== 'PUT') return methodNotAllowed();

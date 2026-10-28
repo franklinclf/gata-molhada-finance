@@ -49,6 +49,7 @@ export function effectiveTransactions(
   const overrides = store.listCategoryOverrides();
   const rules = store.listCategoryRules();
   const ai = store.listAiCategories();
+  const installmentOverrides = store.listInstallmentOverrides();
   return store
     .listCanonicalTransactions({ accountId: options.accountId, includeExcluded: options.includeExcluded })
     .filter((t) => ids.has(t.accountId))
@@ -61,6 +62,7 @@ export function effectiveTransactions(
       if (override !== undefined) [category, origin] = [override, 'override'];
       else if (rule !== undefined) [category, origin] = [rule, 'rule'];
       else if (suggested?.status === 'applied') [category, origin] = [suggested.category, 'ai'];
-      return { ...t, category, categoryOrigin: origin, sourceCategory: t.category, role: roleOf({ sourceCategory: t.category, description: t.description, category, categoryOrigin: origin }) };
+      const installment = installmentOverrides.get(t.id) ?? t.installment;
+      return { ...t, installment, category, categoryOrigin: origin, sourceCategory: t.category, role: roleOf({ sourceCategory: t.category, description: t.description, category, categoryOrigin: origin }) };
     });
 }
