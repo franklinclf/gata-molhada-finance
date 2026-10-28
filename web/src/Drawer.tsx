@@ -34,7 +34,7 @@ function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: 
       <div class="links">
         {d.joinedByHand && (
           <button class="link" disabled={busy} onClick={() => void run(() => api.separate(id), true)}>
-            Separar o que juntei
+            {d.joinedBy === 'ai' ? 'A IA juntou estes dois. Separar (ela errou)' : 'Separar o que juntei'}
           </button>
         )}
         {d.transaction.sourceIds.length === 1 && !ignored && (

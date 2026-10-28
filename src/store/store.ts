@@ -61,6 +61,22 @@ export interface AiCategory {
   decidedAt: string;
 }
 
+export type MatchAction = 'joined' | 'dismissed' | 'suggested' | 'undone';
+
+export interface AiMatch {
+  findingId: string;
+  verdict: 'yes' | 'no';
+  confidence: 'high' | 'medium' | 'low';
+  action: MatchAction;
+  model: string;
+  sampleA: string;
+  sampleB: string;
+  /** One record of the pair, to find the joined transaction again after ids are rebuilt. */
+  sourceA: string;
+  externalA: string;
+  decidedAt: string;
+}
+
 export interface Store {
   schemaVersion(): number;
   registerSource(source: SourceRegistration, now: string): void;
@@ -120,7 +136,13 @@ export interface Store {
   deleteCustomCategory(name: string): void;
   listManualMapping(): ManualMapping;
   /** Joins two canonical transactions of different sources: every record of one is tied to every record of the other. */
-  addManualLink(transactionA: string, transactionB: string, now: string): boolean;
+  addManualLink(transactionA: string, transactionB: string, now: string, madeBy?: 'user' | 'ai'): boolean;
+  /** Who made the manual joins that involve this transaction: the user, the AI, or nobody. */
+  manualLinkMadeBy(transactionId: string): 'user' | 'ai' | null;
+  /** Canonical transaction that currently holds a source record. */
+  transactionOfRecord(sourceId: string, externalId: string): string | null;
+  listAiMatches(): Map<string, AiMatch>;
+  saveAiMatch(match: AiMatch): void;
   /** Undoes the manual joins that involve any record of a canonical transaction. */
   removeManualLinks(transactionId: string): void;
   /** Sets aside (or brings back) every record of a canonical transaction. */

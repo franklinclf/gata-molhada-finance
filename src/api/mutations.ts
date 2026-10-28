@@ -98,6 +98,12 @@ export function joinTransactions(store: Store, id: unknown, otherId: unknown, no
 
 export function separateTransaction(store: Store, id: string, now: Date): MutationResult {
   if (!knownTransaction(store, id)) return { ok: false, status: 404, error: 'not_found' };
+  // A join the AI made and the user undoes is remembered, so the AI does not make it again.
+  if (store.manualLinkMadeBy(id) === 'ai') {
+    for (const m of store.listAiMatches().values()) {
+      if (m.action === 'joined' && store.transactionOfRecord(m.sourceA, m.externalA) === id) store.saveAiMatch({ ...m, action: 'undone', decidedAt: now.toISOString() });
+    }
+  }
   store.removeManualLinks(id);
   rebuild(store, now);
   return { ok: true };

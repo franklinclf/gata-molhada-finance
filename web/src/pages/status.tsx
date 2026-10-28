@@ -9,6 +9,7 @@ import { Loading } from '../ui.tsx';
 export function StatusPage({ now }: { now: Date }) {
   const fresh = useLoad(() => api.freshness(), [], 60_000);
   const findings = useLoad(() => api.findings(), []);
+  const ai = useLoad(() => api.ai(), []);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const act = async (id: string, work: () => Promise<unknown>) => {
@@ -17,6 +18,7 @@ export function StatusPage({ now }: { now: Date }) {
     try {
       await work();
       findings.reload();
+      ai.reload();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Não foi possível concluir.');
     } finally {
@@ -80,7 +82,15 @@ export function StatusPage({ now }: { now: Date }) {
               <li key={f.id} class="suggestion">
                 <div class="grow">
                   <div>{f.summary}</div>
-                  <div class="muted">aberta {ago(f.openedAt, now)}</div>
+                  <div class="muted">
+                    aberta {ago(f.openedAt, now)}
+                    {ai.data?.matches.opinions[f.id] && (
+                      <span class={`badge ${ai.data.matches.opinions[f.id]!.verdict === 'yes' ? 'info' : 'muted'}`} data-tip="Opinião do modelo; ele só junta sozinho quando tem certeza e o código confirma os fatos">
+                        {' '}
+                        IA: {ai.data.matches.opinions[f.id]!.verdict === 'yes' ? 'parece a mesma' : 'parece diferente'} ({ai.data.matches.opinions[f.id]!.confidence === 'high' ? 'certeza' : ai.data.matches.opinions[f.id]!.confidence === 'medium' ? 'provável' : 'incerta'})
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div class="links" data-no-nav>
                   <button class="link" onClick={() => patchParams({ tx: f.transactionId })}>
@@ -99,6 +109,34 @@ export function StatusPage({ now }: { now: Date }) {
         )}
         {message && <div class="error">{message}</div>}
       </section>
+      {ai.data && ai.data.matches.counts.joined > 0 && (
+        <section class="panel">
+          <h2>Juntadas pela IA ({ai.data.matches.counts.joined})</h2>
+          <div class="muted">A IA só junta dois registros quando tem certeza e o código confirma que são da mesma conta, de fontes diferentes, com o mesmo valor e a poucos dias de distância. Se ela errou, separe: o par não é juntado de novo.</div>
+          <ul class="rows tall">
+            {ai.data.matches.joined.map((m) => (
+              <li key={m.findingId}>
+                <div class="grow">
+                  <div class="clip">
+                    {m.a} <span class="muted">+</span> {m.b}
+                  </div>
+                  <div class="muted">{ago(m.decidedAt, now)} · {m.model}</div>
+                </div>
+                {m.transactionId && (
+                  <div class="links" data-no-nav>
+                    <button class="link" onClick={() => patchParams({ tx: m.transactionId })}>
+                      Ver
+                    </button>
+                    <button class="icon small" disabled={busy === m.findingId} onClick={() => void act(m.findingId, () => api.separate(m.transactionId!))}>
+                      Separar
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

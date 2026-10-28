@@ -1,12 +1,16 @@
 import type { Store } from '../store/store.ts';
 import { AI_JOB_KEY } from '../api/ai.ts';
+import { runReconciliation } from '../reconcile/run.ts';
 import { categorizePending, type CategorizerResult } from './categorizer.ts';
+import { matchPending, type MatcherResult } from './matcher.ts';
 import { openRouterClient, type AiClient } from './openrouter.ts';
 
 export interface AiConfig {
   enabled: boolean;
   apiKey: string | null;
   models: string[];
+  /** Models for judging pairs of records. A cheaper, more careful pair than the categorizer's. */
+  matchModels: string[];
   monthlyBudgetUsd: number;
 }
 
@@ -16,9 +20,12 @@ export function loadAiConfig(env: Record<string, string | undefined>): AiConfig 
     enabled: ['on', '1', 'true'].includes((env.AI_ENABLED ?? '').trim().toLowerCase()),
     apiKey: (env.OPENROUTER_API_KEY ?? '').trim() || null,
     models: [env.AI_MODEL?.trim() || 'anthropic/claude-haiku-5.5', env.AI_FALLBACK_MODEL?.trim() || 'openai/gpt-6-luna'],
+    matchModels: [env.AI_MATCH_MODEL?.trim() || 'openai/gpt-6-luna', 'google/gemini-3.1-flash-lite'],
     monthlyBudgetUsd: Number.isFinite(budget) && budget >= 0 ? budget : 2,
   };
 }
+
+const describeMatch = (r: MatcherResult) => (r.asked === 0 && r.stoppedBy === null ? '' : `; pairs: asked ${r.asked}, joined ${r.joined}, dismissed ${r.dismissed}, left to you ${r.suggested}${r.stoppedBy ? `, stopped by ${r.stoppedBy}` : ''}`);
 
 const describe = (r: CategorizerResult) =>
   r.asked === 0 && r.stoppedBy === null ? 'nothing new to categorize' : `asked ${r.asked}, applied ${r.applied}, suggested ${r.suggested}, dropped ${r.dropped}, cost US$ ${r.costUsd.toFixed(4)}${r.stoppedBy ? `, stopped by ${r.stoppedBy}` : ''}`;
@@ -31,8 +38,10 @@ export async function runCategorizerOnce(store: Store, config: AiConfig, now: ()
     return null;
   }
   try {
-    const result = await categorizePending(store, { client: client ?? openRouterClient(config.apiKey!), models: config.models, now, monthlyBudgetUsd: config.monthlyBudgetUsd });
-    save(describe(result));
+    const ai = client ?? openRouterClient(config.apiKey!);
+    const result = await categorizePending(store, { client: ai, models: config.models, now, monthlyBudgetUsd: config.monthlyBudgetUsd });
+    const matched = await matchPending(store, { client: ai, models: config.matchModels, now, monthlyBudgetUsd: config.monthlyBudgetUsd, rebuild: () => void runReconciliation(store, { now }) });
+    save(describe(result) + describeMatch(matched));
     return result;
   } catch (error) {
     save(`failed: ${error instanceof Error ? error.message : String(error)}`);
