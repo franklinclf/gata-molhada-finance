@@ -4,6 +4,7 @@ import { institutionKey } from '../core/names.ts';
 import { localDay } from '../core/time.ts';
 import { summarizeAccounts } from '../reconcile/accounts.ts';
 import { cyclesFor, type Cycle } from './cycles.ts';
+import { installments } from './installments.ts';
 import { quotaReport } from '../scheduler/quota.ts';
 import type { Store } from '../store/store.ts';
 import { stamp, type Stamped } from './stamp.ts';
@@ -88,8 +89,10 @@ export interface CardRow {
   total: Cents;
   /** Net purchases already posted in the chosen cycle. */
   posted: Cents;
-  /** True when `total` comes from the issuer's balance and can include installments that are not posted yet. */
+  /** True when `total` is worked out from the issuer's balance (the balance minus installments that belong to later bills). */
   estimated: boolean;
+  /** Installments of purchases already made that will be charged in bills after the open cycle. The issuer counts them in its balance. */
+  futureInstallments: Cents;
   /** Closed bills still unpaid, whatever cycle is chosen. */
   outstanding: Cents;
   /** Due date to pay next: the oldest unpaid bill, else the open cycle. */
@@ -102,7 +105,7 @@ export interface CardsView extends Stamped {
   cycle: string;
   /** Due months that exist for at least one card, newest first. */
   cycles: string[];
-  totals: { cycleTotal: Cents; outstanding: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
+  totals: { cycleTotal: Cents; outstanding: Cents; futureInstallments: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
   cards: CardRow[];
   /** Cards that share one limit appear here once, so the limit is not counted twice. */
   limitGroups: Array<{ id: string; institution: string; creditLimit: Cents; used: Cents; available: Cents; cardIds: string[]; openEstimate: Cents }>;
@@ -116,6 +119,10 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
   const allCycles = new Map(cardAccounts.map((a) => [a.id, cyclesFor(store, a, transactions, today)]));
   const groups = visibleLimitGroups(store, accounts);
   const groupOf = new Map(cardAccounts.filter((a) => a.limitGroupId !== null).map((a) => [a.id, a.limitGroupId as string]));
+
+  // The issuer's balance is what the card owes in total, including installments that belong to bills not issued yet.
+  const plan = installments(store, now, opts);
+  const futureOf = (id: string) => plan.purchases.filter((p) => p.accountId === id).reduce((s, p) => s + p.slots.filter((x) => x.status === 'future').length * p.amount, 0);
 
   const outstandingOf = (id: string) => (allCycles.get(id) ?? []).reduce((s, c) => s + c.outstanding, 0);
   const nextDueOf = (id: string): string | null => {
@@ -136,7 +143,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     if (cycle) {
       if (cycle.billTotal !== null) total = cycle.billTotal;
       else if (a.limitGroupId === null) {
-        total = Math.max(a.balance - outstanding, posted);
+        total = Math.max(a.balance - outstanding - futureOf(a.id), posted);
         estimated = total !== posted;
       } else total = posted;
     }
@@ -154,6 +161,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       total,
       posted,
       estimated,
+      futureInstallments: futureOf(a.id),
       outstanding,
       nextDueDate: nextDueOf(a.id) ?? a.dueDate,
       minimumPayment: a.minimumPayment,
@@ -164,7 +172,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
   const limitGroups = groups.map((g) => {
     const first = byId.get(g.memberIds[0] ?? '');
     const available = first?.availableLimit ?? g.creditLimit - (first?.balance ?? 0);
-    const members = g.memberIds.reduce((s, id) => s + outstandingOf(id), 0);
+    const members = g.memberIds.reduce((s, id) => s + outstandingOf(id) + futureOf(id), 0);
     return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max((first?.balance ?? 0) - members, 0) };
   });
 
@@ -191,6 +199,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     totals: {
       cycleTotal,
       outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
+      futureInstallments: rows.reduce((s, r) => s + r.futureInstallments, 0),
       reportedByIssuer: summary.cardOwed,
       creditLimit: summary.creditLimit,
       used: summary.creditUsed,

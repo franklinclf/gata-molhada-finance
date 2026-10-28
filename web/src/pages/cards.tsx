@@ -87,11 +87,19 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
           <div class="big">{brl(card.total, hidden)}</div>
           <div class="muted">
             Ciclo de {dayMonth(c.from)} a {dayMonth(c.to)} · vence {fullDay(c.dueDate)}
-            {card.estimated ? ' · valor estimado pelo emissor, pode incluir parcelas futuras' : ''}
+            {card.estimated ? ' · estimado: saldo do emissor menos as parcelas de faturas futuras' : ''}
           </div>
           <dl class="facts inline">
             <dt>Lançado no ciclo</dt>
             <dd>{brl(card.posted, hidden)}</dd>
+            {card.futureInstallments > 0 && (
+              <>
+                <dt>Parcelas de faturas futuras</dt>
+                <dd>{brl(card.futureInstallments, hidden)}</dd>
+              </>
+            )}
+            <dt>Saldo devedor no emissor</dt>
+            <dd>{brl(card.balance, hidden)}</dd>
             {c.billTotal !== null && (
               <>
                 <dt>Pago</dt>
@@ -282,7 +290,11 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
                   <strong>{data.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'}</strong>
                 </div>
                 <div>
-                  <span class="muted">Saldo que os emissores informam</span>
+                  <span class="muted">Parcelas de faturas futuras</span>
+                  <strong>{brl(data.totals.futureInstallments, hidden)}</strong>
+                </div>
+                <div>
+                  <span class="muted">Saldo devedor nos emissores</span>
                   <strong>{brl(data.totals.reportedByIssuer, hidden)}</strong>
                 </div>
               </div>

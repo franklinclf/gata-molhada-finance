@@ -31,6 +31,7 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
               {cycle === 'open' ? 'Ciclo em aberto' : `Faturas com vencimento em ${monthName(cycle)}`}
               {data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(data.totals.nextDueDate)}` : ''}
             </div>
+            {cycle === 'open' && data.totals.futureInstallments > 0 && <div class="muted">fora desse valor: {brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras · saldo devedor total {brl(data.totals.reportedByIssuer, hidden)}</div>}
             {data.totals.outstanding > 0 && <div class="badge warn">Fechadas e não pagas: {brl(data.totals.outstanding, hidden)}</div>}
             {size !== 'sm' && bills.data && (
               <Bars
