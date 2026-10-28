@@ -103,6 +103,7 @@ a.go.title { color: inherit; }
 .inline-field { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
 .split.top { align-items: flex-start; }
+.panel.split { flex-direction: row; gap: 24px; }
 .big-rows { gap: 4px; }
 
 /* ---------- dashboard grid ---------- */
@@ -180,6 +181,7 @@ summary.chip::-webkit-details-marker { display: none; }
   .cards-grid { grid-template-columns: 1fr; }
   .facts.inline { grid-template-columns: max-content 1fr; }
   .split { flex-wrap: wrap; }
+  .panel.split { flex-direction: column; align-items: stretch; }
   .split > .ring { margin-inline: auto; }
   .stack-cell .widget { min-height: 200px; }
 }
@@ -411,3 +413,4 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .clickable-row:hover td { background: rgb(255 255 255 / 0.04); }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .panel-head h2 { margin: 0; }
+.sub-rows { margin: 4px 0 8px 24px; padding-left: 10px; border-left: 2px solid var(--track); }

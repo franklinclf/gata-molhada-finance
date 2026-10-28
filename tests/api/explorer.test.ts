@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { transactionDetail } from '../../src/api/detail.ts';
 import { explore, type ExplorerQuery } from '../../src/api/explorer.ts';
-import { addCategory, listCategories, removeCategory, setAccountHidden, setTransactionCategory } from '../../src/api/mutations.ts';
+import { addCategory, listCategories, removeCategory, setAccountHidden, setCategoryParent, setTransactionCategory } from '../../src/api/mutations.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import * as views from '../../src/api/views.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -209,4 +209,21 @@ test('the merchant filter matches the names the spending view shows', () => {
   const r = explore(store, { ...base, kind: 'expense', spendingOnly: true, merchant: top.name }, NOW);
   assert.equal(r.total, top.count);
   assert.equal(-r.items.reduce((sum, t) => sum + t.amount, 0), top.amount);
+});
+
+test('categories sit in groups: built-in defaults, the user can move them, and groups stay one level deep', () => {
+  const store = seeded();
+  setTransactionCategory(store, 'market1', 'Supermercado', false, NOW);
+  const parentOf = (name: string) => listCategories(store).find((c) => c.name === name)?.parent;
+  assert.equal(parentOf('Supermercado'), 'Alimentação');
+  assert.equal(parentOf('Compras'), null);
+  assert.deepEqual(setCategoryParent(store, 'Supermercado', 'Casa', NOW), { ok: true });
+  assert.equal(parentOf('Supermercado'), 'Casa');
+  assert.equal(views.spending(store, { from: '2026-10-01', to: '2026-10-31' }, 'category', NOW).groups.find((g) => g.name === 'Supermercado')?.parent, 'Casa');
+  assert.deepEqual(setCategoryParent(store, 'Supermercado', null, NOW), { ok: true });
+  assert.equal(parentOf('Supermercado'), null);
+  assert.equal(setCategoryParent(store, 'Supermercado', 'Supermercado', NOW).ok, false);
+  assert.equal(setCategoryParent(store, 'Compras', 'Moradia', NOW).ok, false, 'Moradia already sits in Casa');
+  assert.equal(setCategoryParent(store, 'Casa', 'Compras', NOW).ok, false, 'Casa is a group that holds categories');
+  assert.equal(setCategoryParent(store, 'Nao existe', 'Casa', NOW).ok, false);
 });

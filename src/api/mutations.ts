@@ -1,6 +1,7 @@
 import { CATEGORY_NAMES } from '../ai/taxonomy.ts';
 import { runReconciliation } from '../reconcile/run.ts';
 import type { Store } from '../store/store.ts';
+import { categoryParents } from './category-groups.ts';
 import { effectiveTransactions, ruleKey } from './scope.ts';
 
 export type MutationResult = { ok: true } | { ok: false; status: number; error: string };
@@ -41,20 +42,23 @@ export interface CategoryRow {
   builtin: boolean;
   /** Spending in the category (money out minus money in), over all time. */
   amount: number;
+  /** The group it sits in, or null when it stands alone. */
+  parent: string | null;
 }
 
 export function listCategories(store: Store): CategoryRow[] {
   const custom = new Set(store.listCustomCategories());
   const rows = new Map<string, CategoryRow>();
+  const parents = categoryParents(store);
   for (const t of effectiveTransactions(store, { includeHidden: true })) {
     if (t.category === null) continue;
-    const row = rows.get(t.category) ?? { name: t.category, count: 0, custom: custom.has(t.category), builtin: CATEGORY_NAMES.includes(t.category), amount: 0 };
+    const row = rows.get(t.category) ?? { name: t.category, count: 0, custom: custom.has(t.category), builtin: CATEGORY_NAMES.includes(t.category), amount: 0, parent: parents.get(t.category) ?? null };
     row.count += 1;
     row.amount += -t.amount;
     rows.set(t.category, row);
   }
-  for (const name of custom) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: true, builtin: false, amount: 0 });
-  for (const name of CATEGORY_NAMES) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: false, builtin: true, amount: 0 });
+  for (const name of custom) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: true, builtin: false, amount: 0, parent: parents.get(name) ?? null });
+  for (const name of CATEGORY_NAMES) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: false, builtin: true, amount: 0, parent: parents.get(name) ?? null });
   return [...rows.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
@@ -62,6 +66,24 @@ export function addCategory(store: Store, name: unknown, now: Date): MutationRes
   const clean = cleanCategoryName(name);
   if (clean === null) return { ok: false, status: 400, error: `name must be text of 1 to ${MAX_NAME} characters` };
   store.addCustomCategory(clean, now.toISOString());
+  return { ok: true };
+}
+
+/** Puts a category in a group, or takes it out (`parent` null). Groups are one level deep: a group cannot sit in another group. */
+export function setCategoryParent(store: Store, category: string, parent: unknown, now: Date): MutationResult {
+  if (!listCategories(store).some((c) => c.name === category)) return { ok: false, status: 404, error: 'not_found' };
+  if (parent === null) {
+    // Built-in categories need an explicit "no group", or the default would come back.
+    store.setCategoryParent(category, '', now.toISOString());
+    return { ok: true };
+  }
+  const name = cleanCategoryName(parent);
+  if (name === null) return { ok: false, status: 400, error: `parent must be text of 1 to ${MAX_NAME} characters or null` };
+  if (name === category) return { ok: false, status: 400, error: 'a category cannot sit inside itself' };
+  const parents = categoryParents(store);
+  if (parents.has(name)) return { ok: false, status: 400, error: 'a group cannot sit inside another group' };
+  if ([...parents.values()].includes(category)) return { ok: false, status: 400, error: 'this name is a group that holds other categories' };
+  store.setCategoryParent(category, name, now.toISOString());
   return { ok: true };
 }
 

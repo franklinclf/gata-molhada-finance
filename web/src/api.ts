@@ -139,6 +139,8 @@ export const api = {
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),
   categories: () => request<CategoriesResponse>('/api/categories'),
   addCategory: (name: string) => request<{ ok: true }>('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  setCategoryParent: (name: string, parent: string | null) =>
+    request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/parent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parent }) }),
   deleteCategory: (name: string) => request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   deleteRule: (match: string) => request<{ ok: true }>(`/api/category-rules/${encodeURIComponent(match)}`, { method: 'DELETE' }),
   setCycleSettled: (accountId: string, cycleKey: string, settled: boolean | null) =>
