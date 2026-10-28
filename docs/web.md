@@ -83,9 +83,13 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 
 A categoria que aparece na tela pode mudar: a IA a troca pela lista padrão, e você pode escolher outra. A conta das faturas, dos gastos e do fluxo de caixa não pode depender dela. Por isso cada transação tem um **papel** (`src/api/roles.ts`): pagamento de fatura, transferência entre contas suas ou investimento. O papel vem do que a fonte disse (a categoria que ela deu e o texto), nunca do rótulo da IA. Só uma escolha sua (categoria na transação ou regra) muda o papel: escolher "Pagamento de fatura", "Transferência entre minhas contas" ou "Investimentos" dá o papel, e escolher qualquer outra categoria tira.
 
+Fatura paga por boleto ou Pix QR code: o banco não cita o cartão, então o texto sozinho não basta. Uma saída de conta com cara de boleto ou Pix QR code (categoria ou texto) cujo valor é igual, ao centavo, ao total de uma fatura e que cai de 45 dias antes a 30 dias depois do vencimento dela vira o pagamento daquela fatura. Cada fatura é usada uma vez, e uma escolha sua na transação vale mais.
+
 Foi isso que quebrou as faturas depois da categorização por IA: a IA trocou "Credit card payment" por "Pagamento de fatura", as regras antigas só reconheciam os nomes das fontes, e nenhum pagamento era visto. As faturas apareciam todas vencidas, os créditos entravam como estorno e o ciclo em aberto ficava negativo.
 
 Em Fontes e conferência, um aviso "Algo nos dados não fecha" aparece quando o ciclo em aberto de um cartão dá negativo ou as faturas em aberto passam do limite dele, que são sinais de pagamentos não reconhecidos.
+
+O total de Gastos é a soma líquida dos dias, o mesmo número que as barras dos meses mostram. Categorias que só têm estornos não aparecem na lista; o valor delas já está descontado e a tela avisa quanto foi.
 
 ## De onde vem o total das faturas em aberto
 
