@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { loadAiConfig, startAiLoop } from './ai/job.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
+import { relyingPartyFor } from './auth/webauthn.ts';
 import { loadConfig } from './config.ts';
 import { createHttpServer } from './http/server.ts';
 import { fetchHttpClient, retryingClient } from './core/http.ts';
@@ -17,7 +18,9 @@ const config = loadConfig(process.env);
 const store = openSqliteStore(config.dbPath, migrationsDir);
 const authConfig = loadAuthConfig(process.env);
 if (!authConfig) console.warn('AUTH_PASSWORD_HASH or AUTH_TOTP_SECRET is not set, so login is disabled and the API stays closed');
-const auth = new AuthService(store, authConfig, () => new Date());
+const relyingParty = relyingPartyFor(process.env.PUBLIC_ORIGIN);
+if (authConfig && !relyingParty) console.warn('PUBLIC_ORIGIN is not set to an https address, so passkeys are off (password and code still work)');
+const auth = new AuthService(store, authConfig, () => new Date(), {}, relyingParty);
 const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies }, config.webDir);
 
 const observerStop = new AbortController();

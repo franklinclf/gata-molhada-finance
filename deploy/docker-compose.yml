@@ -10,6 +10,7 @@ services:
     environment:
       OBSERVER: "on"
       AI_ENABLED: "on"
+      PUBLIC_ORIGIN: "https://${GMF_HOST}"
     labels:
       gmf.env-hash: ${GMF_ENV_HASH:-none}
     volumes:
