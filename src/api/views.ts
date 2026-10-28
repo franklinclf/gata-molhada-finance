@@ -11,16 +11,10 @@ import { effectiveTransactions, visibleAccounts, visibleLimitGroups, type Effect
 
 const isBank = (a: CanonicalAccount) => a.kind !== 'credit_card';
 
-/** Categories that move money between the user's own accounts or pay a card bill, not spending. */
-const NON_SPENDING = [/mesma titularidade/, /pagamento de cart/, /credit card payment/, /investiment/, /investment/];
+/** Card payments, moves between own accounts and investments are not spending. See roles.ts. */
+export const isNonSpending = (t: { role: string | null }): boolean => t.role !== null;
 
-export function isNonSpending(category: string | null): boolean {
-  if (category === null) return false;
-  const text = category.toLowerCase();
-  return NON_SPENDING.some((pattern) => pattern.test(text));
-}
-
-const isOwnTransfer = (category: string | null) => category !== null && /mesma titularidade/i.test(category);
+const isOwnTransfer = (t: { role: string | null }): boolean => t.role === 'own_transfer';
 
 export interface DateRange {
   /** First local day, inclusive (YYYY-MM-DD). */
@@ -264,7 +258,7 @@ export function cashFlow(store: Store, range: DateRange, now: Date, opts: ViewOp
   const bankIds = new Set(accounts.filter(isBank).map((a) => a.id));
   const perDay = new Map<string, { inflow: Cents; outflow: Cents }>();
   for (const t of liveTransactions(store, range, opts)) {
-    if (!bankIds.has(t.accountId) || isOwnTransfer(t.category)) continue;
+    if (!bankIds.has(t.accountId) || isOwnTransfer(t)) continue;
     const day = localDay(t.occurredAt);
     const row = perDay.get(day) ?? { inflow: 0, outflow: 0 };
     if (t.amount >= 0) row.inflow += t.amount;
@@ -296,7 +290,7 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
   const rows = new Map<string, { amount: Cents; count: number }>();
   const perDay = new Map<string, Cents>();
   for (const t of liveTransactions(store, range, opts)) {
-    if (isNonSpending(t.category)) continue;
+    if (isNonSpending(t)) continue;
     // Money coming into a bank account is income. Only card credits (refunds) reduce spending.
     if (t.amount > 0 && bankIds.has(t.accountId)) continue;
     const day = localDay(t.occurredAt);
@@ -318,8 +312,26 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
 
 // ---------- freshness and findings ----------
 
+/** Things that cannot be true of real finances, so they point at a problem in the data or in the rules, not at the user. */
+export interface HealthIssue {
+  id: string;
+  message: string;
+}
+
+export function dataHealth(store: Store, now: Date): HealthIssue[] {
+  const issues: HealthIssue[] = [];
+  const view = cards(store, now);
+  for (const row of view.cards) {
+    if (row.total < 0 || row.posted < -100) issues.push({ id: `negative-${row.id}`, message: `O ciclo em aberto do cartão ${row.institution}${row.last4 ? ` ${row.last4}` : ''} deu negativo. Provavelmente há créditos (pagamentos, estornos) lidos como compras ou o contrário.` });
+    if (row.creditLimit !== null && row.outstanding > row.creditLimit) issues.push({ id: `owed-${row.id}`, message: `As faturas em aberto do cartão ${row.institution}${row.last4 ? ` ${row.last4}` : ''} somam mais que o limite dele. Confira se os pagamentos estão sendo reconhecidos.` });
+  }
+  if (view.totals.outstanding > view.totals.creditLimit && view.totals.creditLimit > 0) issues.push({ id: 'owed-total', message: 'O total de faturas fechadas e não pagas passa do limite somado dos cartões. Isso indica pagamentos não reconhecidos.' });
+  return issues;
+}
+
 export interface FreshnessView {
   generatedAt: string;
+  health: HealthIssue[];
   sources: Array<{ sourceId: string; institution: string; lastUpdatedAt: string; observedAt: string; quotaExhausted: boolean }>;
   quota: ReturnType<typeof quotaReport>;
 }
@@ -327,6 +339,7 @@ export interface FreshnessView {
 export function freshness(store: Store, now: Date): FreshnessView {
   return {
     generatedAt: now.toISOString(),
+    health: dataHealth(store, now),
     sources: store.listFreshness().map((f) => ({ sourceId: f.sourceId, institution: f.institution, lastUpdatedAt: f.lastUpdatedAt, observedAt: f.observedAt, quotaExhausted: f.quotaExhausted === true })),
     quota: quotaReport(store, now),
   };

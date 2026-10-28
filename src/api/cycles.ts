@@ -33,11 +33,7 @@ export interface Cycle {
   adjusted: { amount: Cents; by: 'auto' | 'manual' } | null;
 }
 
-const PAYMENT = /pagamento de cart|credit card payment|pagamento recebido/i;
-
-export function isCardPayment(category: string | null): boolean {
-  return category !== null && PAYMENT.test(category);
-}
+export const isCardPayment = (t: { role: string | null }): boolean => t.role === 'card_payment';
 
 const TOLERANCE: Cents = 100;
 
@@ -95,7 +91,7 @@ function paymentsOf(transactions: EffectiveTransaction[]): Array<{ day: string; 
   const seen = new Set<string>();
   const out: Array<{ day: string; amount: Cents }> = [];
   for (const t of transactions) {
-    if (t.excluded || t.amount <= 0 || !isCardPayment(t.category)) continue;
+    if (t.excluded || t.amount <= 0 || !isCardPayment(t)) continue;
     const day = localDay(t.occurredAt);
     const key = `${day}|${t.amount}`;
     if (seen.has(key)) continue;
@@ -139,7 +135,7 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     let credits = 0;
     for (const t of own) {
       const day = localDay(t.occurredAt);
-      if (day < w.from || day > w.to || isCardPayment(t.category)) continue;
+      if (day < w.from || day > w.to || isCardPayment(t)) continue;
       if (t.amount < 0) charges += -t.amount;
       else credits += t.amount;
     }

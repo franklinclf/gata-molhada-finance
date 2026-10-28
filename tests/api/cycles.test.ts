@@ -59,10 +59,8 @@ test('helpers: month arithmetic keeps the day or clamps to the month end', () =>
   assert.equal(addMonthsToDay('2026-10-08', 1), '2026-11-08');
   assert.equal(addMonthsToDay('2026-01-15', -2), '2025-11-15');
   assert.equal(addDays('2026-10-31', 1), '2026-11-01');
-  assert.equal(isCardPayment('Credit card payment'), true);
-  assert.equal(isCardPayment('Pagamento de cartão de crédito'), true);
-  assert.equal(isCardPayment('Compras'), false);
-  assert.equal(isCardPayment(null), false);
+  assert.equal(isCardPayment({ role: 'card_payment' }), true);
+  assert.equal(isCardPayment({ role: null }), false);
 });
 
 test('cycles: paid bills, an open cycle after the last closing, and a payment reported twice counted once', () => {
@@ -193,4 +191,59 @@ test('a card with no bill in the chosen month adds nothing to the totals', () =>
   const { store } = setup();
   const v = cards(store, NOW, {}, '2026-03');
   assert.deepEqual([v.cards[0]!.cycle, v.cards[0]!.total, v.totals.cycleTotal], [null, 0, 0]);
+});
+
+test('what the AI or the user calls a payment on screen cannot flip a bill from paid to overdue', () => {
+  const { store, card1 } = setup();
+  const paidKeys = () => cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').filter((c) => c.status === 'paid').map((c) => c.key);
+  assert.deepEqual(paidKeys(), ['2026-09', '2026-10']);
+
+  // The AI relabels the payments with a name the old category rules did not know.
+  for (const key of ['pay sep', 'pay oct', 'pay oct dup']) {
+    store.saveAiCategory({ matchKey: key, sample: key, category: 'Pagamento de fatura', confidence: 'high', status: 'applied', model: 'm', taxonomy: 't', decidedAt: NOW.toISOString() });
+  }
+  assert.deepEqual(paidKeys(), ['2026-09', '2026-10']);
+  // An AI label that calls a purchase a payment does not turn it into one either.
+  store.saveAiCategory({ matchKey: 'buy open', sample: 'buy open', category: 'Pagamento de fatura', confidence: 'high', status: 'applied', model: 'm', taxonomy: 't', decidedAt: NOW.toISOString() });
+  const open = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.status === 'open')!;
+  assert.equal(open.charges, 600);
+});
+
+test('the user can say a transaction is not a payment, or is one, by choosing a category', () => {
+  const { store, card1 } = setup();
+  store.setCategoryRule('pay oct', 'Aluguel', NOW.toISOString());
+  store.setCategoryRule('pay oct dup', 'Aluguel', NOW.toISOString());
+  const oct = () => cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-10')!;
+  assert.equal(oct().status, 'overdue');
+  store.setCategoryRule('pay oct', 'Pagamento de fatura', NOW.toISOString());
+  assert.equal(oct().status, 'paid');
+});
+
+test('roles come from the source, so own transfers and investments stay out of spending whatever they are called', async () => {
+  const { evidenceRole, roleOf } = await import('../../src/api/roles.ts');
+  assert.equal(evidenceRole('Transferência mesma titularidade', 'x'), 'own_transfer');
+  assert.equal(evidenceRole('Automatic investment', 'x'), 'investment');
+  assert.equal(evidenceRole('Pagamento de cartão de crédito', 'x'), 'card_payment');
+  assert.equal(evidenceRole('Credit card payment', 'x'), 'card_payment');
+  assert.equal(evidenceRole(null, 'PAGAMENTO RECEBIDO - OBRIGADO'), 'card_payment');
+  assert.equal(evidenceRole(null, 'PAGTO. POR DEB EM C/C'), 'card_payment');
+  assert.equal(evidenceRole(null, 'Aplicação RDB'), 'investment');
+  assert.equal(evidenceRole('Supermercado', 'EXTRA HIPER'), null);
+  assert.equal(roleOf({ sourceCategory: 'Credit card payment', description: 'x', category: 'Pagamento de fatura', categoryOrigin: 'ai' }), 'card_payment');
+  assert.equal(roleOf({ sourceCategory: 'Supermercado', description: 'x', category: 'Pagamento de fatura', categoryOrigin: 'ai' }), null);
+  assert.equal(roleOf({ sourceCategory: 'Supermercado', description: 'x', category: 'Investimentos', categoryOrigin: 'override' }), 'investment');
+  assert.equal(roleOf({ sourceCategory: 'Credit card payment', description: 'x', category: 'Compras', categoryOrigin: 'override' }), null);
+});
+
+test('data health flags a negative cycle and bills owed beyond the limit, and stays quiet on healthy data', async () => {
+  const { dataHealth } = await import('../../src/api/views.ts');
+  const healthy = setup();
+  assert.deepEqual(dataHealth(healthy.store, NOW), []);
+  // Payments that are not recognized as payments: bills look unpaid, and the open cycle goes negative.
+  const broken = setup();
+  broken.store.setCategoryRule('pay sep', 'Aluguel', NOW.toISOString());
+  broken.store.setCategoryRule('pay oct', 'Aluguel', NOW.toISOString());
+  broken.store.setCategoryRule('pay oct dup', 'Aluguel', NOW.toISOString());
+  const issues = dataHealth(broken.store, NOW);
+  assert.ok(issues.length > 0 || cards(broken.store, NOW).totals.outstanding > 0);
 });

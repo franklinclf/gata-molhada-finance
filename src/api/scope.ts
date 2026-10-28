@@ -1,5 +1,6 @@
 import type { CanonicalAccount, CanonicalTransaction, LimitGroup } from '../core/canonical.ts';
 import { normalizeName } from '../core/names.ts';
+import { roleOf, type Role } from './roles.ts';
 import type { Store } from '../store/store.ts';
 
 export interface ViewOptions {
@@ -13,6 +14,8 @@ export type CategoryOrigin = 'source' | 'override' | 'rule' | 'ai';
 export interface EffectiveTransaction extends CanonicalTransaction {
   categoryOrigin: CategoryOrigin;
   sourceCategory: string | null;
+  /** Card payment, own transfer or investment: not spending or income. Does not depend on the category shown. */
+  role: Role | null;
 }
 
 /** Key that a category rule matches on. */
@@ -50,12 +53,14 @@ export function effectiveTransactions(
     .listCanonicalTransactions({ accountId: options.accountId, includeExcluded: options.includeExcluded })
     .filter((t) => ids.has(t.accountId))
     .map((t) => {
+      let category = t.category;
+      let origin: CategoryOrigin = 'source';
       const override = overrides.get(t.id);
-      if (override !== undefined) return { ...t, category: override, categoryOrigin: 'override' as const, sourceCategory: t.category };
       const rule = rules.get(ruleKey(t.description));
-      if (rule !== undefined) return { ...t, category: rule, categoryOrigin: 'rule' as const, sourceCategory: t.category };
       const suggested = ai.get(ruleKey(t.description));
-      if (suggested?.status === 'applied') return { ...t, category: suggested.category, categoryOrigin: 'ai' as const, sourceCategory: t.category };
-      return { ...t, categoryOrigin: 'source' as const, sourceCategory: t.category };
+      if (override !== undefined) [category, origin] = [override, 'override'];
+      else if (rule !== undefined) [category, origin] = [rule, 'rule'];
+      else if (suggested?.status === 'applied') [category, origin] = [suggested.category, 'ai'];
+      return { ...t, category, categoryOrigin: origin, sourceCategory: t.category, role: roleOf({ sourceCategory: t.category, description: t.description, category, categoryOrigin: origin }) };
     });
 }
