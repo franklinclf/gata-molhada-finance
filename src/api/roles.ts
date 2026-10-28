@@ -78,13 +78,15 @@ export function isOwner(description: string, owners: Set<string>): boolean {
  * The role to use. The user's own choice (a category set on the transaction or a rule) wins in both directions: picking
  * "Pagamento de fatura" makes it a card payment, picking anything else says it is not. An AI category never changes it.
  */
-export function roleOf(input: { sourceCategory: string | null; labels?: string[]; description: string; category: string | null; categoryOrigin: 'source' | 'override' | 'rule' | 'ai'; owners?: Set<string> }): Role | null {
+export function roleOf(input: { sourceCategory: string | null; labels?: string[]; description: string; category: string | null; categoryOrigin: 'source' | 'override' | 'rule' | 'ai'; owners?: Set<string>; ownerDocument?: boolean }): Role | null {
   if (input.categoryOrigin === 'override' || input.categoryOrigin === 'rule') {
     // The user may pick our name for it or the sources' ("Credit card payment", "Same person transfer"): both mean the role.
     return (input.category ? (CHOSEN_CATEGORY[normalizeName(input.category)] ?? evidenceRole(input.category, '')) : null) ?? null;
   }
   const found = evidenceRole(input.labels ?? input.sourceCategory, input.description);
   if (found) return found;
+  // The other side's document is the owner's own.
+  if (input.ownerDocument) return 'own_transfer';
   // A transfer to or from the owner's own name moves money between the owner's accounts.
   if (input.owners && input.owners.size > 0 && /transfer|pix|ted/i.test(`${(input.labels ?? [input.sourceCategory]).join(' ')} ${input.description}`) && isOwner(input.description, input.owners)) return 'own_transfer';
   return null;

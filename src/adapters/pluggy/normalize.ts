@@ -1,6 +1,7 @@
 import type { AccountKind, SourceAccount, SourceBill, SourceTransaction } from '../../core/types.ts';
 import { SourceFormatError } from '../../core/http.ts';
 import { toCents } from '../../core/money.ts';
+import { partiesFrom, partyFrom, type Party } from '../../core/parties.ts';
 import { toCashFlow, toStatus } from '../cash-flow.ts';
 import { asRecord, optDay, optNumber, optString, reqIsoInstant, reqNumber, reqString, UnsupportedAccountError } from '../shape.ts';
 
@@ -36,6 +37,20 @@ export function normalizeAccount(raw: unknown, institution: string): SourceAccou
   };
 }
 
+function partyOf(side: unknown): Party | null {
+  if (typeof side !== 'object' || side === null || Array.isArray(side)) return null;
+  const record = side as Record<string, unknown>;
+  const document = typeof record.documentNumber === 'object' && record.documentNumber !== null ? (record.documentNumber as Record<string, unknown>).value : null;
+  return partyFrom(optString(record, 'name'), typeof document === 'string' ? document : null);
+}
+
+export function partiesOf(r: Record<string, unknown>) {
+  const data = typeof r.paymentData === 'object' && r.paymentData !== null ? (r.paymentData as Record<string, unknown>) : {};
+  const card = typeof r.creditCardMetadata === 'object' && r.creditCardMetadata !== null ? (r.creditCardMetadata as Record<string, unknown>) : {};
+  const mcc = card.payeeMCC;
+  return partiesFrom({ operation: optString(r, 'operationType'), mcc: typeof mcc === 'string' || typeof mcc === 'number' ? String(mcc) : null, payer: partyOf(data.payer), receiver: partyOf(data.receiver) });
+}
+
 export function normalizeTransaction(raw: unknown, kind: AccountKind): SourceTransaction {
   const path = 'pluggy.transaction';
   const r = asRecord(raw, path);
@@ -51,6 +66,7 @@ export function normalizeTransaction(raw: unknown, kind: AccountKind): SourceTra
     if (number !== null && total !== null) installment = { number, total };
   }
 
+  const parties = partiesOf(r);
   return {
     externalId: reqString(r, 'id', path),
     accountExternalId: reqString(r, 'accountId', path),
@@ -61,6 +77,7 @@ export function normalizeTransaction(raw: unknown, kind: AccountKind): SourceTra
     status,
     installment,
     category: optString(r, 'category'),
+    ...(parties ? { parties } : {}),
   };
 }
 

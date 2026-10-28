@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 import { loadAiConfig, startAiLoop } from './ai/job.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
 import { relyingPartyFor } from './auth/webauthn.ts';
+import { runReconciliation } from './reconcile/run.ts';
+import { backfillParties } from './sync/backfill-parties.ts';
 import { loadConfig } from './config.ts';
 import { createHttpServer } from './http/server.ts';
 import { fetchHttpClient, retryingClient } from './core/http.ts';
@@ -17,6 +19,11 @@ import { loadAdapterEnv } from './sync/config.ts';
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
 const config = loadConfig(process.env);
 const store = openSqliteStore(config.dbPath, migrationsDir);
+const backfilled = backfillParties(store, new Date());
+if (backfilled > 0) {
+  runReconciliation(store);
+  console.log(`read who paid and who received on ${backfilled} saved records`);
+}
 const authConfig = loadAuthConfig(process.env);
 if (!authConfig) console.warn('AUTH_PASSWORD_HASH or AUTH_TOTP_SECRET is not set, so login is disabled and the API stays closed');
 const relyingParty = relyingPartyFor(process.env.PUBLIC_ORIGIN);
