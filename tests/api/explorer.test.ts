@@ -201,3 +201,12 @@ test('an installment set by the user shows on the transaction, in the detail and
   assert.equal(apiRoute('PUT', '/api/transactions/market1/installment', new URLSearchParams(), store, NOW, '{"number":null,"total":null}')?.status, 200);
   assert.deepEqual([transactionDetail(store, 'market1', NOW)?.transaction.installment, transactionDetail(store, 'market1', NOW)?.installmentByUser], [null, false]);
 });
+
+test('the merchant filter matches the names the spending view shows', () => {
+  const store = seeded();
+  const spending = views.spending(store, { from: '2026-10-01', to: '2026-10-31' }, 'merchant', NOW);
+  const top = spending.groups[0]!;
+  const r = explore(store, { ...base, kind: 'expense', spendingOnly: true, merchant: top.name }, NOW);
+  assert.equal(r.total, top.count);
+  assert.equal(-r.items.reduce((sum, t) => sum + t.amount, 0), top.amount);
+});

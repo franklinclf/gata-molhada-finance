@@ -79,6 +79,10 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - **Limites:** erros de passkey não travam o login por senha (uma assinatura não se adivinha); só há um limite de 30 por 15 minutos para frear inundação. Erros de senha continuam travando em 5 por 15 minutos.
 - **Endereço:** a passkey fica presa ao endereço `PUBLIC_ORIGIN` (no servidor é `https://` mais o nome da VM). Abrir o app por outro nome (IP, outro domínio) desliga as passkeys, e a senha continua funcionando. Se o domínio mudar um dia, é preciso criar as passkeys de novo.
 
+## Nomes de estabelecimentos
+
+A aba Estabelecimentos de Gastos agrupa pelo nome do lugar, não pelo texto do banco (`merchantName`, `src/core/merchant.ts`). São regras de texto e uma lista curta de nomes conhecidos, sem IA e sem custo: tira códigos de processadora antes do asterisco, números de loja, sufixos como "SA" e "LTDA", e junta "DL*UberRides", "Uber UBER *TRIP" e "UBER * PENDING" em Uber. Transferências e Pix para a mesma pessoa viram o nome dela, escritas de qualquer jeito. Nos dados reais, 457 textos distintos de saída viraram 280 nomes. O nome de um lugar que não está na lista só perde números e sufixos, então dois lugares escritos de formas bem diferentes continuam separados.
+
 ## O que é dado contábil e o que é só rótulo
 
 A categoria que aparece na tela pode mudar: a IA a troca pela lista padrão, e você pode escolher outra. A conta das faturas, dos gastos e do fluxo de caixa não pode depender dela. Por isso cada transação tem um **papel** (`src/api/roles.ts`): pagamento de fatura, transferência entre contas suas ou investimento. O papel vem do que a fonte disse (a categoria que ela deu e o texto), nunca do rótulo da IA. Só uma escolha sua (categoria na transação ou regra) muda o papel: escolher "Pagamento de fatura", "Transferência entre minhas contas" ou "Investimentos" dá o papel, e escolher qualquer outra categoria tira.

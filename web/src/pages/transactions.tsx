@@ -58,6 +58,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
     ...institutions.map((c) => ({ label: c, remove: () => set({ institution: institutions.filter((x) => x !== c) }) })),
     ...accountIds.map((c) => ({ label: data?.facets.accounts.find((a) => a.id === c)?.name ?? 'Conta', remove: () => set({ accountId: accountIds.filter((x) => x !== c) }) })),
     ...states.map((c) => ({ label: STATE_LABEL[c] ?? c, remove: () => set({ state: states.filter((x) => x !== c) }) })),
+    ...(p.get('merchant') ? [{ label: `Estabelecimento: ${p.get('merchant')}`, remove: () => set({ merchant: null }) }] : []),
     ...(p.get('cycle') ? [{ label: p.get('cycle') === 'open' ? 'Ciclo em aberto' : `Fatura ${monthName(p.get('cycle')!)}`, remove: () => set({ cycle: null }) }] : []),
     ...(p.get('status') ? [{ label: p.get('status') === 'pending' ? 'Só pendentes' : 'Só lançadas', remove: () => set({ status: null }) }] : []),
     ...(p.get('min') || p.get('max') ? [{ label: `Valor ${p.get('min') ? `de ${brl(Number(p.get('min')))}` : ''} ${p.get('max') ? `até ${brl(Number(p.get('max')))}` : ''}`.trim(), remove: () => set({ min: null, max: null }) }] : []),

@@ -84,6 +84,7 @@ function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
       categories,
       kind,
       q: params.get('q') ?? undefined,
+      merchant: params.get('merchant') ?? undefined,
       status,
       states: states as ExplorerQuery['states'],
       min: (min as { value?: number }).value,
