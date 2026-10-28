@@ -61,3 +61,10 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - Ordem de prioridade da categoria de uma transação: sua escolha nela, sua regra para a descrição, a IA, a fonte. A categoria original da fonte continua guardada e aparece no painel da transação.
 - Custo: todo o histórico de 431 descrições custou cerca de US$ 0,011. O gasto do mês aparece em Ajustes, e o orçamento mensal (`AI_MONTHLY_BUDGET_USD`, padrão US$ 2) interrompe as chamadas quando é atingido.
 - Para rodar à mão: `npm run categorize`.
+
+## Conferência assistida por IA
+
+- Para cada par em "Para conferir" (mesmo valor, fontes diferentes, até 5 dias de diferença) o modelo recebe só os textos, as datas, o status e o rótulo da fonte (nunca valores, contas ou bancos) e diz se parecem a mesma transação, com confiança.
+- **Quem decide é o código.** Dois registros só são juntados pela IA quando o modelo tem certeza que são o mesmo **e** os fatos são conferidos de novo na hora (mesma conta, fontes diferentes, mesmo valor, até 5 dias, nenhum dos dois ignorado ou posto de lado) **e** nenhum dos dois tem outro parceiro possível. Um "não" com certeza descarta a sugestão. Todo o resto continua como sugestão, agora com a opinião da IA ao lado.
+- A junção da IA aparece em "Fontes e conferência → Juntadas pela IA" e no painel da transação, com "Separar". Separar desfaz e a IA não junta aquele par de novo. A reconciliação ao final é a mesma de sempre, então juntar ou separar só muda quais registros formam cada transação.
+- Modelo: `openai/gpt-6-luna` (reserva `google/gemini-3.1-flash-lite`), configurável por `AI_MATCH_MODEL`. Em 48 pares inventados (24 iguais e 24 diferentes, metade difíceis) o gpt-6-luna e o gemini acertaram 48/48 e nunca erraram com certeza; o claude-haiku-5.5 errou uma vez com certeza ("Spotify" em meses diferentes), por isso não é usado aqui. Rodar de novo: `npm run eval:pairs`.

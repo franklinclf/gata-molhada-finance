@@ -9,6 +9,7 @@ import { localMonth } from '../core/time.ts';
 import { currentVersion, migrate } from './migrations.ts';
 import type {
   AiCategory,
+  AiMatch,
   AiStatus,
   NewSnapshot,
   Snapshot,
@@ -615,18 +616,43 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return { pairs, ignored };
     },
 
-    addManualLink(transactionA: string, transactionB: string, now: string): boolean {
+    addManualLink(transactionA: string, transactionB: string, now: string, madeBy: 'user' | 'ai' = 'user'): boolean {
       const a = this.listTransactionLinks(transactionA);
       const b = this.listTransactionLinks(transactionB);
       if (a.length === 0 || b.length === 0 || a.some((x) => b.some((y) => y.sourceId === x.sourceId))) return false;
       inTransaction(() => {
         for (const x of a) {
           for (const y of b) {
-            db.prepare('INSERT OR IGNORE INTO manual_links (source_a, external_a, source_b, external_b, created_at) VALUES (?, ?, ?, ?, ?)').run(x.sourceId, x.externalId, y.sourceId, y.externalId, now);
+            db.prepare('INSERT OR IGNORE INTO manual_links (source_a, external_a, source_b, external_b, created_at, made_by) VALUES (?, ?, ?, ?, ?, ?)').run(x.sourceId, x.externalId, y.sourceId, y.externalId, now, madeBy);
           }
         }
       });
       return true;
+    },
+
+    manualLinkMadeBy(transactionId: string): 'user' | 'ai' | null {
+      const made = new Set<string>();
+      for (const l of this.listTransactionLinks(transactionId)) {
+        const rows = db.prepare('SELECT made_by FROM manual_links WHERE (source_a = ? AND external_a = ?) OR (source_b = ? AND external_b = ?)').all(l.sourceId, l.externalId, l.sourceId, l.externalId) as Array<{ made_by: string }>;
+        for (const r of rows) made.add(r.made_by);
+      }
+      return made.has('user') ? 'user' : made.has('ai') ? 'ai' : null;
+    },
+
+    transactionOfRecord(sourceId: string, externalId: string): string | null {
+      const row = db.prepare('SELECT transaction_id FROM transaction_links WHERE source_id = ? AND external_id = ?').get(sourceId, externalId) as { transaction_id: string } | undefined;
+      return row ? row.transaction_id : null;
+    },
+
+    listAiMatches(): Map<string, AiMatch> {
+      const rows = db.prepare('SELECT * FROM ai_matches').all() as Array<{ finding_id: string; verdict: string; confidence: string; action: string; model: string; sample_a: string; sample_b: string; source_a: string; external_a: string; decided_at: string }>;
+      return new Map(rows.map((r) => [r.finding_id, { findingId: r.finding_id, verdict: r.verdict as AiMatch['verdict'], confidence: r.confidence as AiMatch['confidence'], action: r.action as AiMatch['action'], model: r.model, sampleA: r.sample_a, sampleB: r.sample_b, sourceA: r.source_a, externalA: r.external_a, decidedAt: r.decided_at }]));
+    },
+
+    saveAiMatch(m: AiMatch): void {
+      db.prepare('INSERT INTO ai_matches (finding_id, verdict, confidence, action, model, sample_a, sample_b, source_a, external_a, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(finding_id) DO UPDATE SET verdict = excluded.verdict, confidence = excluded.confidence, action = excluded.action, model = excluded.model, decided_at = excluded.decided_at').run(
+        m.findingId, m.verdict, m.confidence, m.action, m.model, m.sampleA, m.sampleB, m.sourceA, m.externalA, m.decidedAt,
+      );
     },
 
     removeManualLinks(transactionId: string): void {

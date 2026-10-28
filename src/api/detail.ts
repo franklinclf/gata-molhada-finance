@@ -38,6 +38,8 @@ export interface TransactionDetail {
   rule: { category: string } | null;
   /** True when the records of this transaction were joined by the user, so "separate" makes sense. */
   joinedByHand: boolean;
+  /** Who made the join: the user, or the AI (which the user can undo). */
+  joinedBy: 'user' | 'ai' | null;
 }
 
 export function transactionDetail(store: Store, id: string, now: Date): TransactionDetail | null {
@@ -108,5 +110,6 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
     findings: store.listFindings({ includeResolved: false }).filter((f) => f.transactionId === id),
     rule: rule !== undefined ? { category: rule } : null,
     joinedByHand,
+    joinedBy: store.manualLinkMadeBy(id),
   };
 }
