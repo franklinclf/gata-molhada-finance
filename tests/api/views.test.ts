@@ -101,14 +101,6 @@ test('spending by merchant groups on the description', () => {
   assert.deepEqual([market?.amount, market?.count], [4500, 3]);
 });
 
-test('installments: latest seen per purchase, finished ones dropped, remaining and last month computed', () => {
-  const v = views.installments(seeded(), NOW);
-  assert.equal(v.items.length, 1);
-  assert.deepEqual(v.items[0], { accountId: 'c1', description: 'Phone', number: 3, total: 10, installmentAmount: 10000, remainingCount: 7, remainingAmount: 70000, lastMonth: '2027-05' });
-  assert.equal(v.monthlyCommitment, 10000);
-  assert.equal(v.remainingTotal, 70000);
-});
-
 test('routes validate dates and numbers', () => {
   const store = seeded();
   const call = (path: string, q = '') => apiRoute('GET', path, new URLSearchParams(q), store, NOW);

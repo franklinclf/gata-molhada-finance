@@ -3,8 +3,9 @@ import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { transactionDetail } from './detail.ts';
 import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
+import { installments } from './installments.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
-import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCycleSettled, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -138,6 +139,11 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
     }
     case 'cycles': {
       if (parts.length !== 2) return null;
+      if (method === 'PUT') {
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { accountId, cycleKey, settled }');
+        return fromMutation(setCycleSettled(store, input.accountId, input.cycleKey, input.settled, now));
+      }
       if (method !== 'GET') return methodNotAllowed();
       const accountId = params.get('accountId');
       const account = store.listCanonicalAccounts().find((a) => a.id === accountId && a.kind === 'credit_card');
@@ -147,7 +153,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
     }
     case 'installments':
       if (parts.length !== 2) return null;
-      return method === 'GET' ? { status: 200, body: views.installments(store, now, opts) } : methodNotAllowed();
+      return method === 'GET' ? { status: 200, body: installments(store, now, opts) } : methodNotAllowed();
     case 'freshness':
       if (parts.length !== 2) return null;
       return method === 'GET' ? { status: 200, body: views.freshness(store, now) } : methodNotAllowed();

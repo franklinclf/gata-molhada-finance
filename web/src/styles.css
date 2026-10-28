@@ -116,8 +116,6 @@ a.go.title { color: inherit; }
 .resize { position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; cursor: nwse-resize; touch-action: none; border-right: 3px solid var(--accent); border-bottom: 3px solid var(--accent); border-radius: 0 0 14px 0; }
 .stack { display: flex; flex-direction: column; gap: 14px; }
 .widget { min-height: 0; overflow: hidden; }
-.widget-body { display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; flex: 1; }
-.widget-body > * { flex-shrink: 0; }
 
 /* ---------- filters ---------- */
 .period { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -345,4 +343,45 @@ span.clip, a.clip, div.clip { min-width: 0; }
 @media (hover: none) {
   .widget.linked:hover { background: var(--card); box-shadow: none; transform: none; }
   .rows li:hover, .bar.clickable:hover { background: none; }
+}
+
+
+/* ---------- v3: discreet scrollbars, sticky head, expanded widgets ---------- */
+* { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.16) transparent; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.14); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(255 255 255 / 0.3); }
+/* Inside a widget the bar only shows while the pointer is over it. */
+.widget-body { scrollbar-color: transparent transparent; }
+.widget-body::-webkit-scrollbar-thumb { background: transparent; }
+.widget-body:hover { scrollbar-color: rgb(255 255 255 / 0.2) transparent; }
+.widget-body:hover::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.2); }
+
+.widget { display: flex; flex-direction: column; }
+.widget-body { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
+.widget-head { position: sticky; top: 0; z-index: 2; background: var(--card); display: flex; flex-direction: column; gap: 10px; padding-bottom: 6px; flex: none; transition: background 0.15s; }
+.widget.linked:hover .widget-head { background: color-mix(in srgb, var(--card) 88%, var(--accent) 12%); }
+.widget-scroll { display: flex; flex-direction: column; gap: 10px; }
+.expand { background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; padding: 2px 6px; border-radius: 8px; line-height: 1; }
+.expand:hover { color: var(--accent); background: rgb(255 255 255 / 0.06); }
+.widget-actions { display: flex; align-items: center; gap: 4px; }
+.widget-backdrop { position: fixed; inset: 0; z-index: 69; background: rgb(0 0 0 / 0.6); }
+.widget.expanded { position: fixed; z-index: 70; inset: 5vh 6vw; transform: none !important; box-shadow: 0 24px 80px rgb(0 0 0 / 0.7); cursor: default; container-type: normal; }
+.widget.expanded .widget-head { background: var(--card); }
+.widget.expanded .big { font-size: 38px; }
+
+.strip { display: flex; gap: 3px; margin: 6px 0 4px; }
+.slot { flex: 1; max-width: 22px; height: 8px; border-radius: 3px; transition: transform 0.1s; }
+.slot.inferred { opacity: 0.6; }
+.slot:hover { transform: scaleY(1.7); }
+.purchase { display: block; }
+.purchase .row-btn { align-items: flex-start; }
+.right { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.dot-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.purchases { gap: 2px; }
+
+@media (max-width: 760px) {
+  .widget.expanded { inset: 3vh 2vw; }
+  .stack-cell .widget-body { overflow: visible; }
 }

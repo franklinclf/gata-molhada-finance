@@ -4,12 +4,17 @@ import { Bars, Meter } from '../charts.tsx';
 import { brl, dayMonth, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
+import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
 
 const fullDay = (day: string) => `${dayMonth(day)}/${day.slice(0, 4)}`;
 
 function History({ accountId, hidden }: { accountId: string; hidden: boolean }) {
-  const { data, error } = useLoad(() => api.cycles(accountId), [accountId]);
+  const { data, error, reload } = useLoad(() => api.cycles(accountId), [accountId]);
+  const settle = async (key: string, settled: boolean | null) => {
+    await api.setCycleSettled(accountId, key, settled);
+    reload();
+  };
   if (!data) return <Loading error={error} />;
   return (
     <div class="scroll-x">
@@ -38,6 +43,23 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
             <td>{c.billTotal === null ? '' : brl(c.paid, hidden)}</td>
             <td>
               <StatusBadge status={c.status} />
+              {c.adjusted && (
+                <div class="muted">
+                  {brl(c.adjusted.amount, hidden)} da fatura não foi cobrado
+                  {c.adjusted.by === 'auto' ? ' (ajuste automático: as faturas seguintes foram pagas por inteiro)' : ' (você marcou como quitada)'}{' '}
+                  <button class="link" onClick={() => void settle(c.key, c.adjusted?.by === 'auto' ? false : null)}>
+                    {c.adjusted.by === 'auto' ? 'Não está certo' : 'Desfazer'}
+                  </button>
+                </div>
+              )}
+              {!c.adjusted && c.outstanding > 0 && (
+                <div class="muted">
+                  Falta {brl(c.outstanding, hidden)}.{' '}
+                  <button class="link" onClick={() => void settle(c.key, true)}>
+                    Marcar como quitada
+                  </button>
+                </div>
+              )}
             </td>
           </tr>
         ))}
@@ -89,6 +111,7 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
       ) : (
         <div class="muted">Este cartão não tem fatura com esse vencimento.</div>
       )}
+      {c?.adjusted && <div class="note">{brl(c.adjusted.amount, hidden)} desta fatura não foi cobrado, então ela conta como paga{c.adjusted.by === 'auto' ? ' (ajuste automático)' : ''}.</div>}
       {card.outstanding > 0 && <div class="badge warn">Fatura fechada em aberto: {brl(card.outstanding, hidden)} · vence {card.nextDueDate ? fullDay(card.nextDueDate) : ''}</div>}
       {card.creditLimit !== null && (
         <>
@@ -109,6 +132,79 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
       </div>
       {history && <History accountId={card.id} hidden={hidden} />}
     </section>
+  );
+}
+
+function InstallmentsTab({ installments, hidden, route }: { installments: ReturnType<typeof useLoad<import('../api.ts').InstallmentsView>>; hidden: boolean; route: Route }) {
+  const month = route.params.get('month');
+  const card = route.params.get('card') ?? '';
+  const finished = route.params.get('finished') === 'true';
+  const v = installments.data;
+  if (!v) return <Loading error={installments.error} />;
+  const cards = [...new Map(v.purchases.map((p) => [p.accountId, p.card])).entries()];
+  const shown = v.purchases.filter((p) => (finished || !p.finished) && (card === '' || p.accountId === card) && (!month || p.slots.some((s) => s.cycle === month)));
+  const months = v.months.filter((m) => card === '' || v.purchases.some((p) => p.accountId === card && p.slots.some((s) => s.cycle === m.cycle)));
+  return (
+    <>
+      <div class="summary">
+        <div>
+          <span class="muted">Neste ciclo</span>
+          <strong>{brl(v.thisCycle, hidden)}</strong>
+        </div>
+        <div>
+          <span class="muted">No próximo ciclo</span>
+          <strong>{brl(v.nextCycle, hidden)}</strong>
+        </div>
+        <div>
+          <span class="muted">A pagar no total</span>
+          <strong>{brl(v.remainingTotal, hidden)}</strong>
+        </div>
+        <div>
+          <span class="muted">Compras em andamento</span>
+          <strong>{v.purchases.filter((p) => !p.finished).length}</strong>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Parcelas por fatura (clique em um mês para ver só as compras dele)</h3>
+        <MonthBars months={months} hidden={hidden} height={150} selected={month} onSelect={(m) => patchParams({ month: month === m ? null : m })} />
+        <div class="legend">
+          <span><i style={{ background: 'var(--good)' }} /> paga</span>
+          <span><i style={{ background: 'var(--warn)' }} /> fatura fechada, a pagar</span>
+          <span><i style={{ background: 'var(--accent)' }} /> ciclo em aberto</span>
+          <span><i style={{ background: 'var(--muted)' }} /> ainda não cobrada</span>
+        </div>
+      </div>
+      <div class="filters">
+        <select class="select" value={card} onChange={(e) => patchParams({ card: (e.currentTarget as HTMLSelectElement).value || null })} aria-label="Cartão">
+          <option value="">Todos os cartões</option>
+          {cards.map(([id, label]) => (
+            <option key={id} value={id}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <label class="check">
+          <input type="checkbox" checked={finished} onChange={(e) => patchParams({ finished: (e.currentTarget as HTMLInputElement).checked ? 'true' : null })} />
+          Mostrar compras já quitadas
+        </label>
+        {month && (
+          <button class="chip on" onClick={() => patchParams({ month: null })}>
+            Fatura {monthName(month)} ×
+          </button>
+        )}
+      </div>
+      <div class="panel">
+        {shown.length === 0 ? (
+          <div class="empty">Nenhuma compra parcelada com esses filtros.</div>
+        ) : (
+          <ul class="rows tall purchases">
+            {shown.map((p) => (
+              <PurchaseRow key={p.id} p={p} hidden={hidden} />
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -197,42 +293,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
               </div>
             </>
           )}
-          {tab === 'installments' && (
-            <div class="panel">
-              {!installments.data ? (
-                <Loading error={installments.error} />
-              ) : (
-                <>
-                  <div class="summary">
-                    <div>
-                      <span class="muted">Comprometido por mês</span>
-                      <strong>{brl(installments.data.monthlyCommitment, hidden)}</strong>
-                    </div>
-                    <div>
-                      <span class="muted">Restante</span>
-                      <strong>{brl(installments.data.remainingTotal, hidden)}</strong>
-                    </div>
-                  </div>
-                  <ul class="rows tall">
-                    {installments.data.items.map((i) => (
-                      <li key={`${i.accountId}${i.description}${i.total}${i.installmentAmount}`}>
-                        <div class="grow">
-                          <Go page="transactions" params={{ q: i.description, accountId: i.accountId }}>
-                            {i.description}
-                          </Go>
-                          <Meter fraction={i.number / i.total} />
-                          <div class="muted">
-                            {i.number} de {i.total} · pago {brl(i.number * i.installmentAmount, hidden)} · restam {brl(i.remainingAmount, hidden)} · última em {monthName(i.lastMonth)}
-                          </div>
-                        </div>
-                        <strong>{brl(i.installmentAmount, hidden)}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          )}
+          {tab === 'installments' && <InstallmentsTab installments={installments} hidden={hidden} route={route} />}
           {tab === 'limits' && (
             <div class="panel">
               <div class="summary">

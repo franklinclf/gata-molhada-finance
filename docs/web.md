@@ -45,3 +45,10 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - Barras são clicáveis: na tela de Cartões escolhem o ciclo da fatura, em Gastos e Fluxo escolhem o mês. Fatias do anel de gastos abrem a categoria. Os pontos do fluxo de caixa escolhem o dia.
 - Passar o mouse mostra o valor exato (barras, anel, linha de gastos, pontos do fluxo) e o texto completo de linhas cortadas.
 - Os widgets mostram a lista inteira com rolagem interna em vez de cortar linhas pelo tamanho; o tamanho define só que blocos aparecem.
+
+## Faturas que não batem e parcelas
+
+- **Sobra em uma fatura antiga:** quando uma fatura fechada fica com uma sobra pequena (até 25% do total), passaram 30 dias do vencimento e todas as faturas seguintes foram pagas por inteiro, a sobra é tratada como não cobrada (por exemplo, uma compra "em análise" que saiu da fatura) e a fatura conta como paga, marcada como ajustada. No histórico de faturas do cartão dá para contrariar ("Não está certo") ou marcar à mão uma fatura como quitada. A palavra do usuário vale mais que a regra automática.
+- **Mês sem fatura:** ao escolher um mês, um cartão que ainda não tinha fatura nele não entra nos totais nem na lista.
+- **Parcelas:** cada compra mostra suas parcelas, cada uma na fatura (mês de vencimento) em que cai e com a situação: paga, fatura fechada a pagar, no ciclo em aberto ou ainda não cobrada. Parcelas que não foram vistas entre duas cobranças têm o mês calculado pelas vizinhas (marcadas como estimadas), e as anteriores aos dados que temos contam como pagas. Descrições com o número da parcela ("Loja 5/6") são tratadas como a mesma compra.
+- **Widgets:** a parte principal (número e gráfico) fica fixa no topo do widget; o detalhamento (cartões, categorias, contas, listas) rola por baixo, com barra fina que só aparece com o mouse em cima. O botão ⤢ do widget abre tudo em tela cheia (Esc fecha).

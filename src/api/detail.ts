@@ -2,6 +2,7 @@ import type { Cents } from '../core/money.ts';
 import { localDay } from '../core/time.ts';
 import type { Store, StoredFinding } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
+import { seriesDescription } from './installments.ts';
 import { effectiveTransactions, ruleKey, type EffectiveTransaction } from './scope.ts';
 
 export interface SourceRecord {
@@ -71,7 +72,7 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
 
   const installments = transaction.installment
     ? all
-        .filter((t) => t.accountId === transaction.accountId && !t.excluded && t.installment?.total === transaction.installment!.total && t.description === transaction.description && t.amount === transaction.amount)
+        .filter((t) => t.accountId === transaction.accountId && !t.excluded && t.installment?.total === transaction.installment!.total && seriesDescription(t.description) === seriesDescription(transaction.description) && t.amount === transaction.amount)
         .map((t) => ({ id: t.id, day: localDay(t.occurredAt), number: t.installment!.number, total: t.installment!.total, amount: -t.amount }))
         .sort((a, b) => a.number - b.number)
     : [];

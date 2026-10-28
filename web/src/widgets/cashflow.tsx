@@ -18,28 +18,30 @@ export function CashflowWidget({ now, hidden, size, config, setConfig }: WidgetP
       loading={loading && !data}
       error={error}
       actions={<PeriodSelect value={period} options={PERIODS} onChange={(id) => setConfig({ period: id })} />}
+      head={
+        data && (
+          <>
+            <div class="big">{brl(data.net, hidden)}</div>
+            {size !== 'sm' && (
+              <>
+                <div class="pair">
+                  <div>
+                    <span class="muted">Entradas</span>
+                    <strong class="good-text">{brl(data.inflow, hidden)}</strong>
+                  </div>
+                  <div>
+                    <span class="muted">Saídas</span>
+                    <strong class="bad-text">{brl(data.outflow, hidden)}</strong>
+                  </div>
+                </div>
+                <DayDots days={data.days} from={data.from} to={data.to} hidden={hidden} />
+              </>
+            )}
+          </>
+        )
+      }
     >
-      {data && (
-        <>
-          <div class="big">{brl(data.net, hidden)}</div>
-          {size !== 'sm' && (
-            <>
-              <div class="pair">
-                <div>
-                  <span class="muted">Entradas</span>
-                  <strong class="good-text">{brl(data.inflow, hidden)}</strong>
-                </div>
-                <div>
-                  <span class="muted">Saídas</span>
-                  <strong class="bad-text">{brl(data.outflow, hidden)}</strong>
-                </div>
-              </div>
-              <DayDots days={data.days} from={data.from} to={data.to} />
-            </>
-          )}
-          {size === 'lg' && <div class="note">Considera só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga.</div>}
-        </>
-      )}
+      {data && size === 'lg' && <div class="note">Considera só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga.</div>}
     </Widget>
   );
 }

@@ -116,6 +116,10 @@ export interface Store {
   listDismissedFindingIds(): Set<string>;
   /** Hard-deletes source transactions dated before the instant. Returns how many were removed. */
   deleteSourceTransactionsBefore(instant: string): number;
+  /** Map of `${accountId}|${cycleKey}` to true (settled by hand) or false (kept as owed by hand). */
+  listCycleOverrides(): Map<string, boolean>;
+  /** Saves the user's word on a bill; null removes it. */
+  setCycleOverride(accountId: string, cycleKey: string, settled: boolean | null, now: string): void;
   getSetting(key: string): string | null;
   setSetting(key: string, value: string, updatedAt: string): void;
   close(): void;
