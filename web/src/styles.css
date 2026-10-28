@@ -404,3 +404,5 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 
 .clickable-row { cursor: pointer; }
 .clickable-row:hover td { background: rgb(255 255 255 / 0.04); }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.panel-head h2 { margin: 0; }
