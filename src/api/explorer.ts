@@ -93,8 +93,8 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     const size = Math.abs(t.amount);
     if (query.min !== undefined && size < query.min) return false;
     if (query.max !== undefined && size > query.max) return false;
-    if (query.spendingOnly && isNonSpending(t.category)) return false;
-    if (query.hideOwnTransfers && t.category !== null && /mesma titularidade/i.test(t.category)) return false;
+    if (query.spendingOnly && isNonSpending(t)) return false;
+    if (query.hideOwnTransfers && t.role === 'own_transfer') return false;
     if (query.cycle !== undefined) {
       const range = cycleRanges[t.accountId];
       if (!range || day < range.from || day > range.to) return false;

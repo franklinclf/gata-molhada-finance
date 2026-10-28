@@ -28,6 +28,16 @@ export function StatusPage({ now }: { now: Date }) {
   return (
     <div class="page-body">
       <h1 class="page-title">Fontes e conferência</h1>
+      {fresh.data && fresh.data.health.length > 0 && (
+        <section class="panel health" role="alert">
+          <h2>Algo nos dados não fecha</h2>
+          <ul class="rows">
+            {fresh.data.health.map((h) => (
+              <li key={h.id}>{h.message}</li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section class="panel">
         <h2>Última sincronização de cada banco</h2>
         {!fresh.data ? (

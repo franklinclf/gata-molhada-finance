@@ -385,3 +385,6 @@ span.clip, a.clip, div.clip { min-width: 0; }
   .widget.expanded { inset: 3vh 2vw; }
   .stack-cell .widget-body { overflow: visible; }
 }
+
+.panel.health { border: 1px solid var(--bad); }
+.panel.health h2 { color: var(--bad); }
