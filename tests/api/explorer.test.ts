@@ -187,3 +187,17 @@ test('the label "Sem categoria" from the spending view finds uncategorized trans
   assert.deepEqual(ids(explore(store, { ...base, categories: ['Sem categoria'] }, NOW)), ['nocat']);
   assert.equal(addCategory(store, 'sem categoria', NOW).ok, false);
 });
+
+test('an installment set by the user shows on the transaction, in the detail and in the plan, and can be cleared', () => {
+  const store = seeded();
+  assert.equal(transactionDetail(store, 'market1', NOW)?.installmentByUser, false);
+  assert.equal(apiRoute('PUT', '/api/transactions/market1/installment', new URLSearchParams(), store, NOW, '{"number":3,"total":3}')?.status, 200);
+  const d = transactionDetail(store, 'market1', NOW)!;
+  assert.deepEqual([d.transaction.installment, d.installmentByUser], [{ number: 3, total: 3 }, true]);
+  for (const bad of ['{"number":0,"total":3}', '{"number":4,"total":3}', '{"number":1,"total":1}', '{"number":"x","total":3}', '{"number":2}']) {
+    assert.equal(apiRoute('PUT', '/api/transactions/market1/installment', new URLSearchParams(), store, NOW, bad)?.status, 400, bad);
+  }
+  assert.equal(apiRoute('PUT', '/api/transactions/ghost/installment', new URLSearchParams(), store, NOW, '{"number":1,"total":2}')?.status, 404);
+  assert.equal(apiRoute('PUT', '/api/transactions/market1/installment', new URLSearchParams(), store, NOW, '{"number":null,"total":null}')?.status, 200);
+  assert.deepEqual([transactionDetail(store, 'market1', NOW)?.transaction.installment, transactionDetail(store, 'market1', NOW)?.installmentByUser], [null, false]);
+});

@@ -89,3 +89,14 @@ Em Fontes e conferência, um aviso "Algo nos dados não fecha" aparece quando o 
 ## De onde vem o total das faturas em aberto
 
 O valor que o emissor informa como saldo do cartão é o que está sendo usado do limite: as compras do ciclo em aberto mais as parcelas de compras antigas que ainda vão cair em faturas futuras. Esse saldo não é a fatura. O app mostra como "fatura do ciclo" o saldo do emissor menos as faturas fechadas não pagas e menos as parcelas de faturas futuras (que vêm do plano de parcelas), nunca menos que o já lançado. Para cartões de limite compartilhado (os Bradesco), o saldo é um só para o grupo e entra uma vez. A tela de Cartões mostra, ao lado, as parcelas de faturas futuras e o saldo devedor total no emissor, para o número poder ser conferido.
+
+## Cobranças que a fatura prova serem reais
+
+Cartões como o Amazon deixam cobranças como "pendentes" para sempre, só em uma fonte. A regra de 7 dias as tirava dos totais, e a fatura fechada ficava maior que as compras contadas. Agora, depois de cada reconciliação (`src/reconcile/bill-proof.ts`):
+
+1. Se uma fatura fechada é maior que o que contamos nela, e as pendentes postas de lado daquele ciclo somam **exatamente** a diferença (uma única combinação possível), elas voltam a contar, com o estado "confirmada pela fatura". Se mais de uma combinação serve, ou nenhuma, nada é restaurado.
+2. Uma cobrança com o mesmo texto e o mesmo valor, de 20 a 40 dias depois de uma que a fatura provou, também volta (parcelas e assinaturas).
+
+No Amazon, as sete pendentes de setembro somam R$ 221,28, que é o valor da fatura de outubro, e as de outubro repetem as de setembro.
+
+Também dá para informar à mão a parcela de uma compra no painel da transação ("Parcelamento": parcela N de M), para compras que a fonte entrega sem essa informação. Com a parcela informada, o app conta as parcelas das faturas seguintes e as tira da fatura em aberto.

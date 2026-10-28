@@ -40,6 +40,8 @@ export interface TransactionDetail {
   joinedByHand: boolean;
   /** Who made the join: the user, or the AI (which the user can undo). */
   joinedBy: 'user' | 'ai' | null;
+  /** True when the installment shown was set by the user, not delivered by the source. */
+  installmentByUser: boolean;
 }
 
 export function transactionDetail(store: Store, id: string, now: Date): TransactionDetail | null {
@@ -111,5 +113,6 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
     rule: rule !== undefined ? { category: rule } : null,
     joinedByHand,
     joinedBy: store.manualLinkMadeBy(id),
+    installmentByUser: store.listInstallmentOverrides().has(id),
   };
 }

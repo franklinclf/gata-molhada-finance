@@ -1,4 +1,5 @@
 import type { Store } from '../store/store.ts';
+import { proveByBills } from './bill-proof.ts';
 import { reconcileAccounts } from './accounts.ts';
 import { reconcileTransactions, type TransactionReconciliation } from './transactions.ts';
 import type { AccountReconciliation, SourceView } from './types.ts';
@@ -69,5 +70,13 @@ export function runReconciliation(store: Store, options: RunOptions & { staleDay
   const stamp = now().toISOString();
   store.replaceCanonicalTransactions(transactions.transactions, transactions.links, stamp);
   store.syncFindings(transactions.findings.filter((f) => !dismissed.has(f.id)), stamp);
+  // Card bills settle what the pending rule set aside: restore the charges they prove.
+  const restored = proveByBills(store, now());
+  if (restored.length > 0) {
+    const byId = new Set(restored);
+    for (const t of transactions.transactions) if (byId.has(t.id)) Object.assign(t, { state: 'billed', excluded: false });
+    transactions.stats.byState.stale_pending -= restored.length;
+    transactions.stats.byState.billed += restored.length;
+  }
   return { accounts, transactions };
 }

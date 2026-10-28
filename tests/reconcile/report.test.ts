@@ -18,7 +18,7 @@ const result = (findings: Finding[]): TransactionReconciliation => ({
   transactions: [],
   links: [],
   findings,
-  stats: { groups: 10, byState: { confirmed: 6, single_source: 2, conflict: 0, stale_pending: 1, ignored: 1 }, byPass: [10, 5, 1, 0, 2] },
+  stats: { groups: 10, byState: { confirmed: 6, single_source: 2, conflict: 0, stale_pending: 1, billed: 0, ignored: 1 }, byPass: [10, 5, 1, 0, 2] },
 });
 
 test('summarizes states and the passes that joined records', () => {
