@@ -618,6 +618,10 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       db.prepare('INSERT INTO account_prefs (account_id, hidden, updated_at) VALUES (?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET hidden = excluded.hidden, updated_at = excluded.updated_at').run(accountId, hidden ? 1 : 0, now);
     },
 
+    listAllTransactionLinks(): Array<{ sourceId: SourceId; externalId: string; transactionId: string }> {
+      return (db.prepare('SELECT source_id, external_id, transaction_id FROM transaction_links').all() as Array<{ source_id: string; external_id: string; transaction_id: string }>).map((r) => ({ sourceId: r.source_id, externalId: r.external_id, transactionId: r.transaction_id }));
+    },
+
     listTransactionLinks(transactionId: string): Array<{ sourceId: SourceId; externalId: string; matchPass: number }> {
       const rows = db.prepare('SELECT source_id, external_id, match_pass FROM transaction_links WHERE transaction_id = ? ORDER BY match_pass, source_id').all(transactionId) as Array<{ source_id: string; external_id: string; match_pass: number }>;
       return rows.map((r) => ({ sourceId: r.source_id, externalId: r.external_id, matchPass: r.match_pass }));
@@ -765,6 +769,15 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
 
     setAiCategoryStatus(matchKey: string, status: AiStatus): void {
       db.prepare('UPDATE ai_categories SET status = ? WHERE match_key = ?').run(status, matchKey);
+    },
+
+    deleteAiCategory(matchKey: string): void {
+      db.prepare('DELETE FROM ai_categories WHERE match_key = ?').run(matchKey);
+    },
+
+    deleteAiCategoriesByStatus(statuses: AiStatus[]): number {
+      if (statuses.length === 0) return 0;
+      return Number(db.prepare(`DELETE FROM ai_categories WHERE status IN (${statuses.map(() => '?').join(',')})`).run(...statuses).changes);
     },
 
     recordAiUsage(entry: { kind: string; model: string; items: number; costUsd: number; at: string }): void {

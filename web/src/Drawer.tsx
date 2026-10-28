@@ -3,6 +3,7 @@ import { api } from './api.ts';
 import { brl, dayMonth, localDay, monthName } from './format.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
+import { CopyButton } from './copy.tsx';
 import { Loading, STATE_LABEL, StatusBadge } from './ui.tsx';
 
 function InstallmentEditor({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
@@ -156,8 +157,14 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
           <Loading error={detail.error} />
         ) : (
           <>
-            <h2>{d.transaction.description}</h2>
-            <div class={d.transaction.amount >= 0 ? 'big good-text' : 'big'}>{brl(d.transaction.amount, hidden)}</div>
+            <h2>
+              {d.transaction.description}
+              <CopyButton value={d.transaction.description} label="Copiar descrição" />
+            </h2>
+            <div class={d.transaction.amount >= 0 ? 'big good-text' : 'big'}>
+              {brl(d.transaction.amount, hidden)}
+              {!hidden && <CopyButton value={(Math.abs(d.transaction.amount) / 100).toFixed(2).replace('.', ',')} label="Copiar valor" />}
+            </div>
             <dl class="facts">
               <dt>Data</dt>
               <dd>{dayMonth(localDay(d.transaction.occurredAt))}/{localDay(d.transaction.occurredAt).slice(0, 4)}</dd>
@@ -165,6 +172,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
               <dd>
                 {d.account.institution} · {d.account.name}
                 {d.account.last4 ? ` •••• ${d.account.last4}` : ''}
+                {d.account.last4 && <CopyButton value={d.account.last4} label="Copiar final do cartão" />}
               </dd>
               <dt>Status</dt>
               <dd>{d.transaction.status === 'pending' ? 'Pendente' : 'Lançada'}</dd>
@@ -284,11 +292,17 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
                 {s.record ? (
                   <dl class="facts">
                     <dt>Descrição</dt>
-                    <dd>{s.record.description}</dd>
+                    <dd>
+                      {s.record.description}
+                      <CopyButton value={s.record.description} label="Copiar descrição" />
+                    </dd>
                     {s.record.descriptionRaw && s.record.descriptionRaw !== s.record.description && (
                       <>
                         <dt>Original</dt>
-                        <dd>{s.record.descriptionRaw}</dd>
+                        <dd>
+                          {s.record.descriptionRaw}
+                          <CopyButton value={s.record.descriptionRaw} label="Copiar texto original" />
+                        </dd>
                       </>
                     )}
                     <dt>Categoria</dt>

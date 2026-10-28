@@ -172,3 +172,43 @@ export function DayDots({ days, from, to, hidden = false, onSelect }: { days: Ar
     </div>
   );
 }
+
+export interface StackDatum {
+  key: string;
+  label: string;
+  parts: Array<{ value: number; color: string; label: string }>;
+  tip?: string;
+}
+
+/** Bars made of stacked parts, for a total whose makeup matters (installments, repeating charges, the usual spending). */
+export function StackedBars({ data, hidden, height = 150, selected, onSelect }: { data: StackDatum[]; hidden: boolean; height?: number; selected?: string | null; onSelect?: (key: string) => void }) {
+  const max = Math.max(1, ...data.map((d) => d.parts.reduce((s, p) => s + p.value, 0)));
+  const Tag = onSelect ? 'button' : 'div';
+  return (
+    <div class="bars" style={{ height: `${height}px` }} role="group">
+      {data.map((d) => {
+        const total = d.parts.reduce((s, p) => s + p.value, 0);
+        const on = selected === undefined || selected === null || selected === d.key;
+        return (
+          <Tag
+            key={d.key}
+            class={onSelect ? (on ? 'bar clickable on' : 'bar clickable') : 'bar'}
+            data-tip={hidden ? d.label : (d.tip ?? `${d.label}: ${brl(total)}\n${d.parts.filter((p) => p.value > 0).map((p) => `${p.label} ${brl(p.value)}`).join('\n')}`)}
+            onClick={() => onSelect?.(d.key)}
+            aria-pressed={onSelect ? selected === d.key : undefined}
+          >
+            <span class="bar-value">{brlShort(total, hidden)}</span>
+            <span class="bar-track">
+              <span class="stack" style={{ height: `${(total / max) * 100}%`, opacity: on ? 1 : 0.35 }}>
+                {d.parts.map((p, i) => (
+                  <span key={i} style={{ flex: p.value, background: p.color }} />
+                ))}
+              </span>
+            </span>
+            <span class="bar-label">{d.label}</span>
+          </Tag>
+        );
+      })}
+    </div>
+  );
+}

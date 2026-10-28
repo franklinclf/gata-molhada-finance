@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { api, ApiError } from '../api.ts';
 import { ago } from '../format.ts';
 import { createPasskey, guessDeviceName, passkeysSupported } from '../passkey.ts';
@@ -218,6 +218,122 @@ function SecurityTab({ now }: { now: Date }) {
 
 const CONFIDENCE: Record<string, string> = { high: 'alta', medium: 'média', low: 'baixa' };
 
+const DECISION_LABEL: Record<string, string> = { applied: 'Aplicadas pela IA', accepted: 'Aceitas por você', rejected: 'Recusadas', skipped: 'Sem palpite' };
+
+function DecisionsPanel() {
+  const [status, setStatus] = useState<string>('applied');
+  const [text, setText] = useState('');
+  const [q, setQ] = useState('');
+  const { data, error, reload } = useLoad(() => api.decisions(status, q), [status, q]);
+  const categories = useLoad(() => api.categories(), []);
+  const [choice, setChoice] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(text), 300);
+    return () => clearTimeout(timer);
+  }, [text]);
+  const run = async (work: () => Promise<unknown>, done?: string) => {
+    setMessage(null);
+    try {
+      await work();
+      reload();
+      if (done) setMessage(done);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Não foi possível concluir.');
+    }
+  };
+  const reset = (statuses: string[] | 'all', what: string) => {
+    if (!window.confirm(`${what}\n\nA IA volta a perguntar sobre essas descrições na próxima rodada. Continuar?`)) return;
+    void run(() => api.resetDecisions(statuses).then((r) => setMessage(`${r.reset} decisões esquecidas.`)));
+  };
+  return (
+    <section class="panel">
+      <h2>Decisões anteriores</h2>
+      <div class="muted">Veja o que a IA aplicou sozinha e o que você aceitou ou recusou. Dá para mudar de ideia em cada uma ou limpar em massa.</div>
+      <div class="tabs">
+        {(['applied', 'accepted', 'rejected', 'skipped'] as const).map((s) => (
+          <button key={s} class={status === s ? 'tab on' : 'tab'} onClick={() => setStatus(s)}>
+            {DECISION_LABEL[s]} {data ? `(${data.counts[s]})` : ''}
+          </button>
+        ))}
+      </div>
+      <input class="search" placeholder="Buscar por descrição ou categoria" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
+      {!data ? (
+        <Loading error={error} />
+      ) : data.items.length === 0 ? (
+        <div class="empty">Nada nesta lista.</div>
+      ) : (
+        <ul class="rows tall">
+          {data.items.map((d) => (
+            <li key={d.key} class="suggestion">
+              <div class="grow">
+                <div class="clip">{d.sample}</div>
+                <div class="muted">
+                  {d.count} transação(ões) · {d.status === 'accepted' && d.rule ? `sua regra: ${d.rule}` : `IA: ${d.category}`}
+                  {d.sourceCategory ? ` · a fonte diz: ${d.sourceCategory}` : ''}
+                </div>
+              </div>
+              {d.status !== 'skipped' && d.status !== 'rejected' && (
+                <select class="select" value={choice[d.key] ?? d.rule ?? d.category} onChange={(e) => setChoice({ ...choice, [d.key]: (e.currentTarget as HTMLSelectElement).value })} aria-label="Categoria">
+                  {[...new Set([d.rule ?? d.category, ...(categories.data?.items.map((c) => c.name) ?? [])])].map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <div class="links" data-no-nav>
+                {d.status === 'applied' && (
+                  <>
+                    <button class="primary small" onClick={() => void run(() => api.decide(d.key, 'accept', choice[d.key] ?? d.category))}>
+                      Confirmar
+                    </button>
+                    <button class="icon small" onClick={() => void run(() => api.decide(d.key, 'reject'))}>
+                      Voltar à fonte
+                    </button>
+                  </>
+                )}
+                {d.status === 'accepted' && (
+                  <>
+                    <button class="primary small" onClick={() => void run(() => api.decide(d.key, 'accept', choice[d.key] ?? d.rule ?? d.category))}>
+                      Trocar
+                    </button>
+                    <button class="icon small" onClick={() => void run(() => api.decide(d.key, 'reset'))}>
+                      Desfazer
+                    </button>
+                  </>
+                )}
+                {(d.status === 'rejected' || d.status === 'skipped') && (
+                  <button class="icon small" onClick={() => void run(() => api.decide(d.key, 'reset'))}>
+                    Perguntar de novo
+                  </button>
+                )}
+                {d.sampleTransactionId && (
+                  <button class="link" onClick={() => patchParams({ tx: d.sampleTransactionId })}>
+                    Ver
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div class="links">
+        <button class="icon small" onClick={() => reset(['applied', 'skipped', 'suggested'], 'Esquecer tudo o que a IA aplicou, sugeriu ou deixou sem palpite?')}>
+          Esquecer o que a IA decidiu
+        </button>
+        <button class="icon small" onClick={() => reset(['accepted', 'rejected'], 'Esquecer as suas respostas? As regras criadas ao aceitar sugestões também são apagadas.')}>
+          Esquecer minhas respostas
+        </button>
+        <button class="icon small" onClick={() => reset('all', 'Apagar todas as decisões da IA e as regras criadas ao aceitar sugestões?')}>
+          Resetar tudo
+        </button>
+      </div>
+      {message && <div class="note" role="status">{message}</div>}
+    </section>
+  );
+}
+
 function AiTab({ hidden }: { hidden: boolean }) {
   const { data, error, reload } = useLoad(() => api.ai(), []);
   const categories = useLoad(() => api.categories(), []);
@@ -302,6 +418,7 @@ function AiTab({ hidden }: { hidden: boolean }) {
         )}
         {message && <div class="error">{message}</div>}
       </section>
+      <DecisionsPanel />
     </>
   );
 }

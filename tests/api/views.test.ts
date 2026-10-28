@@ -40,7 +40,7 @@ function seeded() {
   store.replaceCanonicalTransactions(
     [
       txn({ id: 'salary', amount: 500000, category: 'Salário', description: 'Salary' }),
-      txn({ id: 'rent', amount: -150000, category: 'Aluguel', description: 'Rent', occurredAt: '2026-10-05T15:00:00Z' }),
+      txn({ id: 'rent', amount: -150000, category: 'Aluguel do mês', description: 'Rent', occurredAt: '2026-10-05T15:00:00Z' }),
       txn({ id: 'own', amount: -20000, category: 'Transferência mesma titularidade', description: 'To savings' }),
       txn({ id: 'billpay', amount: -80000, category: 'Pagamento de cartão de crédito', description: 'Card bill' }),
       txn({ id: 'p1', accountId: 'c1', amount: -3000, category: 'Supermercado', description: 'Market' }),
@@ -88,7 +88,7 @@ test('cash flow counts bank accounts only, keeps card bill payments, leaves out 
 test('spending: card purchases and bank outflows, minus refunds, without card payments, transfers or stale entries', () => {
   const v = views.spending(seeded(), THIS_MONTH, 'category', NOW);
   const byName = Object.fromEntries(v.groups.map((g) => [g.name, g.amount]));
-  assert.deepEqual(byName, { Aluguel: 150000, Compras: 15000, Supermercado: 4500 });
+  assert.deepEqual(byName, { 'Aluguel do mês': 150000, Compras: 15000, Supermercado: 4500 });
   assert.equal(v.total, 169500);
   assert.equal(v.daily.reduce((sum, d) => sum + d.amount, 0), 169500);
   assert.deepEqual(v.daily.map((d) => d.day), [...v.daily.map((d) => d.day)].sort());

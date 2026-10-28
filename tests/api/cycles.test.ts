@@ -263,3 +263,29 @@ test('the open cycle leaves out installments that belong to later bills, which t
   assert.equal(cards(store, NOW).totals.futureInstallments, 6000);
   assert.equal(cards(store, NOW).totals.reportedByIssuer, 28090);
 });
+
+test('a card bill paid from the bank account is not spending, whichever way the two sources label it', async () => {
+  const { evidenceRole } = await import('../../src/api/roles.ts');
+  // Pierre called it a card fee, Meu Pluggy called it a card payment: any label that says payment is enough.
+  assert.equal(evidenceRole(['Taxas de cartão de crédito', 'Credit card payment'], 'GASTOS CARTAO DE CREDITO - DOCTO: 3990288'), 'card_payment');
+  assert.equal(evidenceRole('Taxas de cartão de crédito', 'GASTOS CARTAO DE CREDITO - DOCTO: 3990288'), 'card_payment');
+  assert.equal(evidenceRole('Taxas de cartão de crédito', 'PAGTO ELETRON  COBRANCA - BANCO BRADESCARD S'), 'card_payment');
+  assert.equal(evidenceRole('Transferências', 'Pagamento efetuado|BANCO IBI S A'), 'card_payment');
+  assert.equal(evidenceRole('Taxas de cartão de crédito', 'ANUIDADE DIFERENCIADA 03/12'), null, 'a card fee is still a fee');
+
+  const { spending, monthRange } = await import('../../src/api/views.ts');
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pierre', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  const checking: CanonicalAccount = { ...account('chk'), kind: 'checking', creditLimit: null, availableLimit: null, refs: [] };
+  store.replaceCanonicalAccounts([checking], [], NOW.toISOString());
+  const payment = { ...tx('bill', 'chk', '2026-10-16', -210157, 'Taxas de cartão de crédito'), description: 'GASTOS CARTAO DE CREDITO - DOCTO: 3990288' };
+  store.replaceCanonicalTransactions(
+    [payment, tx('lunch', 'chk', '2026-10-16', -5000, 'Restaurantes, bares e lanchonetes')],
+    [{ sourceId: 'pierre', externalId: 'p1', transactionId: 'bill', matchPass: 0 }, { sourceId: 'pluggy', externalId: 'g1', transactionId: 'bill', matchPass: 1 }],
+    NOW.toISOString(),
+  );
+  store.upsertSourceTransactions('pluggy', [{ externalId: 'g1', accountExternalId: 'x', occurredAt: '2026-10-16T15:00:00Z', amount: -210157, description: payment.description, descriptionRaw: null, status: 'posted', installment: null, category: 'Credit card payment' }], NOW.toISOString());
+  const result = spending(store, monthRange(NOW), 'category', NOW);
+  assert.equal(result.total, 5000);
+});
