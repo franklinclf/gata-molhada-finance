@@ -79,6 +79,10 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - **Limites:** erros de passkey não travam o login por senha (uma assinatura não se adivinha); só há um limite de 30 por 15 minutos para frear inundação. Erros de senha continuam travando em 5 por 15 minutos.
 - **Endereço:** a passkey fica presa ao endereço `PUBLIC_ORIGIN` (no servidor é `https://` mais o nome da VM). Abrir o app por outro nome (IP, outro domínio) desliga as passkeys, e a senha continua funcionando. Se o domínio mudar um dia, é preciso criar as passkeys de novo.
 
+## Grupos de categorias
+
+Cada categoria pode ficar dentro de um grupo (Aluguel dentro de Casa, por exemplo). As categorias padrão já vêm agrupadas (`src/api/category-groups.ts`: Alimentação, Transporte, Saúde e bem-estar, Casa, Compras, Lazer, Finanças); as que não estão na lista ficam sozinhas. Em Ajustes > Categorias, cada linha tem um seletor de grupo, com a opção de criar um grupo novo, e sua escolha vale mais que o padrão (migração 015, tabela `category_parents`). Grupos têm um nível só: um grupo não entra em outro grupo. A aba Grupos de Gastos é a padrão; ao abrir um grupo aparecem as categorias dele, e cada uma abre as transações. A IA continua usando a lista plana de categorias, então agrupar não gera nova chamada nem nova consulta ao modelo.
+
 ## Nomes de estabelecimentos
 
 A aba Estabelecimentos de Gastos agrupa pelo nome do lugar, não pelo texto do banco (`merchantName`, `src/core/merchant.ts`). São regras de texto e uma lista curta de nomes conhecidos, sem IA e sem custo: tira códigos de processadora antes do asterisco, números de loja, sufixos como "SA" e "LTDA", e junta "DL*UberRides", "Uber UBER *TRIP" e "UBER * PENDING" em Uber. Transferências e Pix para a mesma pessoa viram o nome dela, escritas de qualquer jeito. Nos dados reais, 457 textos distintos de saída viraram 280 nomes. O nome de um lugar que não está na lista só perde números e sufixos, então dois lugares escritos de formas bem diferentes continuam separados.

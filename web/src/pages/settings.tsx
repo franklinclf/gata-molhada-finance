@@ -54,6 +54,7 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
   const [name, setName] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   if (!data) return <Loading error={error} />;
+  const groups = [...new Set(data.items.map((c) => c.parent).filter((g): g is string => g !== null))].sort();
   const run = async (work: () => Promise<unknown>) => {
     setMessage(null);
     try {
@@ -65,7 +66,7 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
   };
   return (
     <>
-      <p class="muted">As categorias vêm das fontes (Pierre e Meu Pluggy) e podem ter nomes diferentes para o mesmo assunto. Crie as suas e mova transações para elas pelo painel de detalhes da transação.</p>
+      <p class="muted">As categorias vêm das fontes (Pierre e Meu Pluggy) e podem ter nomes diferentes para o mesmo assunto. Crie as suas e mova transações para elas pelo painel de detalhes da transação. Cada categoria pode ficar dentro de um grupo (por exemplo, Aluguel dentro de Casa), e a aba Grupos de Gastos soma as categorias de cada grupo.</p>
       <form
         class="recat"
         onSubmit={(e) => {
@@ -90,6 +91,25 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
               <Go class="grow clip" page="transactions" params={{ category: c.name }}>
                 {c.name}
               </Go>
+              <select
+                class="select"
+                aria-label={`Grupo de ${c.name}`}
+                value={c.parent ?? ''}
+                onChange={(e) => {
+                  const value = (e.currentTarget as HTMLSelectElement).value;
+                  const parent = value === '__new' ? window.prompt('Nome do novo grupo')?.trim() : value === '' ? null : value;
+                  if (parent !== undefined && parent !== '') void run(() => api.setCategoryParent(c.name, parent));
+                  else reload();
+                }}
+              >
+                <option value="">Sem grupo</option>
+                {groups.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+                <option value="__new">+ Novo grupo...</option>
+              </select>
               {c.custom && <span class="badge info">sua</span>}
               {c.builtin && c.count === 0 && <span class="badge muted">padrão</span>}
               <span class="muted">{c.count} transações</span>

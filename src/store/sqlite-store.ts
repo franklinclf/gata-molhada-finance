@@ -654,6 +654,15 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       else db.prepare('INSERT INTO category_rules (match_key, category, updated_at) VALUES (?, ?, ?) ON CONFLICT(match_key) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at').run(matchKey, category, now);
     },
 
+    listCategoryParents(): Map<string, string> {
+      return new Map((db.prepare('SELECT category, parent FROM category_parents').all() as Array<{ category: string; parent: string }>).map((r) => [r.category, r.parent]));
+    },
+
+    setCategoryParent(category: string, parent: string | null, now: string): void {
+      if (parent === null) db.prepare('DELETE FROM category_parents WHERE category = ?').run(category);
+      else db.prepare('INSERT INTO category_parents (category, parent, updated_at) VALUES (?, ?, ?) ON CONFLICT(category) DO UPDATE SET parent = excluded.parent, updated_at = excluded.updated_at').run(category, parent, now);
+    },
+
     listCustomCategories(): string[] {
       return (db.prepare('SELECT name FROM custom_categories ORDER BY name').all() as Array<{ name: string }>).map((r) => r.name);
     },
@@ -665,6 +674,7 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     deleteCustomCategory(name: string): void {
       inTransaction(() => {
         db.prepare('DELETE FROM custom_categories WHERE name = ?').run(name);
+        db.prepare('DELETE FROM category_parents WHERE category = ?').run(name);
         db.prepare('DELETE FROM category_overrides WHERE category = ?').run(name);
         db.prepare('DELETE FROM category_rules WHERE category = ?').run(name);
       });

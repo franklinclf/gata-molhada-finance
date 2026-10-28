@@ -7,7 +7,7 @@ import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSugge
 import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
-import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -249,6 +249,18 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const input = parseBody(body);
         if (!input) return badRequest('body must be { name }');
         return fromMutation(addCategory(store, input.name, now));
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'parent') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input || !('parent' in input)) return badRequest('body must be { parent }');
+        let name: string;
+        try {
+          name = decodeURIComponent(id);
+        } catch {
+          return badRequest('bad category name');
+        }
+        return fromMutation(setCategoryParent(store, name, input.parent, now));
       }
       if (parts.length === 3 && id !== undefined) {
         if (method !== 'DELETE') return methodNotAllowed();

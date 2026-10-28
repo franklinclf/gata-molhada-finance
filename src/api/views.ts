@@ -1,6 +1,7 @@
 import type { CanonicalAccount, CanonicalTransaction } from '../core/canonical.ts';
 import type { Cents } from '../core/money.ts';
 import { institutionKey } from '../core/names.ts';
+import { categoryParents } from './category-groups.ts';
 import { merchantName } from '../core/merchant.ts';
 import { localDay } from '../core/time.ts';
 import { summarizeAccounts } from '../reconcile/accounts.ts';
@@ -290,7 +291,7 @@ export interface SpendingView extends Stamped, DateRange {
   /** Refunds in groups that have no spending of their own, already taken out of `total`. The shares are over the listed groups. */
   creditsNotListed: Cents;
   groupBy: SpendingGroup;
-  groups: Array<{ name: string; amount: Cents; count: number; share: number }>;
+  groups: Array<{ name: string; amount: Cents; count: number; share: number; /** The group a category sits in; always null when grouping by merchant. */ parent: string | null }>;
   /** Spending per day (net of refunds), oldest first, for a running-total chart. */
   daily: Array<{ day: string; amount: Cents }>;
 }
@@ -299,6 +300,7 @@ export interface SpendingView extends Stamped, DateRange {
 export function spending(store: Store, range: DateRange, groupBy: SpendingGroup, now: Date, opts: ViewOptions = {}): SpendingView {
   const accounts = visibleAccounts(store, opts);
   const bankIds = new Set(accounts.filter(isBank).map((a) => a.id));
+  const parents = categoryParents(store);
   const rows = new Map<string, { amount: Cents; count: number }>();
   const perDay = new Map<string, Cents>();
   for (const t of liveTransactions(store, range, opts)) {
@@ -320,7 +322,7 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
   // The total is the net of every day, the same number the month bars add up. Groups that only hold refunds are not listed, so their credit is shown apart.
   const total = [...perDay.values()].reduce((s, v) => s + v, 0);
   const listed = groups.reduce((s, g) => s + g.amount, 0);
-  return { ...stamp(accounts, now), ...range, total, creditsNotListed: listed - total, groupBy, groups: groups.map((g) => ({ ...g, share: listed > 0 ? g.amount / listed : 0 })),
+  return { ...stamp(accounts, now), ...range, total, creditsNotListed: listed - total, groupBy, groups: groups.map((g) => ({ ...g, share: listed > 0 ? g.amount / listed : 0, parent: groupBy === 'category' ? (parents.get(g.name) ?? null) : null })),
     daily: [...perDay].sort(([a], [b]) => a.localeCompare(b)).map(([day, amount]) => ({ day, amount })) };
 }
 

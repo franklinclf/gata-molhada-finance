@@ -177,6 +177,10 @@ export interface Store {
   setCategoryOverride(transactionId: string, category: string | null, now: string): void;
   listCategoryRules(): Map<string, string>;
   setCategoryRule(matchKey: string, category: string | null, now: string): void;
+  /** The user's choices of group per category. An empty parent means no group. */
+  listCategoryParents(): Map<string, string>;
+  /** Sets the group of a category; null forgets the choice and goes back to the default. */
+  setCategoryParent(category: string, parent: string | null, now: string): void;
   listCustomCategories(): string[];
   addCustomCategory(name: string, now: string): void;
   /** Removes a custom category and every override and rule that points to it. */
