@@ -79,6 +79,17 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - **Limites:** erros de passkey não travam o login por senha (uma assinatura não se adivinha); só há um limite de 30 por 15 minutos para frear inundação. Erros de senha continuam travando em 5 por 15 minutos.
 - **Endereço:** a passkey fica presa ao endereço `PUBLIC_ORIGIN` (no servidor é `https://` mais o nome da VM). Abrir o app por outro nome (IP, outro domínio) desliga as passkeys, e a senha continua funcionando. Se o domínio mudar um dia, é preciso criar as passkeys de novo.
 
+## Quem pagou e quem recebeu
+
+Pix, TED e boleto trazem o documento (CPF ou CNPJ) de quem paga e de quem recebe nas duas fontes, e compras no cartão trazem o código de categoria do estabelecimento (MCC). Os adaptadores guardam isso em `source_transactions` (migração 016): o documento vira um hash, para comparar pessoas, mais os 4 últimos dígitos, para mostrar; o número inteiro não é guardado nessa tabela (as respostas brutas em `raw_snapshots` continuam com ele). Os registros antigos são preenchidos uma vez, na subida do servidor, a partir dessas respostas brutas (`src/sync/backfill-parties.ts`).
+
+O que isso muda, sem IA:
+
+- **Transferência entre contas suas:** o dono é o documento que aparece como pagador nas próprias saídas e como recebedor nas entradas. Um Pix cujo outro lado tem esse documento é transferência entre contas suas, mesmo que o texto não diga. Numa cópia dos dados reais isso confirmou as 324 transferências que as fontes já marcavam e achou 3 que o texto escondia.
+- **Nome da pessoa:** quando o texto não traz o nome, usa-se o nome com que o mesmo documento aparece em outras transações. Estabelecimentos e Gastos agrupam por esse nome.
+- **Categoria:** quando o rótulo da fonte não corresponde a nenhuma categoria nossa, o MCC decide (`src/api/mcc.ts`, só códigos sem ambiguidade). Um rótulo da fonte que já corresponde a uma categoria nossa continua valendo, porque apps de entrega usam códigos de restaurante.
+- A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
+
 ## Grupos de categorias
 
 Cada categoria pode ficar dentro de um grupo (Aluguel dentro de Casa, por exemplo). As categorias padrão já vêm agrupadas (`src/api/category-groups.ts`: Alimentação, Transporte, Saúde e bem-estar, Casa, Compras, Lazer, Finanças); as que não estão na lista ficam sozinhas. Em Ajustes > Categorias, cada linha tem um seletor de grupo, com a opção de criar um grupo novo, e sua escolha vale mais que o padrão (migração 015, tabela `category_parents`). Grupos têm um nível só: um grupo não entra em outro grupo. A aba Grupos de Gastos é a padrão; ao abrir um grupo aparecem as categorias dele, e cada uma abre as transações. A IA continua usando a lista plana de categorias, então agrupar não gera nova chamada nem nova consulta ao modelo.

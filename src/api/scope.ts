@@ -92,8 +92,9 @@ export function effectiveTransactions(
       const suggested = ai.get(ruleKey(t.description));
       if (override !== undefined) [category, origin] = [override, 'override'];
       else if (rule !== undefined) [category, origin] = [rule, 'rule'];
-      else if (categoryForMcc(partiesOf.get(t.id)?.mcc ?? null) !== null) category = categoryForMcc(partiesOf.get(t.id)?.mcc ?? null)!;
       else if (labels.some((l) => mapSourceCategory(l) !== null)) category = labels.map((l) => mapSourceCategory(l)).find((c) => c !== null) ?? category;
+      // The merchant code is a fact, but a source label that already names one of our categories is more specific (delivery apps use restaurant codes).
+      else if (categoryForMcc(partiesOf.get(t.id)?.mcc ?? null) !== null) category = categoryForMcc(partiesOf.get(t.id)?.mcc ?? null)!;
       else if (suggested?.status === 'applied') [category, origin] = [suggested.category, 'ai'];
       const installment = installmentOverrides.get(t.id) ?? t.installment;
       const parties = partiesOf.get(t.id);
