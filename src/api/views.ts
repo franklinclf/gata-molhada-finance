@@ -286,6 +286,8 @@ export type SpendingGroup = 'category' | 'merchant';
 
 export interface SpendingView extends Stamped, DateRange {
   total: Cents;
+  /** Refunds in groups that have no spending of their own, already taken out of `total`. The shares are over the listed groups. */
+  creditsNotListed: Cents;
   groupBy: SpendingGroup;
   groups: Array<{ name: string; amount: Cents; count: number; share: number }>;
   /** Spending per day (net of refunds), oldest first, for a running-total chart. */
@@ -314,8 +316,10 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
     .map(([name, v]) => ({ name, ...v }))
     .filter((g) => g.amount > 0)
     .sort((a, b) => b.amount - a.amount);
-  const total = groups.reduce((s, g) => s + g.amount, 0);
-  return { ...stamp(accounts, now), ...range, total, groupBy, groups: groups.map((g) => ({ ...g, share: total > 0 ? g.amount / total : 0 })),
+  // The total is the net of every day, the same number the month bars add up. Groups that only hold refunds are not listed, so their credit is shown apart.
+  const total = [...perDay.values()].reduce((s, v) => s + v, 0);
+  const listed = groups.reduce((s, g) => s + g.amount, 0);
+  return { ...stamp(accounts, now), ...range, total, creditsNotListed: listed - total, groupBy, groups: groups.map((g) => ({ ...g, share: listed > 0 ? g.amount / listed : 0 })),
     daily: [...perDay].sort(([a], [b]) => a.localeCompare(b)).map(([day, amount]) => ({ day, amount })) };
 }
 

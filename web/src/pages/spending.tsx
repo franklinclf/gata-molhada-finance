@@ -64,6 +64,7 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
             <div class="big">{brl(data.total, hidden)}</div>
             <div class="muted">
               {data.groups.length} {by === 'category' ? 'categorias' : 'estabelecimentos'} · compras no cartão entram na data da compra
+              {data.creditsNotListed > 0 && ` · já descontados ${brl(data.creditsNotListed, hidden)} em estornos`}
             </div>
             <LineChart points={cumulative(data.daily, data.from, data.to)} hidden={hidden} days={daysBetween(data.from, data.to)} />
             <h3>Últimos 12 meses (clique em um mês)</h3>

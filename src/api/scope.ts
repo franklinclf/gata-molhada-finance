@@ -1,7 +1,8 @@
 import type { CanonicalAccount, CanonicalTransaction, LimitGroup } from '../core/canonical.ts';
 import { normalizeName } from '../core/names.ts';
 import { mapSourceCategory } from '../ai/source-map.ts';
-import { ownerNames, roleOf, type Role } from './roles.ts';
+import { localDay } from '../core/time.ts';
+import { ownerNames, roleOf, slipBillPayments, type Role } from './roles.ts';
 import type { Store } from '../store/store.ts';
 
 export interface ViewOptions {
@@ -58,6 +59,12 @@ export function effectiveTransactions(
   const all = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: options.includeExcluded });
   const labelsOf = labelsByTransaction(store);
   const owners = ownerNames(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => ({ sourceCategory: t.category, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })));
+  // A card bill paid by boleto or Pix QR code looks like any transfer; its amount gives it away.
+  const cardIds = new Set(store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card').map((a) => a.id));
+  const slipPayments = slipBillPayments(
+    all.filter((t) => !cardIds.has(t.accountId)).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })),
+    ['pierre', 'pluggy'].flatMap((sourceId) => store.listSourceBills(sourceId)),
+  );
   return all
     .filter((t) => ids.has(t.accountId))
     .map((t) => {
@@ -72,7 +79,7 @@ export function effectiveTransactions(
       else if (labels.some((l) => mapSourceCategory(l) !== null)) category = labels.map((l) => mapSourceCategory(l)).find((c) => c !== null) ?? category;
       else if (suggested?.status === 'applied') [category, origin] = [suggested.category, 'ai'];
       const installment = installmentOverrides.get(t.id) ?? t.installment;
-      const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: origin, owners });
+      const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: origin, owners }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
       // What the source or the AI called it must agree with what it is for the arithmetic.
       if (role && (origin === 'source' || origin === 'ai')) category = ROLE_CATEGORY[role];
       return { ...t, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role };

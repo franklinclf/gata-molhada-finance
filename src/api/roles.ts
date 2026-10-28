@@ -89,3 +89,33 @@ export function roleOf(input: { sourceCategory: string | null; labels?: string[]
   if (input.owners && input.owners.size > 0 && /transfer|pix|ted/i.test(`${(input.labels ?? [input.sourceCategory]).join(' ')} ${input.description}`) && isOwner(input.description, input.owners)) return 'own_transfer';
   return null;
 }
+
+const SLIP_TEXT = /boleto|bank slip|pix qr code|pagto antec|recebto pagto/;
+const SLIP_WINDOW_BEFORE_DAYS = 45;
+const SLIP_WINDOW_AFTER_DAYS = 30;
+
+const dayNumber = (day: string): number => Math.floor(Date.parse(`${day.slice(0, 10)}T00:00:00Z`) / 86_400_000);
+
+/**
+ * Card bills paid with a boleto or a Pix QR code. The bank names the payee's collection system, not the card, so the text
+ * alone says nothing. The amount does: an outflow that looks like a slip payment and equals a bill total to the cent,
+ * close to that bill's due date, is that bill's payment. Each bill is used once.
+ */
+export function slipBillPayments(
+  outflows: Array<{ id: string; day: string; amount: number; labels: string[]; description: string }>,
+  bills: Array<{ dueDate: string; total: number }>,
+): Set<string> {
+  const free = bills.filter((b) => b.total > 0).map((b) => ({ due: dayNumber(b.dueDate), total: b.total }));
+  const found = new Set<string>();
+  const candidates = outflows
+    .filter((t) => t.amount < 0 && SLIP_TEXT.test(normalizeName([...t.labels, t.description].join(' '))))
+    .sort((a, b) => a.day.localeCompare(b.day));
+  for (const t of candidates) {
+    const day = dayNumber(t.day);
+    const at = free.findIndex((b) => b.total === -t.amount && day >= b.due - SLIP_WINDOW_BEFORE_DAYS && day <= b.due + SLIP_WINDOW_AFTER_DAYS);
+    if (at < 0) continue;
+    free.splice(at, 1);
+    found.add(t.id);
+  }
+  return found;
+}
