@@ -11,7 +11,7 @@ import { Go, Loading, TxRow } from '../ui.tsx';
 /** What a category (or merchant) is made of: the individual transactions, loaded when the row is opened. */
 function Members({ name, by, from, to, hidden }: { name: string; by: 'category' | 'merchant'; from: string; to: string; hidden: boolean }) {
   const query = new URLSearchParams({ from, to, kind: 'expense', spendingOnly: 'true', sort: 'amount_desc', limit: '15' });
-  query.set(by === 'category' ? 'category' : 'q', name);
+  query.set(by === 'category' ? 'category' : 'merchant', name);
   const { data, error } = useLoad(() => api.explore(query), [name, by, from, to]);
   if (!data) return <Loading error={error} />;
   return (

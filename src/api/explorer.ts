@@ -1,3 +1,4 @@
+import { merchantName } from '../core/merchant.ts';
 import type { TransactionState } from '../core/canonical.ts';
 import type { Cents } from '../core/money.ts';
 import { localDay } from '../core/time.ts';
@@ -19,6 +20,8 @@ export interface ExplorerQuery {
   kind: 'all' | 'expense' | 'income';
   /** Text searched in the description, the raw description and the category. */
   q?: string;
+  /** A merchant name as the spending view shows it (see `merchantName`). */
+  merchant?: string;
   status?: 'pending' | 'posted';
   states?: TransactionState[];
   /** Bounds on the absolute amount, in cents. */
@@ -91,6 +94,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     if (query.status !== undefined && t.status !== query.status) return false;
     if (query.states?.length && !query.states.includes(t.state)) return false;
     const size = Math.abs(t.amount);
+    if (query.merchant !== undefined && merchantName(t.description) !== query.merchant) return false;
     if (query.min !== undefined && size < query.min) return false;
     if (query.max !== undefined && size > query.max) return false;
     if (query.spendingOnly && isNonSpending(t)) return false;
