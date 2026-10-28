@@ -40,8 +40,8 @@ export function normalizeAccount(raw: unknown, institution: string): SourceAccou
 function partyOf(side: unknown): Party | null {
   if (typeof side !== 'object' || side === null || Array.isArray(side)) return null;
   const record = side as Record<string, unknown>;
-  const document = typeof record.documentNumber === 'object' && record.documentNumber !== null ? (record.documentNumber as Record<string, unknown>).value : null;
-  return partyFrom(optString(record, 'name'), typeof document === 'string' ? document : null);
+  const number = typeof record.documentNumber === 'object' && record.documentNumber !== null ? (record.documentNumber as Record<string, unknown>) : {};
+  return partyFrom(optString(record, 'name'), typeof number.value === 'string' ? number.value : null, typeof number.type === 'string' ? number.type : null);
 }
 
 export function partiesOf(r: Record<string, unknown>) {

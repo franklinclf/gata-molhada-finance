@@ -288,3 +288,50 @@ test('past decisions can be reviewed, changed one by one, and reset in bulk', as
   await categorizePending(store, options(client));
   assert.equal(calls.length, before + 1);
 });
+
+import { partyFrom } from '../../src/core/parties.ts';
+import type { SourceTransaction } from '../../src/core/types.ts';
+
+/** Pix records with a receiver, saved as the source would, so the documents reach the categorizer. */
+function seededPix(list: Array<{ id: string; description: string; receiverDocument: string; type?: 'CPF' | 'CNPJ'; amount?: number }>) {
+  const txns = list.map((p) => tx(p.id, p.description, p.amount ?? -1000, 'Pix'));
+  const store = seeded(txns);
+  const owner = partyFrom(null, '111.222.333-44', 'CPF');
+  const records: SourceTransaction[] = list.map((p) => ({
+    externalId: `e-${p.id}`, accountExternalId: 'x', occurredAt: '2026-10-20T15:00:00Z', amount: p.amount ?? -1000, description: p.description, descriptionRaw: null, status: 'posted', installment: null, category: 'Pix',
+    parties: { operation: 'PIX', mcc: null, payer: owner, receiver: partyFrom(null, p.receiverDocument, p.type ?? 'CPF') },
+  }));
+  store.upsertSourceTransactions('pierre', records, NOW.toISOString());
+  return store;
+}
+
+test('a Pix to a person is a transfer without asking the model', async () => {
+  const store = seededPix([{ id: 'p1', description: 'Pix enviado', receiverDocument: '555.666.777-88' }]);
+  const { client, calls } = fake({});
+  const result = await categorizePending(store, options(client));
+  assert.equal(calls.length, 0);
+  assert.equal(result.asked, 0);
+  assert.equal(effectiveTransactions(store, { includeHidden: true })[0]?.category, 'Transferências');
+});
+
+test('one text sent to several payees is not asked as a whole, and an old answer for it is dropped', async () => {
+  const store = seededPix([
+    { id: 'c1', description: 'pix key transfer', receiverDocument: '11.222.333/0001-81', type: 'CNPJ' },
+    { id: 'c2', description: 'pix key transfer', receiverDocument: '22.333.444/0001-92', type: 'CNPJ' },
+  ]);
+  store.saveAiCategory({ matchKey: 'pix key transfer', sample: 'pix key transfer', category: 'Transferências', confidence: 'high', status: 'applied', model: 'm1', taxonomy: 'old', decidedAt: NOW.toISOString() });
+  const { client, calls } = fake({});
+  await categorizePending(store, options(client));
+  assert.equal(calls.length, 0);
+  assert.equal(store.listAiCategories().has('pix key transfer'), false);
+});
+
+test('the model cannot pick a category that facts decide, and an old answer with one is ignored', async () => {
+  const store = seeded([tx('t1', 'MERCADO CENTRAL', -1000, 'Services')]);
+  const { client, calls } = fake({ 'MERCADO CENTRAL': ['Supermercado', 'high'] });
+  await categorizePending(store, options(client));
+  const allowed = (calls[0]!.options.schema as unknown as { schema: { properties: { results: { items: { properties: { category: { enum: string[] } } } } } } }).schema.properties.results.items.properties.category.enum;
+  assert.ok(!allowed.includes('Transferência entre minhas contas') && !allowed.includes('Pagamento de fatura') && !allowed.includes('Investimentos'));
+  store.saveAiCategory({ matchKey: 'mercado central', sample: 'MERCADO CENTRAL', category: 'Transferência entre minhas contas', confidence: 'high', status: 'applied', model: 'm1', taxonomy: 'x', decidedAt: NOW.toISOString() });
+  assert.equal(effectiveTransactions(store, { includeHidden: true })[0]?.categoryOrigin, 'source');
+});

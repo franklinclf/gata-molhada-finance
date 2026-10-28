@@ -2,7 +2,7 @@ import { partiesOf as pierreParties } from '../adapters/pierre/normalize.ts';
 import { partiesOf as pluggyParties } from '../adapters/pluggy/normalize.ts';
 import type { Store } from '../store/store.ts';
 
-const SETTING = 'parties_backfilled';
+const SETTING = 'parties_backfilled_v2';
 
 function recordsOf(body: unknown, key: 'data' | 'results'): Array<Record<string, unknown>> {
   const list = typeof body === 'object' && body !== null ? (body as Record<string, unknown>)[key] : null;

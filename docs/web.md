@@ -88,6 +88,9 @@ O que isso muda, sem IA:
 - **Transferência entre contas suas:** o dono é o documento que aparece como pagador nas próprias saídas e como recebedor nas entradas. Um Pix cujo outro lado tem esse documento é transferência entre contas suas, mesmo que o texto não diga. Numa cópia dos dados reais isso confirmou as 324 transferências que as fontes já marcavam e achou 3 que o texto escondia.
 - **Nome da pessoa:** quando o texto não traz o nome, usa-se o nome com que o mesmo documento aparece em outras transações. Estabelecimentos e Gastos agrupam por esse nome.
 - **Categoria:** quando o rótulo da fonte não corresponde a nenhuma categoria nossa, o MCC decide (`src/api/mcc.ts`, só códigos sem ambiguidade). Um rótulo da fonte que já corresponde a uma categoria nossa continua valendo, porque apps de entrega usam códigos de restaurante.
+- **Pix e TED para uma pessoa** (CPF) são "Transferências" sem consultar a IA. Para empresa (CNPJ) a decisão fica com o rótulo, o MCC e a IA, porque pode ser uma loja.
+- **Um mesmo texto enviado a pagadores diferentes** (como "Pix key transfer" do 99Pay) não vai à IA: uma resposta seria copiada para todos. Respostas antigas desse tipo são descartadas.
+- A IA não escolhe "Transferência entre minhas contas", "Pagamento de fatura" nem "Investimentos": isso é decidido por fatos. Uma resposta antiga da IA com uma dessas categorias é ignorada.
 - A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
 
 ## Grupos de categorias

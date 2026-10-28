@@ -35,7 +35,7 @@ export const CATEGORY_NAMES = TAXONOMY.map(([name]) => name);
 /** Changes whenever the category list changes, so descriptions are asked again with the new list. */
 export function taxonomyId(extra: string[] = []): string {
   // The first word changes when the prompt or its context changes, so earlier answers that were not confirmed are asked again.
-  const text = ['prompt-v3', ...CATEGORY_NAMES, ...[...extra].sort()].join('|');
+  const text = ['prompt-v4', ...CATEGORY_NAMES, ...[...extra].sort()].join('|');
   let hash = 0;
   for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash.toString(16);
