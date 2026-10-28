@@ -8,6 +8,8 @@ import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
 import { currentVersion, migrate } from './migrations.ts';
 import type {
+  AiCategory,
+  AiStatus,
   NewSnapshot,
   Snapshot,
   SourceRegistration,
@@ -664,6 +666,30 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setCycleOverride(accountId: string, cycleKey: string, settled: boolean | null, now: string): void {
       if (settled === null) db.prepare('DELETE FROM cycle_overrides WHERE account_id = ? AND cycle_key = ?').run(accountId, cycleKey);
       else db.prepare('INSERT INTO cycle_overrides (account_id, cycle_key, settled, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(account_id, cycle_key) DO UPDATE SET settled = excluded.settled, updated_at = excluded.updated_at').run(accountId, cycleKey, settled ? 1 : 0, now);
+    },
+
+    listAiCategories(): Map<string, AiCategory> {
+      const rows = db.prepare('SELECT * FROM ai_categories').all() as Array<{ match_key: string; sample: string; category: string; confidence: string; status: string; model: string; taxonomy: string; decided_at: string }>;
+      return new Map(rows.map((r) => [r.match_key, { matchKey: r.match_key, sample: r.sample, category: r.category, confidence: r.confidence as AiCategory['confidence'], status: r.status as AiStatus, model: r.model, taxonomy: r.taxonomy, decidedAt: r.decided_at }]));
+    },
+
+    saveAiCategory(entry: AiCategory): void {
+      db.prepare('INSERT INTO ai_categories (match_key, sample, category, confidence, status, model, taxonomy, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(match_key) DO UPDATE SET sample = excluded.sample, category = excluded.category, confidence = excluded.confidence, status = excluded.status, model = excluded.model, taxonomy = excluded.taxonomy, decided_at = excluded.decided_at').run(
+        entry.matchKey, entry.sample, entry.category, entry.confidence, entry.status, entry.model, entry.taxonomy, entry.decidedAt,
+      );
+    },
+
+    setAiCategoryStatus(matchKey: string, status: AiStatus): void {
+      db.prepare('UPDATE ai_categories SET status = ? WHERE match_key = ?').run(status, matchKey);
+    },
+
+    recordAiUsage(entry: { kind: string; model: string; items: number; costUsd: number; at: string }): void {
+      db.prepare('INSERT INTO ai_usage (kind, model, items, cost_usd, at, month) VALUES (?, ?, ?, ?, ?, ?)').run(entry.kind, entry.model, entry.items, entry.costUsd, entry.at, localMonth(entry.at));
+    },
+
+    aiSpent(month: string): number {
+      const row = db.prepare('SELECT COALESCE(SUM(cost_usd), 0) AS total FROM ai_usage WHERE month = ?').get(month) as { total: number };
+      return row.total;
     },
 
     getSetting(key: string): string | null {

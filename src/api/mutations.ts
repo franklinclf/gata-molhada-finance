@@ -1,3 +1,4 @@
+import { CATEGORY_NAMES } from '../ai/taxonomy.ts';
 import { runReconciliation } from '../reconcile/run.ts';
 import type { Store } from '../store/store.ts';
 import { effectiveTransactions, ruleKey } from './scope.ts';
@@ -36,6 +37,8 @@ export interface CategoryRow {
   name: string;
   count: number;
   custom: boolean;
+  /** Part of the standard list the AI and the screens share. */
+  builtin: boolean;
   /** Spending in the category (money out minus money in), over all time. */
   amount: number;
 }
@@ -45,12 +48,13 @@ export function listCategories(store: Store): CategoryRow[] {
   const rows = new Map<string, CategoryRow>();
   for (const t of effectiveTransactions(store, { includeHidden: true })) {
     if (t.category === null) continue;
-    const row = rows.get(t.category) ?? { name: t.category, count: 0, custom: custom.has(t.category), amount: 0 };
+    const row = rows.get(t.category) ?? { name: t.category, count: 0, custom: custom.has(t.category), builtin: CATEGORY_NAMES.includes(t.category), amount: 0 };
     row.count += 1;
     row.amount += -t.amount;
     rows.set(t.category, row);
   }
-  for (const name of custom) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: true, amount: 0 });
+  for (const name of custom) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: true, builtin: false, amount: 0 });
+  for (const name of CATEGORY_NAMES) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: false, builtin: true, amount: 0 });
   return [...rows.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 

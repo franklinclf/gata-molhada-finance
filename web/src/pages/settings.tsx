@@ -89,6 +89,7 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
                 {c.name}
               </Go>
               {c.custom && <span class="badge info">sua</span>}
+              {c.builtin && c.count === 0 && <span class="badge muted">padrão</span>}
               <span class="muted">{c.count} transações</span>
               <span>{brl(c.amount, hidden)}</span>
               {c.custom && (
@@ -122,6 +123,96 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
   );
 }
 
+const CONFIDENCE: Record<string, string> = { high: 'alta', medium: 'média', low: 'baixa' };
+
+function AiTab({ hidden }: { hidden: boolean }) {
+  const { data, error, reload } = useLoad(() => api.ai(), []);
+  const categories = useLoad(() => api.categories(), []);
+  const [message, setMessage] = useState<string | null>(null);
+  const [choice, setChoice] = useState<Record<string, string>>({});
+  if (!data) return <Loading error={error} />;
+  const run = async (work: () => Promise<unknown>) => {
+    setMessage(null);
+    try {
+      await work();
+      reload();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Não foi possível concluir.');
+    }
+  };
+  const { job } = data;
+  return (
+    <>
+      <section class="panel">
+        <h2>Categorização automática</h2>
+        <dl class="facts">
+          <dt>Situação</dt>
+          <dd>{job.enabled ? `ligada (${job.model})` : 'desligada (precisa de AI_ENABLED=on e da chave da OpenRouter no servidor)'}</dd>
+          <dt>Última execução</dt>
+          <dd>{job.lastRunAt ? `${job.lastRunAt.slice(0, 16).replace('T', ' ')} · ${job.lastResult}` : (job.lastResult ?? 'nunca')}</dd>
+          <dt>Gasto no mês</dt>
+          <dd>
+            US$ {data.spentThisMonth.toFixed(3)}
+            {data.monthlyBudget !== null ? ` de US$ ${data.monthlyBudget.toFixed(2)}` : ''}
+          </dd>
+          <dt>Já aplicadas</dt>
+          <dd>{data.applied} descrições, com confiança alta</dd>
+        </dl>
+        <div class="note">
+          O modelo recebe só o texto da descrição, se entrou ou saiu dinheiro e a categoria que a fonte deu, nunca valores, contas nem nomes de bancos. Categorias que você escolher ou regras que você criar sempre valem mais que a IA, e sugestões de confiança média ou baixa só valem depois que você aceita.
+        </div>
+      </section>
+      <section class="panel">
+        <div class="row-head">
+          <h2>Para você decidir ({data.suggestions.length})</h2>
+          {data.suggestions.some((s) => s.confidence === 'medium') && (
+            <button class="primary small" onClick={() => void run(() => api.acceptAllAi())}>
+              Aceitar todas as de confiança média
+            </button>
+          )}
+        </div>
+        {data.suggestions.length === 0 ? (
+          <div class="empty">Nenhuma sugestão esperando.</div>
+        ) : (
+          <ul class="rows tall">
+            {data.suggestions.map((s) => (
+              <li key={s.key} class="suggestion">
+                <div class="grow">
+                  <div class="clip">{s.sample}</div>
+                  <div class="muted">
+                    {s.count} transação(ões){s.sourceCategory ? ` · a fonte diz: ${s.sourceCategory}` : ''} · confiança {CONFIDENCE[s.confidence]}
+                  </div>
+                </div>
+                <select class="select" value={choice[s.key] ?? s.category} onChange={(e) => setChoice({ ...choice, [s.key]: (e.currentTarget as HTMLSelectElement).value })} aria-label="Categoria">
+                  {[...new Set([s.category, ...(categories.data?.items.map((c) => c.name) ?? [])])].map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <div class="links" data-no-nav>
+                  <button class="primary small" onClick={() => void run(() => api.acceptAi(s.key, choice[s.key] ?? s.category))}>
+                    Aceitar
+                  </button>
+                  <button class="icon small" onClick={() => void run(() => api.rejectAi(s.key))}>
+                    Não
+                  </button>
+                  {s.sampleTransactionId && (
+                    <button class="link" onClick={() => patchParams({ tx: s.sampleTransactionId })}>
+                      Ver
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {message && <div class="error">{message}</div>}
+      </section>
+    </>
+  );
+}
+
 export function SettingsPage({ route, hidden }: { route: Route; hidden: boolean }) {
   const tab = route.params.get('tab') ?? 'accounts';
   return (
@@ -134,8 +225,11 @@ export function SettingsPage({ route, hidden }: { route: Route; hidden: boolean 
         <button class={tab === 'categories' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'categories' })}>
           Categorias
         </button>
+        <button class={tab === 'ai' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'ai' })}>
+          IA
+        </button>
       </div>
-      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : <AccountsTab hidden={hidden} />}
+      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'ai' ? <AiTab hidden={hidden} /> : <AccountsTab hidden={hidden} />}
     </div>
   );
 }
