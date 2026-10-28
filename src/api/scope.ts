@@ -35,12 +35,16 @@ export interface Counterparty {
   name: string | null;
   /** Last four digits of the CPF or CNPJ. */
   last4: string | null;
+  /** Person (CPF) or company (CNPJ), when the document says. */
+  kind: 'person' | 'company' | null;
   /** True when the document is the owner's own. */
   isOwner: boolean;
 }
 
 /** Key that a category rule matches on. */
 const ROLE_CATEGORY: Record<Role, string> = { card_payment: 'Pagamento de fatura', own_transfer: 'Transferência entre minhas contas', investment: 'Investimentos' };
+
+const ROLE_CATEGORY_NAMES = new Set(Object.values(ROLE_CATEGORY));
 
 export function ruleKey(description: string): string {
   // "Store 03/12" and "Store 04/12" are the same shop, so the installment number is not part of the key.
@@ -87,6 +91,8 @@ export function effectiveTransactions(
     .filter((t) => ids.has(t.accountId))
     .map((t) => {
       const labels = mergeLabels(t.category, labelsOf.get(t.id));
+      const parties = partiesOf.get(t.id);
+      const counterparty = counterpartyFor(t.amount, parties, people);
       let category = t.category;
       let origin: CategoryOrigin = 'source';
       const override = overrides.get(t.id);
@@ -95,12 +101,12 @@ export function effectiveTransactions(
       if (override !== undefined) [category, origin] = [override, 'override'];
       else if (rule !== undefined) [category, origin] = [rule, 'rule'];
       else if (labels.some((l) => mapSourceCategory(l) !== null)) category = labels.map((l) => mapSourceCategory(l)).find((c) => c !== null) ?? category;
+      // Money sent by Pix or TED to a person (a CPF) is a transfer, whatever the text says. A company could be a shop, so that is left to the label, the merchant code and the AI.
+      else if (/^(pix|ted)$/i.test(parties?.operation ?? '') && counterparty?.kind === 'person' && !counterparty.isOwner) category = 'Transferências';
       // The merchant code is a fact, but a source label that already names one of our categories is more specific (delivery apps use restaurant codes).
       else if (categoryForMcc(partiesOf.get(t.id)?.mcc ?? null) !== null) category = categoryForMcc(partiesOf.get(t.id)?.mcc ?? null)!;
-      else if (suggested?.status === 'applied') [category, origin] = [suggested.category, 'ai'];
+      else if (suggested?.status === 'applied' && !ROLE_CATEGORY_NAMES.has(suggested.category)) [category, origin] = [suggested.category, 'ai'];
       const installment = installmentOverrides.get(t.id) ?? t.installment;
-      const parties = partiesOf.get(t.id);
-      const counterparty = counterpartyFor(t.amount, parties, people);
       const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: origin, owners, ownerDocument: counterparty?.isOwner === true && /^(pix|ted|transferencia)/i.test(parties?.operation ?? '') }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
       // What the source or the AI called it must agree with what it is for the arithmetic.
       if (role && (origin === 'source' || origin === 'ai')) category = ROLE_CATEGORY[role];
@@ -174,7 +180,7 @@ function peopleIn(transactions: Array<{ id: string; amount: number; description:
 function counterpartyFor(amount: number, parties: Parties | undefined, people: People): Counterparty | null {
   const other = amount < 0 ? parties?.receiver : parties?.payer;
   if (!other || (other.hash === null && other.name === null)) return null;
-  return { name: other.name ?? (other.hash ? (people.nameByHash.get(other.hash) ?? null) : null), last4: other.last4, isOwner: other.hash !== null && people.ownerHashes.has(other.hash) };
+  return { name: other.name ?? (other.hash ? (people.nameByHash.get(other.hash) ?? null) : null), last4: other.last4, kind: other.kind, isOwner: other.hash !== null && people.ownerHashes.has(other.hash) };
 }
 
 function mergeLabels(primary: string | null, others: string[] | undefined): string[] {

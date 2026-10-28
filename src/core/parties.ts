@@ -5,6 +5,8 @@ export interface Party {
   name: string | null;
   hash: string | null;
   last4: string | null;
+  /** CPF means a person and CNPJ a company. */
+  kind: 'person' | 'company' | null;
 }
 
 /** What a source says about a transaction besides amount and text. Absent fields are null. */
@@ -18,13 +20,14 @@ export interface Parties {
 }
 
 /** A party from a name and a document as written by the source ("123.456.789-00"). Null when there is neither. */
-export function partyFrom(name: string | null, document: string | null): Party | null {
+export function partyFrom(name: string | null, document: string | null, type: string | null = null): Party | null {
   const digits = (document ?? '').replace(/\D/g, '');
   if (name === null && digits.length < 11) return null;
   return {
     name,
     hash: digits.length >= 11 ? createHash('sha256').update(`gmf-document:${digits}`).digest('hex').slice(0, 24) : null,
     last4: digits.length >= 11 ? digits.slice(-4) : null,
+    kind: type === 'CNPJ' || digits.length === 14 ? 'company' : type === 'CPF' || digits.length === 11 ? 'person' : null,
   };
 }
 
