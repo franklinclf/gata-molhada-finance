@@ -11,7 +11,11 @@ import type {
   AiCategory,
   AiMatch,
   AiStatus,
+  DeviceRecord,
   NewSnapshot,
+  PasskeyRecord,
+  SessionInfo,
+  SessionStrength,
   Snapshot,
   SourceRegistration,
   Store,
@@ -517,8 +521,62 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       }));
     },
 
-    createSession(tokenHash: string, createdAt: string, expiresAt: string): void {
-      db.prepare('INSERT INTO auth_sessions (token_hash, created_at, expires_at) VALUES (?, ?, ?)').run(tokenHash, createdAt, expiresAt);
+    createSession(tokenHash: string, createdAt: string, expiresAt: string, strength: SessionStrength = 'password', deviceId: string | null = null): void {
+      db.prepare('INSERT INTO auth_sessions (token_hash, created_at, expires_at, strength, device_id) VALUES (?, ?, ?, ?, ?)').run(tokenHash, createdAt, expiresAt, strength, deviceId);
+    },
+
+    getSession(tokenHash: string, now: string): SessionInfo | null {
+      const row = db.prepare('SELECT strength, device_id, created_at FROM auth_sessions WHERE token_hash = ? AND expires_at > ?').get(tokenHash, now) as { strength: string; device_id: string | null; created_at: string } | undefined;
+      return row ? { strength: row.strength as SessionStrength, deviceId: row.device_id, createdAt: row.created_at } : null;
+    },
+
+    listPasskeys(): PasskeyRecord[] {
+      const rows = db.prepare('SELECT * FROM auth_passkeys ORDER BY created_at').all() as Array<{ credential_id: string; name: string; public_key: string; alg: number; sign_count: number; transports: string; created_at: string; last_used_at: string | null }>;
+      return rows.map((r) => ({ credentialId: r.credential_id, name: r.name, publicKey: r.public_key, alg: r.alg, signCount: r.sign_count, transports: JSON.parse(r.transports) as string[], createdAt: r.created_at, lastUsedAt: r.last_used_at }));
+    },
+
+    addPasskey(p: PasskeyRecord): void {
+      db.prepare('INSERT INTO auth_passkeys (credential_id, name, public_key, alg, sign_count, transports, created_at, last_used_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(p.credentialId, p.name, p.publicKey, p.alg, p.signCount, JSON.stringify(p.transports), p.createdAt, p.lastUsedAt);
+    },
+
+    updatePasskeyUse(credentialId: string, signCount: number, usedAt: string): void {
+      db.prepare('UPDATE auth_passkeys SET sign_count = ?, last_used_at = ? WHERE credential_id = ?').run(signCount, usedAt, credentialId);
+    },
+
+    deletePasskey(credentialId: string): boolean {
+      return Number(db.prepare('DELETE FROM auth_passkeys WHERE credential_id = ?').run(credentialId).changes) === 1;
+    },
+
+    addDevice(d: DeviceRecord): void {
+      db.prepare('INSERT INTO auth_devices (id, token_hash, name, created_at, last_used_at, expires_at, absolute_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(d.id, d.tokenHash, d.name, d.createdAt, d.lastUsedAt, d.expiresAt, d.absoluteExpiresAt);
+    },
+
+    findDevice(tokenHash: string, now: string) {
+      const r = db.prepare('SELECT * FROM auth_devices WHERE (token_hash = ? OR prev_token_hash = ?) AND expires_at > ? AND absolute_expires_at > ?').get(tokenHash, tokenHash, now, now) as { id: string; token_hash: string; name: string; created_at: string; last_used_at: string; expires_at: string; absolute_expires_at: string; rotated_at: string | null } | undefined;
+      return r
+        ? { id: r.id, tokenHash: r.token_hash, name: r.name, createdAt: r.created_at, lastUsedAt: r.last_used_at, expiresAt: r.expires_at, absoluteExpiresAt: r.absolute_expires_at, via: r.token_hash === tokenHash ? ('current' as const) : ('previous' as const), rotatedAt: r.rotated_at }
+        : null;
+    },
+
+    replaceDeviceToken(id: string, tokenHash: string, usedAt: string, expiresAt: string): void {
+      db.prepare('UPDATE auth_devices SET prev_token_hash = token_hash, rotated_at = ?, token_hash = ?, last_used_at = ?, expires_at = ? WHERE id = ?').run(usedAt, tokenHash, usedAt, expiresAt, id);
+    },
+
+    setSessionDevice(sessionTokenHash: string, deviceId: string): void {
+      db.prepare('UPDATE auth_sessions SET device_id = ? WHERE token_hash = ?').run(deviceId, sessionTokenHash);
+    },
+
+    listDevices(now: string): DeviceRecord[] {
+      const rows = db.prepare('SELECT * FROM auth_devices WHERE expires_at > ? AND absolute_expires_at > ? ORDER BY created_at').all(now, now) as Array<{ id: string; token_hash: string; name: string; created_at: string; last_used_at: string; expires_at: string; absolute_expires_at: string }>;
+      return rows.map((r) => ({ id: r.id, tokenHash: r.token_hash, name: r.name, createdAt: r.created_at, lastUsedAt: r.last_used_at, expiresAt: r.expires_at, absoluteExpiresAt: r.absolute_expires_at }));
+    },
+
+    deleteDevice(id: string): boolean {
+      return Number(db.prepare('DELETE FROM auth_devices WHERE id = ?').run(id).changes) === 1;
+    },
+
+    deleteSessionsOfDevice(deviceId: string): void {
+      db.prepare('DELETE FROM auth_sessions WHERE device_id = ?').run(deviceId);
     },
 
     hasValidSession(tokenHash: string, now: string): boolean {

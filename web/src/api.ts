@@ -9,6 +9,13 @@ import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, S
 
 export type { AiView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
+export interface SecurityView {
+  strength: 'password' | 'passkey' | 'device';
+  passkeysAvailable: boolean;
+  passkeys: Array<{ id: string; name: string; createdAt: string; lastUsedAt: string | null; transports: string[] }>;
+  devices: Array<{ id: string; name: string; createdAt: string; lastUsedAt: string; expiresAt: string; current: boolean }>;
+}
+
 export interface AccountItem {
   id: string;
   institution: string;
@@ -71,8 +78,19 @@ const query = (params: Record<string, string | number | undefined>) => {
 };
 
 export const api = {
-  login: (password: string, code: string) =>
-    request<{ expiresAt: string }>('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, code }) }),
+  login: (password: string, code: string, trust = false, deviceName = '') =>
+    request<{ expiresAt: string; trusted: boolean }>('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, code, trust, deviceName }) }),
+  methods: () => request<{ password: boolean; passkeys: boolean }>('/api/auth/methods'),
+  passkeyLoginOptions: () => request<Record<string, unknown>>('/api/auth/passkey/login/options', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+  passkeyLogin: (credential: Record<string, unknown>, trust = false, deviceName = '') =>
+    request<{ expiresAt: string; trusted: boolean }>('/api/auth/passkey/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential, trust, deviceName }) }),
+  security: () => request<SecurityView>('/api/auth/security'),
+  passkeyRegisterOptions: () => request<Record<string, unknown>>('/api/auth/passkey/register/options', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+  registerPasskey: (credential: Record<string, unknown>, name: string) =>
+    request<{ ok: true }>('/api/auth/passkey/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential, name }) }),
+  deletePasskey: (id: string) => request<{ ok: true }>(`/api/auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  trustDevice: (name: string) => request<{ ok: true }>('/api/auth/devices/trust', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  forgetDevice: (id: string) => request<{ ok: true }>(`/api/auth/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
   session: () => request<{ authenticated: true }>('/api/auth/session'),
   balances: () => request<BalancesView>('/api/balances'),

@@ -9,6 +9,8 @@ export interface RouterDeps {
 export interface RouteResult {
   status: number;
   headers: Record<string, string>;
+  /** More cookies to set, besides the one in headers['Set-Cookie']. */
+  cookies?: string[];
   body: string | null;
 }
 

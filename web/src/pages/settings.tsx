@@ -1,5 +1,7 @@
 import { useState } from 'preact/hooks';
-import { api } from '../api.ts';
+import { api, ApiError } from '../api.ts';
+import { ago } from '../format.ts';
+import { createPasskey, guessDeviceName, passkeysSupported } from '../passkey.ts';
 import { brl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
@@ -123,6 +125,97 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
   );
 }
 
+function SecurityTab({ now }: { now: Date }) {
+  const { data, error, reload } = useLoad(() => api.security(), []);
+  const [message, setMessage] = useState<string | null>(null);
+  const [name, setName] = useState(guessDeviceName());
+  if (!data) return <Loading error={error} />;
+  const full = data.strength !== 'device';
+  const run = async (work: () => Promise<unknown>, done?: string) => {
+    setMessage(null);
+    try {
+      await work();
+      reload();
+      if (done) setMessage(done);
+    } catch (e) {
+      if (e instanceof ApiError && e.message === 'reauth_required') setMessage('Para mexer nisso, entre de novo com a senha e o código ou com uma passkey (use "Sair" e entre).');
+      else if (e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'AbortError')) setMessage('A criação da passkey foi cancelada.');
+      else if (e instanceof DOMException && e.name === 'InvalidStateError') setMessage('Este aparelho já tem uma passkey para este site.');
+      else setMessage(e instanceof Error ? e.message : 'Não foi possível concluir.');
+    }
+  };
+  const addPasskey = () =>
+    run(async () => {
+      const credential = await createPasskey(await api.passkeyRegisterOptions());
+      await api.registerPasskey(credential, name);
+    }, 'Passkey criada. Na próxima vez, use "Entrar com passkey".');
+  const here = data.devices.find((d) => d.current);
+  return (
+    <>
+      {!full && <div class="note">Você entrou por um aparelho confiável. Para criar ou remover passkeys e aparelhos, saia e entre de novo com a senha e o código ou com uma passkey.</div>}
+      <section class="panel">
+        <h2>Passkeys</h2>
+        <div class="muted">
+          Entrar com a biometria do aparelho (Touch ID, impressão digital do celular, Windows Hello) ou PIN, sem digitar senha. Ficam no gerenciador do navegador ou do sistema (iCloud, Google), então uma passkey criada no Mac pode valer no Chrome do celular logado na mesma conta.
+        </div>
+        {!data.passkeysAvailable || !passkeysSupported() ? (
+          <div class="note">{data.passkeysAvailable ? 'Este navegador não oferece passkeys.' : 'Passkeys ainda não foram ligadas no servidor (falta PUBLIC_ORIGIN com https).'}</div>
+        ) : (
+          <div class="recat">
+            <input value={name} maxLength={40} onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)} aria-label="Nome do aparelho" />
+            <button class="primary" disabled={!full} onClick={() => void addPasskey()}>
+              Criar passkey neste aparelho
+            </button>
+          </div>
+        )}
+        <ul class="rows tall">
+          {data.passkeys.length === 0 && <li class="muted">Nenhuma passkey criada.</li>}
+          {data.passkeys.map((p) => (
+            <li key={p.id}>
+              <div class="grow">
+                <div>{p.name}</div>
+                <div class="muted">criada {ago(p.createdAt, now)} · {p.lastUsedAt ? `usada ${ago(p.lastUsedAt, now)}` : 'nunca usada'}</div>
+              </div>
+              <button class="link" disabled={!full} onClick={() => void run(() => api.deletePasskey(p.id))}>
+                Remover
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div class="note">Remover aqui apaga só o registro do servidor. Apague também a passkey no gerenciador do aparelho, se quiser.</div>
+      </section>
+      <section class="panel">
+        <h2>Aparelhos confiáveis</h2>
+        <div class="muted">Um aparelho confiável fica conectado por até 30 dias sem uso (e no máximo 90 dias desde que foi marcado), sem pedir senha de novo. Marque só aparelhos seus. "Sair" tira o aparelho da lista.</div>
+        {!here && (
+          <div class="recat">
+            <button class="icon" disabled={!full} onClick={() => void run(() => api.trustDevice(guessDeviceName()), 'Este aparelho agora é confiável.')}>
+              Confiar neste aparelho ({guessDeviceName()})
+            </button>
+          </div>
+        )}
+        <ul class="rows tall">
+          {data.devices.length === 0 && <li class="muted">Nenhum aparelho confiável.</li>}
+          {data.devices.map((d) => (
+            <li key={d.id}>
+              <div class="grow">
+                <div>
+                  {d.name} {d.current && <span class="badge info">este aparelho</span>}
+                </div>
+                <div class="muted">usado {ago(d.lastUsedAt, now)} · vale até {d.expiresAt.slice(0, 10).split('-').reverse().join('/')}</div>
+              </div>
+              <button class="link" disabled={!full} onClick={() => void run(() => api.forgetDevice(d.id))}>
+                Esquecer
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+      {message && <div class="note" role="status">{message}</div>}
+    </>
+  );
+}
+
 const CONFIDENCE: Record<string, string> = { high: 'alta', medium: 'média', low: 'baixa' };
 
 function AiTab({ hidden }: { hidden: boolean }) {
@@ -213,7 +306,7 @@ function AiTab({ hidden }: { hidden: boolean }) {
   );
 }
 
-export function SettingsPage({ route, hidden }: { route: Route; hidden: boolean }) {
+export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boolean; now: Date }) {
   const tab = route.params.get('tab') ?? 'accounts';
   return (
     <div class="page-body">
@@ -228,8 +321,11 @@ export function SettingsPage({ route, hidden }: { route: Route; hidden: boolean 
         <button class={tab === 'ai' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'ai' })}>
           IA
         </button>
+        <button class={tab === 'security' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'security' })}>
+          Segurança
+        </button>
       </div>
-      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'ai' ? <AiTab hidden={hidden} /> : <AccountsTab hidden={hidden} />}
+      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : <AccountsTab hidden={hidden} />}
     </div>
   );
 }

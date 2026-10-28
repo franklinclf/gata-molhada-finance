@@ -61,6 +61,35 @@ export interface AiCategory {
   decidedAt: string;
 }
 
+export type SessionStrength = 'password' | 'passkey' | 'device';
+
+export interface SessionInfo {
+  strength: SessionStrength;
+  deviceId: string | null;
+  createdAt: string;
+}
+
+export interface PasskeyRecord {
+  credentialId: string;
+  name: string;
+  publicKey: string;
+  alg: number;
+  signCount: number;
+  transports: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+export interface DeviceRecord {
+  id: string;
+  tokenHash: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  absoluteExpiresAt: string;
+}
+
 export type MatchAction = 'joined' | 'dismissed' | 'suggested' | 'undone';
 
 export interface AiMatch {
@@ -110,7 +139,22 @@ export interface Store {
   /** Upserts the current findings, keeps their opening time, and marks the ones no longer present as resolved. */
   syncFindings(findings: Finding[], now: string): void;
   listFindings(options?: { includeResolved?: boolean }): StoredFinding[];
-  createSession(tokenHash: string, createdAt: string, expiresAt: string): void;
+  createSession(tokenHash: string, createdAt: string, expiresAt: string, strength?: SessionStrength, deviceId?: string | null): void;
+  getSession(tokenHash: string, now: string): SessionInfo | null;
+  listPasskeys(): PasskeyRecord[];
+  addPasskey(passkey: PasskeyRecord): void;
+  updatePasskeyUse(credentialId: string, signCount: number, usedAt: string): void;
+  deletePasskey(credentialId: string): boolean;
+  addDevice(device: DeviceRecord): void;
+  /** Finds a device by its current token, or by the token it had before the last rotation. */
+  findDevice(tokenHash: string, now: string): (DeviceRecord & { via: 'current' | 'previous'; rotatedAt: string | null }) | null;
+  replaceDeviceToken(id: string, tokenHash: string, usedAt: string, expiresAt: string): void;
+  /** Ties a session to a trusted device, so forgetting the device ends the session too. */
+  setSessionDevice(sessionTokenHash: string, deviceId: string): void;
+  listDevices(now: string): DeviceRecord[];
+  deleteDevice(id: string): boolean;
+  /** Ends every session that came from a device (used when the device is forgotten). */
+  deleteSessionsOfDevice(deviceId: string): void;
   /** True when the session exists and has not expired at `now`. */
   hasValidSession(tokenHash: string, now: string): boolean;
   deleteSession(tokenHash: string): void;

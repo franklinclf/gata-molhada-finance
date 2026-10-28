@@ -85,7 +85,7 @@ export function App() {
       page = <StatusPage now={now} />;
       break;
     case 'settings':
-      page = <SettingsPage route={route} hidden={hidden} />;
+      page = <SettingsPage route={route} hidden={hidden} now={now} />;
       break;
     default:
       page = <Dashboard hidden={hidden} now={now} />;
