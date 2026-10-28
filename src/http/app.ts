@@ -1,6 +1,7 @@
 import type { AuthService } from '../auth/service.ts';
 import type { AssertionInput, RegistrationInput } from '../auth/webauthn.ts';
 import { apiRoute } from '../api/routes.ts';
+import type { Refresher } from '../scheduler/web-refresh.ts';
 import { route, type RouteResult, type RouterDeps } from './router.ts';
 
 export interface AppRequest {
@@ -16,6 +17,8 @@ export interface AppDeps extends RouterDeps {
   auth: AuthService;
   /** Send the session cookie only over HTTPS. Turn off for local development over plain HTTP. */
   secureCookies: boolean;
+  /** Asks the sources to sync now. Absent when no source can refresh on demand. */
+  refresher?: Refresher;
 }
 
 export const COOKIE_NAME = 'gmf_session';
@@ -149,6 +152,14 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
 
     // ---------- security: passkeys and trusted devices ----------
     if (pathname.startsWith('/api/auth/')) return done(securityRoute(request, deps, token, info.deviceId));
+
+    if (pathname === '/api/refresh') {
+      if (method === 'GET') return done(json(200, { available: deps.refresher !== undefined, ...(deps.refresher?.state() ?? {}) }));
+      if (method !== 'POST') return done(notAllowed('GET, POST'));
+      if (!deps.refresher) return done(json(503, { error: 'unavailable' }));
+      const started = deps.refresher.start();
+      return done(started.started ? json(202, { started: true }) : json(409, { error: 'blocked', reasons: started.reasons }));
+    }
 
     const result = apiRoute(method, pathname, new URLSearchParams(request.search ?? ''), deps.store, deps.now(), request.body);
     return done(result ? json(result.status, result.body) : json(404, { error: 'not_found' }));

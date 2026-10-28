@@ -1,5 +1,5 @@
-import { useState } from 'preact/hooks';
-import { api } from '../api.ts';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { api, ApiError } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { ago, isStale } from '../format.ts';
 import { useLoad } from '../hooks.ts';
@@ -10,6 +10,26 @@ export function StatusPage({ now }: { now: Date }) {
   const fresh = useLoad(() => api.freshness(), [], 60_000);
   const findings = useLoad(() => api.findings(), []);
   const ai = useLoad(() => api.ai(), []);
+  const refresh = useLoad(() => api.refreshState(), [], 5_000);
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  const running = refresh.data?.running === true;
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !running) {
+      fresh.reload();
+      findings.reload();
+    }
+    wasRunning.current = running;
+  }, [running]);
+  const refreshNow = async () => {
+    setRefreshMessage(null);
+    try {
+      await api.refreshNow();
+    } catch (e) {
+      setRefreshMessage(e instanceof ApiError && e.status === 409 ? 'Agora não: o limite de leituras dos bancos ou o intervalo mínimo entre atualizações impede um novo pedido.' : e instanceof Error ? e.message : 'Não foi possível pedir a atualização.');
+    }
+    refresh.reload();
+  };
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const act = async (id: string, work: () => Promise<unknown>) => {
@@ -39,7 +59,18 @@ export function StatusPage({ now }: { now: Date }) {
         </section>
       )}
       <section class="panel">
-        <h2>Última sincronização de cada banco</h2>
+        <div class="panel-head">
+          <h2>Última sincronização de cada banco</h2>
+          {refresh.data?.available && (
+            <button class="primary small" disabled={running} onClick={() => void refreshNow()}>
+              {running ? 'Atualizando...' : 'Atualizar agora'}
+            </button>
+          )}
+        </div>
+        {refreshMessage && <div class="error">{refreshMessage}</div>}
+        {!running && refresh.data?.result === 'timeout' && <div class="note">Estes bancos não responderam a tempo e seguem com os dados anteriores: {refresh.data.timedOut?.join(', ')}.</div>}
+        {!running && refresh.data?.result === 'failed' && <div class="error">A atualização falhou: {refresh.data.error}</div>}
+        {!running && refresh.data?.result === 'completed' && <div class="note">Atualização concluída.</div>}
         {!fresh.data ? (
           <Loading error={fresh.error} />
         ) : (

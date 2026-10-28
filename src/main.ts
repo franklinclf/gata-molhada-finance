@@ -8,6 +8,7 @@ import { fetchHttpClient, retryingClient } from './core/http.ts';
 import { observedSources } from './scheduler/defaults.ts';
 import { formatObserverEvent } from './scheduler/events.ts';
 import { Observer } from './scheduler/observer.ts';
+import { createRefresher } from './scheduler/web-refresh.ts';
 import { reconcileAfterSync } from './scheduler/reconcile-after-sync.ts';
 import { openSqliteStore } from './store/sqlite-store.ts';
 import { buildAdapters } from './sync/adapters.ts';
@@ -21,7 +22,9 @@ if (!authConfig) console.warn('AUTH_PASSWORD_HASH or AUTH_TOTP_SECRET is not set
 const relyingParty = relyingPartyFor(process.env.PUBLIC_ORIGIN);
 if (authConfig && !relyingParty) console.warn('PUBLIC_ORIGIN is not set to an https address, so passkeys are off (password and code still work)');
 const auth = new AuthService(store, authConfig, () => new Date(), {}, relyingParty);
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies }, config.webDir);
+const refreshAdapter = buildAdapters(loadAdapterEnv(process.env), { store, http: retryingClient(fetchHttpClient()) }).find((a) => a.capabilities.refreshOnDemand);
+const refresher = refreshAdapter ? createRefresher({ store, adapter: refreshAdapter }) : undefined;
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {

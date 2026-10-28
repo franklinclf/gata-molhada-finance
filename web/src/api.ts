@@ -78,6 +78,16 @@ const query = (params: Record<string, string | number | undefined>) => {
   return text ? `?${text}` : '';
 };
 
+export interface RefreshView {
+  available: boolean;
+  running?: boolean;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  result?: 'completed' | 'timeout' | 'failed' | null;
+  timedOut?: string[];
+  error?: string | null;
+}
+
 export const api = {
   login: (password: string, code: string, trust = false, deviceName = '') =>
     request<{ expiresAt: string; trusted: boolean }>('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, code, trust, deviceName }) }),
@@ -135,6 +145,8 @@ export const api = {
     request<{ ok: true }>('/api/cycles', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId, cycleKey, settled }) }),
   cycles: (accountId: string) => request<{ accountId: string; cycles: Cycle[] }>(`/api/cycles${query({ accountId })}`),
   freshness: () => request<FreshnessView>('/api/freshness'),
+  refreshState: () => request<RefreshView>('/api/refresh'),
+  refreshNow: () => request<{ started: true }>('/api/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
   findings: () => request<{ items: FindingItem[] }>('/api/findings'),
   layout: () => request<Layout>('/api/layout'),
   saveLayout: (layout: Layout) => request<Layout>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(layout) }),
