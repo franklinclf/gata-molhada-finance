@@ -26,6 +26,8 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   counterparty: Counterparty | null;
   /** Merchant category code of a card purchase, when the source gives it. */
   mcc: string | null;
+  /** The kind of operation the source reports (PIX, TED, BOLETO ...), when it does. */
+  operation: string | null;
 }
 
 export interface Counterparty {
@@ -102,8 +104,20 @@ export function effectiveTransactions(
       const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: origin, owners, ownerDocument: counterparty?.isOwner === true && /^(pix|ted|transferencia)/i.test(parties?.operation ?? '') }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
       // What the source or the AI called it must agree with what it is for the arithmetic.
       if (role && (origin === 'source' || origin === 'ai')) category = ROLE_CATEGORY[role];
-      return { ...t, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null };
+      return { ...t, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null };
     });
+}
+
+/** Hash of the other side's document per transaction, for comparing two records without exposing it on screen. */
+export function counterpartyHashes(store: Store): Map<string, string> {
+  const result = new Map<string, string>();
+  const { parties } = sourceFacts(store);
+  for (const t of store.listCanonicalTransactions({ includeExcluded: true })) {
+    const p = parties.get(t.id);
+    const other = t.amount < 0 ? p?.receiver : p?.payer;
+    if (other?.hash) result.set(t.id, other.hash);
+  }
+  return result;
 }
 
 /** What the source records behind each canonical transaction say: their labels, and who paid and who received. */

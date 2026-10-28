@@ -7,7 +7,7 @@ export interface LabeledPair extends Pair {
 }
 
 const r = (source: string, text: string, date: string, status: 'pending' | 'posted' = 'posted', category: string | null = null) => ({ source, text, date, status, category });
-const P = (a: ReturnType<typeof r>, b: ReturnType<typeof r>, daysApart: number, same: boolean, extra: Partial<LabeledPair> = {}): LabeledPair => ({ a, b, daysApart, accountKind: 'card', direction: 'out', same, ...extra });
+const P = (a: ReturnType<typeof r>, b: ReturnType<typeof r>, daysApart: number, same: boolean, extra: Partial<LabeledPair> = {}): LabeledPair => ({ a, b, daysApart, accountKind: 'card', direction: 'out', sameCounterpartyDocument: 'unknown', same, ...extra });
 
 /** Invented pairs of the kind the matching leaves open. Half are the same transaction, half are not. */
 export const PAIRS: LabeledPair[] = [
@@ -26,6 +26,8 @@ export const PAIRS: LabeledPair[] = [
   P(r('pierre', 'Pix enviado', '2026-10-09', 'posted', 'Transferências'), r('pluggy', 'Transferência enviada pelo Pix|Maria Souza', '2026-10-10', 'posted', 'Transfers'), 1, true, { accountKind: 'bank', hard: true }),
   P(r('pierre', 'Transferência Recebida|Carlos Lima', '2026-10-02'), r('pluggy', 'pix receive', '2026-10-04', 'posted', 'Transfers'), 2, true, { accountKind: 'bank', direction: 'in', hard: true }),
   P(r('pierre', 'TED RECEBIDA ACME LTDA', '2026-09-28'), r('pluggy', 'Transferência recebida|ACME LTDA', '2026-09-29', 'posted', 'Transfers'), 1, true, { accountKind: 'bank', direction: 'in' }),
+  P(r('pierre', 'Pix enviado', '2026-10-11', 'posted', 'Transferências'), r('pluggy', 'Transferência enviada pelo Pix', '2026-10-12', 'posted', 'Transfers'), 1, true, { accountKind: 'bank', sameCounterpartyDocument: 'yes', hard: true }),
+  P(r('pierre', 'Pix enviado', '2026-10-13', 'posted', 'Transferências'), r('pluggy', 'Transferência enviada pelo Pix|João Pereira', '2026-10-14', 'posted', 'Transfers'), 1, false, { accountKind: 'bank', sameCounterpartyDocument: 'no', hard: true }),
   P(r('pierre', 'Aplicação RDB', '2026-10-06'), r('pluggy', 'Automatic investment', '2026-10-07', 'posted', 'Automatic investment'), 1, true, { accountKind: 'bank', hard: true }),
   P(r('pierre', 'Corridas', '2026-10-17', 'posted', 'Táxi'), r('pluggy', '99 *99app', '2026-10-18', 'posted', 'Taxi and ride-hailing'), 1, true, { accountKind: 'bank', hard: true }),
   P(r('pierre', 'DL*UberRides', '2026-10-04', 'pending'), r('pluggy', 'UBER * PENDING', '2026-10-07', 'pending', 'Taxi and ride-hailing'), 3, true, { hard: true }),
