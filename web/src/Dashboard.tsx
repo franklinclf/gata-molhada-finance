@@ -9,7 +9,7 @@ import { Loading } from './ui.tsx';
 import { WIDGETS } from './widgets/index.ts';
 
 function useNarrow(): boolean {
-  const query = '(max-width: 760px)';
+  const query = '(max-width: 900px)';
   const [narrow, setNarrow] = useState(() => matchMedia(query).matches);
   useEffect(() => {
     const media = matchMedia(query);

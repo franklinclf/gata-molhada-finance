@@ -8,6 +8,7 @@ import { Go, Loading, TxRow } from '../ui.tsx';
 
 export function CashflowPage({ route, now, hidden }: { route: Route; now: Date; hidden: boolean }) {
   const today = localDay(now.toISOString());
+  const narrow = window.innerWidth < 600;
   const month = PRESETS.find((p) => p.id === 'month')!.range(today);
   const from = route.params.get('from') ?? month.from;
   const to = route.params.get('to') ?? month.to;
@@ -64,7 +65,7 @@ export function CashflowPage({ route, now, hidden }: { route: Route; now: Date; 
               selected={selectedMonth}
               onSelect={(month) => patchParams({ ...Object.fromEntries(Object.entries(monthBounds(month, today))) })}
               data={months.flatMap((m) => [
-                { key: `${m}:in`, group: m, label: monthName(m).slice(0, 3), value: perMonth.get(m)!.inflow, color: 'var(--good)', tip: `${monthName(m)}\nEntrou ${hidden ? '••••' : brl(perMonth.get(m)!.inflow)}` },
+                { key: `${m}:in`, group: m, label: monthName(m).slice(0, narrow ? 1 : 3), value: perMonth.get(m)!.inflow, color: 'var(--good)', tip: `${monthName(m)}\nEntrou ${hidden ? '••••' : brl(perMonth.get(m)!.inflow)}` },
                 { key: `${m}:out`, group: m, label: '', value: perMonth.get(m)!.outflow, color: 'var(--bad)', tip: `${monthName(m)}\nSaiu ${hidden ? '••••' : brl(perMonth.get(m)!.outflow)}` },
               ])}
             />
