@@ -9,6 +9,7 @@ services:
       - /run/gmf/app.env
     environment:
       OBSERVER: "on"
+      AI_ENABLED: "on"
     labels:
       gmf.env-hash: ${GMF_ENV_HASH:-none}
     volumes:

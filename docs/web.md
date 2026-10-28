@@ -52,3 +52,12 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - **Mês sem fatura:** ao escolher um mês, um cartão que ainda não tinha fatura nele não entra nos totais nem na lista.
 - **Parcelas:** cada compra mostra suas parcelas, cada uma na fatura (mês de vencimento) em que cai e com a situação: paga, fatura fechada a pagar, no ciclo em aberto ou ainda não cobrada. Parcelas que não foram vistas entre duas cobranças têm o mês calculado pelas vizinhas (marcadas como estimadas), e as anteriores aos dados que temos contam como pagas. Descrições com o número da parcela ("Loja 5/6") são tratadas como a mesma compra.
 - **Widgets:** a parte principal (número e gráfico) fica fixa no topo do widget; o detalhamento (cartões, categorias, contas, listas) rola por baixo, com barra fina que só aparece com o mouse em cima. O botão ⤢ do widget abre tudo em tela cheia (Esc fecha).
+
+## Categorização por IA
+
+- O servidor, a cada 10 minutos, procura descrições sem categoria da IA, manda ao modelo em lotes de 25 e grava a resposta. Cada descrição é perguntada uma vez só (as parcelas "Loja 03/12" e "Loja 04/12" contam como a mesma), e o resultado fica guardado por descrição.
+- Só a descrição, a direção (entrou ou saiu dinheiro) e a categoria que a fonte deu vão ao modelo. Nunca valores, contas nem bancos. Os provedores são instruídos a não guardar nem treinar com o texto. Texto dentro de uma descrição é tratado como dado, não como instrução.
+- Confiança alta é aplicada sozinha. Média e baixa viram sugestão em Ajustes, aba IA, onde você aceita, troca a categoria ou recusa. Uma recusa não é perguntada de novo.
+- Ordem de prioridade da categoria de uma transação: sua escolha nela, sua regra para a descrição, a IA, a fonte. A categoria original da fonte continua guardada e aparece no painel da transação.
+- Custo: todo o histórico de 431 descrições custou cerca de US$ 0,011. O gasto do mês aparece em Ajustes, e o orçamento mensal (`AI_MONTHLY_BUDGET_USD`, padrão US$ 2) interrompe as chamadas quando é atingido.
+- Para rodar à mão: `npm run categorize`.

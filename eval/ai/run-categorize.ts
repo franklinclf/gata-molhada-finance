@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { CATEGORIZER_MODELS } from './models.ts';
 import { DATASET, type Item } from './dataset.ts';
-import { Budget, BudgetExceeded, chat, parseJson } from './openrouter.ts';
+import { Budget, BudgetExceeded, chat, parseJson } from '../../src/ai/openrouter.ts';
 import { CATEGORY_NAMES, TAXONOMY } from './taxonomy.ts';
 
 const apiKey = process.env.OPENROUTER_API_KEY;
@@ -15,7 +15,7 @@ const REAL_TRANSACTIONS = 1633;
 
 const system = `You categorize personal bank and credit card transactions from Brazil.
 The text is what the bank sent: upper case, truncated, often prefixed by a payment gateway (IFD*, EBN*, DL*, PG *, MERCADOLIVRE*).
-Negative amounts are money out, positive are money in. Pick exactly one category per transaction from this list, using the meaning given:
+The direction says whether money went out of the account or came in. Pick exactly one category per transaction from this list, using the meaning given:
 ${TAXONOMY.map(([name, meaning]) => `- ${name}: ${meaning}`).join('\n')}
 Answer only with JSON: {"results":[{"i":<number>,"category":"<exact name from the list>"}]} with one entry for every input.`;
 
@@ -50,7 +50,7 @@ async function evaluate(model: string): Promise<Row> {
   const row: Row = { model, correct: 0, hardCorrect: 0, total: DATASET.length, invalid: 0, costUsd: 0, latencyMs: 0, errors: [], wrong: [] };
   for (let start = 0; start < DATASET.length; start += BATCH) {
     const batch: Item[] = DATASET.slice(start, start + BATCH);
-    const user = JSON.stringify(batch.map((item, i) => ({ i, text: item.text, amount_brl: item.amount / 100 })));
+    const user = JSON.stringify(batch.map((item, i) => ({ i, text: item.text, direction: item.amount < 0 ? 'out' : 'in' })));
     try {
       const reply = await chat(apiKey!, { model, system, user, schema, reasoning: true, maxTokens: 6000 });
       budget.add(reply.costUsd);

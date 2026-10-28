@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { loadAiConfig, startAiLoop } from './ai/job.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
 import { loadConfig } from './config.ts';
 import { createHttpServer } from './http/server.ts';
@@ -37,6 +38,14 @@ if (config.observer) {
     void observer.run(observerStop.signal);
     console.log(`observer on: ${sources.map((s) => s.adapter.id).join(', ')}`);
   }
+}
+
+const aiConfig = loadAiConfig(process.env);
+if (aiConfig.enabled && aiConfig.apiKey) {
+  startAiLoop(store, aiConfig, observerStop.signal, (line) => console.log(line));
+  console.log(`ai on: ${aiConfig.models[0]} (fallback ${aiConfig.models[1]}), budget US$ ${aiConfig.monthlyBudgetUsd}/month`);
+} else if (aiConfig.enabled) {
+  console.warn('AI_ENABLED is on but OPENROUTER_API_KEY is not set, so the categorizer is off');
 }
 
 server.on('error', (error) => {

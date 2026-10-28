@@ -21,7 +21,7 @@ export class Budget {
   }
 }
 
-interface ChatOptions {
+export interface ChatOptions {
   model: string;
   system: string;
   user: string;
@@ -33,6 +33,13 @@ interface ChatOptions {
 }
 
 /** One chat call through OpenRouter. The providers are told not to keep or train on the data. */
+/** What the app needs from a model: send a prompt, get text and its cost. Tests supply a fake one. */
+export type AiClient = (options: ChatOptions) => Promise<ChatResult>;
+
+export function openRouterClient(apiKey: string): AiClient {
+  return (options) => chat(apiKey, options);
+}
+
 export async function chat(apiKey: string, options: ChatOptions): Promise<ChatResult> {
   const body: Record<string, unknown> = {
     model: options.model,

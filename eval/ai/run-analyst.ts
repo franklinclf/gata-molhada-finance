@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { QUESTIONS, SUMMARY, score } from './analyst-data.ts';
 import { ANALYST_MODELS } from './models.ts';
-import { Budget, BudgetExceeded, chat } from './openrouter.ts';
+import { Budget, BudgetExceeded, chat } from '../../src/ai/openrouter.ts';
 
 const apiKey = process.env.OPENROUTER_API_KEY;
 if (!apiKey) {

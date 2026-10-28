@@ -78,7 +78,7 @@ function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: 
   );
 }
 
-const ORIGIN: Record<string, string> = { source: 'definida pela fonte', override: 'escolhida por você', rule: 'regra para esta descrição' };
+const ORIGIN: Record<string, string> = { source: 'definida pela fonte', override: 'escolhida por você', rule: 'regra para esta descrição', ai: 'sugerida pela IA' };
 
 /** Side panel with everything known about one transaction, and the controls to recategorize it. */
 export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean }) {

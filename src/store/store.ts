@@ -48,6 +48,19 @@ export interface RefreshLogEntry {
   detail: Record<string, unknown>;
 }
 
+export type AiStatus = 'applied' | 'suggested' | 'accepted' | 'rejected';
+
+export interface AiCategory {
+  matchKey: string;
+  sample: string;
+  category: string;
+  confidence: 'high' | 'medium' | 'low';
+  status: AiStatus;
+  model: string;
+  taxonomy: string;
+  decidedAt: string;
+}
+
 export interface Store {
   schemaVersion(): number;
   registerSource(source: SourceRegistration, now: string): void;
@@ -120,6 +133,12 @@ export interface Store {
   listCycleOverrides(): Map<string, boolean>;
   /** Saves the user's word on a bill; null removes it. */
   setCycleOverride(accountId: string, cycleKey: string, settled: boolean | null, now: string): void;
+  listAiCategories(): Map<string, AiCategory>;
+  saveAiCategory(entry: AiCategory): void;
+  setAiCategoryStatus(matchKey: string, status: AiStatus): void;
+  recordAiUsage(entry: { kind: string; model: string; items: number; costUsd: number; at: string }): void;
+  /** Money spent on model calls in a month (YYYY-MM). */
+  aiSpent(month: string): number;
   getSetting(key: string): string | null;
   setSetting(key: string, value: string, updatedAt: string): void;
   close(): void;

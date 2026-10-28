@@ -3,6 +3,7 @@ import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { transactionDetail } from './detail.ts';
 import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
+import { acceptAll, acceptSuggestion, aiView, rejectSuggestion } from './ai.ts';
 import { installments } from './installments.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCycleSettled, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
@@ -250,6 +251,15 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         }
         return fromMutation(removeCategory(store, name));
       }
+      return null;
+    }
+    case 'ai': {
+      if (parts.length === 2) return method === 'GET' ? { status: 200, body: aiView(store, now) } : methodNotAllowed();
+      if (parts.length !== 3 || method !== 'POST') return parts.length === 3 ? methodNotAllowed() : null;
+      const input = parseBody(body) ?? {};
+      if (id === 'accept') return fromMutation(acceptSuggestion(store, input.key, input.category, now));
+      if (id === 'reject') return fromMutation(rejectSuggestion(store, input.key));
+      if (id === 'accept-all') return { status: 200, body: { accepted: acceptAll(store, 'medium', now) } };
       return null;
     }
     case 'category-rules': {
