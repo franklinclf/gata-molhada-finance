@@ -48,7 +48,8 @@ export interface RefreshLogEntry {
   detail: Record<string, unknown>;
 }
 
-export type AiStatus = 'applied' | 'suggested' | 'accepted' | 'rejected';
+/** skipped: the model could not tell, so nothing is applied and nothing is asked of the user. */
+export type AiStatus = 'applied' | 'suggested' | 'accepted' | 'rejected' | 'skipped';
 
 export interface AiCategory {
   matchKey: string;
@@ -167,6 +168,8 @@ export interface Store {
   /** Canonical account ids the user chose to hide. */
   listHiddenAccountIds(): Set<string>;
   setAccountHidden(accountId: string, hidden: boolean, now: string): void;
+  /** Every link between a source record and a canonical transaction. */
+  listAllTransactionLinks(): Array<{ sourceId: SourceId; externalId: string; transactionId: string }>;
   listTransactionLinks(transactionId: string): Array<{ sourceId: SourceId; externalId: string; matchPass: number }>;
   /** Manual category per canonical transaction id (taken from the newest override among its source records). */
   listCategoryOverrides(): Map<string, string>;
@@ -202,6 +205,9 @@ export interface Store {
   listAiCategories(): Map<string, AiCategory>;
   saveAiCategory(entry: AiCategory): void;
   setAiCategoryStatus(matchKey: string, status: AiStatus): void;
+  /** Forgets what was decided about a description, so the model is asked again. */
+  deleteAiCategory(matchKey: string): void;
+  deleteAiCategoriesByStatus(statuses: AiStatus[]): number;
   recordAiUsage(entry: { kind: string; model: string; items: number; costUsd: number; at: string }): void;
   /** Money spent on model calls in a month (YYYY-MM). */
   aiSpent(month: string): number;

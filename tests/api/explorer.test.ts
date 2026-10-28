@@ -34,7 +34,7 @@ function seeded() {
   const list = [
     txn('market1', { description: 'Market', category: 'Supermercado', amount: -5000, occurredAt: '2026-10-21T15:00:00Z' }),
     txn('market2', { description: 'Market', category: 'Supermercado', amount: -7000, occurredAt: '2026-09-21T15:00:00Z', accountId: 'card' }),
-    txn('rent', { description: 'Rent', category: 'Aluguel', amount: -150000, occurredAt: '2026-10-05T15:00:00Z' }),
+    txn('rent', { description: 'Rent', category: 'Aluguel do mês', amount: -150000, occurredAt: '2026-10-05T15:00:00Z' }),
     txn('salary', { description: 'Salary', category: 'Salário', amount: 500000, occurredAt: '2026-10-05T15:00:00Z' }),
     txn('nocat', { description: 'Mystery', category: null, amount: -300, status: 'pending', state: 'single_source' }),
     txn('phone', { description: 'Phone', category: 'Compras', amount: -10000, accountId: 'card', installment: { number: 3, total: 10 }, occurredAt: '2026-10-10T15:00:00Z' }),
@@ -76,7 +76,7 @@ test('explorer: sorts, pages and sums the whole filtered set', () => {
 
 test('explorer: facets ignore their own filter so the other options stay visible', () => {
   const store = seeded();
-  const r = explore(store, { ...base, categories: ['Aluguel'] }, NOW);
+  const r = explore(store, { ...base, categories: ['Aluguel do mês'] }, NOW);
   assert.equal(r.total, 1);
   assert.ok(r.facets.categories.some((f) => f.name === 'Supermercado' && f.count === 2));
   assert.deepEqual(r.facets.institutions.map((f) => f.name).sort(), ['Bank A']);
@@ -102,12 +102,12 @@ test('recategorizing one transaction changes the totals, and clearing it goes ba
   const store = seeded();
   assert.deepEqual(setTransactionCategory(store, 'rent', 'Moradia', false, NOW), { ok: true });
   const r = explore(store, { ...base, categories: ['Moradia'] }, NOW);
-  assert.deepEqual([r.items[0]!.id, r.items[0]!.categoryOrigin, r.items[0]!.sourceCategory], ['rent', 'override', 'Aluguel']);
+  assert.deepEqual([r.items[0]!.id, r.items[0]!.categoryOrigin, r.items[0]!.sourceCategory], ['rent', 'override', 'Aluguel do mês']);
   assert.ok(listCategories(store).some((c) => c.name === 'Moradia' && c.custom && c.count === 1));
   const spending = views.spending(store, { from: '2026-10-01', to: '2026-10-31' }, 'category', NOW);
   assert.equal(spending.groups.find((g) => g.name === 'Moradia')?.amount, 150000);
   setTransactionCategory(store, 'rent', null, false, NOW);
-  assert.equal(explore(store, { ...base, categories: ['Aluguel'] }, NOW).total, 1);
+  assert.equal(explore(store, { ...base, categories: ['Aluguel do mês'] }, NOW).total, 1);
 });
 
 test('a rule recategorizes every transaction with the same description, and one-off choices win over it', () => {
@@ -131,7 +131,7 @@ test('category changes are validated and only categories the user created can be
   assert.equal(removeCategory(store, 'Compras').ok, false);
   setTransactionCategory(store, 'rent', 'Viagem 2026', true, NOW);
   assert.deepEqual(removeCategory(store, 'Viagem 2026'), { ok: true });
-  assert.equal(explore(store, { ...base, categories: ['Aluguel'] }, NOW).total, 1);
+  assert.equal(explore(store, { ...base, categories: ['Aluguel do mês'] }, NOW).total, 1);
   assert.equal(setAccountHidden(store, 'ghost', true, NOW).ok, false);
   assert.equal(setAccountHidden(store, 'chk', 'yes', NOW).ok, false);
 });

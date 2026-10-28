@@ -100,3 +100,18 @@ Cartões como o Amazon deixam cobranças como "pendentes" para sempre, só em um
 No Amazon, as sete pendentes de setembro somam R$ 221,28, que é o valor da fatura de outubro, e as de outubro repetem as de setembro.
 
 Também dá para informar à mão a parcela de uma compra no painel da transação ("Parcelamento": parcela N de M), para compras que a fonte entrega sem essa informação. Com a parcela informada, o app conta as parcelas das faturas seguintes e as tira da fatura em aberto.
+
+## Faturas futuras estimadas
+
+A aba Cartões → Futuras mostra as próximas seis faturas por mês de vencimento, em três camadas, da mais certa à menos certa: **parcelas já compradas** (vêm do plano de parcelas), **cobranças que se repetem** (mesmo texto em pelo menos 3 meses das últimas 6 faturas, com valor estável, que entram todo mês pelo último valor) e o **gasto de costume**, uma média do que as últimas 3 faturas fechadas tiveram além das duas primeiras camadas (um chute). A fatura em aberto mostra também o que já tem e nunca é estimada abaixo disso. Um clique no mês mostra a divisão por cartão.
+
+## Categorias: o que a tabela traduz e o que a IA decide
+
+- As categorias das fontes são uma lista fixa (Pierre em português, Meu Pluggy em inglês). As que dizem uma coisa só são **traduzidas por tabela** (`src/ai/source-map.ts`) para a nossa lista, sem chamar o modelo. As genéricas (Compras, Serviços, Alimentos e bebidas...) e as transações sem rótulo vão ao modelo.
+- Ao modelo vão: o texto, a direção, a instituição e o tipo de conta (cartão ou banco), os rótulos das duas fontes, quantas vezes e em quantos meses o texto apareceu, uma faixa de valor (nunca o valor), a parcela se houver, e até 40 exemplos de como você mesmo categorizou (sem nomes de pessoas). Respostas "Outros" ou de baixa confiança não aplicam nada e não geram pergunta.
+- **Transferências para você mesmo** e pagamentos de fatura são reconhecidos sem o modelo: o nome do outro lado de uma transferência que as fontes marcaram como "mesma titularidade" vira o seu nome, e qualquer transferência para esse nome (mesmo truncado) é entre contas suas. O nome nunca é enviado a modelo.
+- Em Ajustes → IA, "Decisões anteriores" lista o que a IA aplicou, o que você aceitou, recusou ou ficou sem palpite. Dá para confirmar, trocar, voltar à categoria da fonte ou mandar perguntar de novo, um a um, e há três botões para esquecer em massa (o que a IA decidiu, as suas respostas, ou tudo).
+
+## Gastos sem pagamento de fatura em dobro
+
+A fatura paga pela conta aparece lá como "GASTOS CARTAO DE CREDITO" (Bradesco) ou "PAGTO ELETRON COBRANCA - BANCO BRADESCARD" (Bradescard, que o banco chama de IBI). A Pierre rotulou isso como taxa de cartão e o Meu Pluggy como pagamento de cartão. O papel de uma transação agora olha os rótulos das duas fontes e esses textos, então esses débitos não entram em gastos, que contam as compras no cartão pelo dia da compra.

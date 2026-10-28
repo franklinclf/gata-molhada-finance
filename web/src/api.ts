@@ -1,13 +1,14 @@
 import type { TransactionDetail } from '../../src/api/detail.ts';
 import type { Layout, LayoutItem, WidgetId } from '../../src/api/layout.ts';
-import type { AiView, Suggestion } from '../../src/api/ai.ts';
+import type { AiView, Decision, DecisionStatus, Suggestion } from '../../src/api/ai.ts';
+import type { ForecastView } from '../../src/api/forecast.ts';
 import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
 import type { InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { AiView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -118,6 +119,11 @@ export const api = {
   acceptAllAi: () => request<{ accepted: number }>('/api/ai/accept-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
   setInstallment: (id: string, number: number | null, total: number | null) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/installment`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ number, total }) }),
+  decisions: (status?: string, q?: string) => request<{ items: Decision[]; counts: Record<DecisionStatus, number> }>(`/api/ai/decisions${query({ status, q })}`),
+  decide: (key: string, action: 'accept' | 'reject' | 'reset', category?: string) =>
+    request<{ ok: true }>('/api/ai/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, action, category }) }),
+  resetDecisions: (statuses: string[] | 'all') => request<{ reset: number }>('/api/ai/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ statuses }) }),
+  forecast: () => request<ForecastView>('/api/cards/forecast'),
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
   setHidden: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),

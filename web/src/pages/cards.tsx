@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { api, type CardsView } from '../api.ts';
-import { Bars, Meter } from '../charts.tsx';
+import { Bars, Meter, StackedBars } from '../charts.tsx';
 import { brl, dayMonth, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
@@ -143,6 +143,113 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
   );
 }
 
+function ForecastTab({ hidden }: { hidden: boolean }) {
+  const { data, error } = useLoad(() => api.forecast(), []);
+  const [open, setOpen] = useState<string | null>(null);
+  if (!data) return <Loading error={error} />;
+  const chosen = data.months.find((m) => m.key === open) ?? null;
+  return (
+    <>
+      <div class="panel">
+        <h3>Faturas estimadas, por mês de vencimento (clique em um mês para ver por cartão)</h3>
+        <StackedBars
+          hidden={hidden}
+          height={170}
+          selected={open}
+          onSelect={(k) => setOpen(open === k ? null : k)}
+          data={data.months.map((m) => ({
+            key: m.key,
+            label: m.open ? 'Aberta' : monthName(m.key).slice(0, 3),
+            parts: [
+              { value: m.installments, color: 'var(--good)', label: 'parcelas já compradas' },
+              { value: m.recurring, color: 'var(--accent)', label: 'cobranças que se repetem' },
+              { value: m.variable, color: 'var(--track)', label: 'gasto de costume (estimativa)' },
+            ],
+          }))}
+        />
+        <div class="legend">
+          <span><i style={{ background: 'var(--good)' }} /> parcelas já compradas (certo)</span>
+          <span><i style={{ background: 'var(--accent)' }} /> cobranças que se repetem (provável)</span>
+          <span><i style={{ background: 'var(--track)' }} /> gasto de costume (chute pela média)</span>
+        </div>
+      </div>
+      <div class="panel">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Vencimento</th>
+              <th>Parcelas</th>
+              <th>Repetem</th>
+              <th>De costume</th>
+              <th>Estimado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.months.map((m) => (
+              <tr key={m.key} onClick={() => setOpen(open === m.key ? null : m.key)} class="clickable-row">
+                <td>
+                  {monthName(m.key)}
+                  {m.open ? ' (em aberto)' : ''}
+                </td>
+                <td>{brl(m.installments, hidden)}</td>
+                <td>{brl(m.recurring, hidden)}</td>
+                <td>{brl(m.variable, hidden)}</td>
+                <td>
+                  <strong>{brl(m.total, hidden)}</strong>
+                  {m.open && m.known > 0 && <div class="muted">já tem {brl(m.known, hidden)}</div>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {chosen && (
+          <ul class="rows tall">
+            {chosen.cards.map((c) => (
+              <li key={c.id}>
+                <div class="grow">
+                  <div>{c.label}</div>
+                  <div class="muted">
+                    parcelas {brl(c.installments, hidden)} · repetem {brl(c.recurring, hidden)} · de costume {brl(c.variable, hidden)}
+                  </div>
+                </div>
+                <strong>{brl(c.total, hidden)}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div class="panel">
+        <h3>Como foi calculado</h3>
+        <div class="muted">
+          Parcelas já compradas vêm do plano de parcelas e são certas. As cobranças que se repetem são as que apareceram em pelo menos 3 meses, com valor estável (até 10% de variação), e entram todo mês pelo último valor. O gasto de costume é uma média das últimas faturas fechadas depois de tirar parcelas e repetidas: é um chute e cai ou sobe conforme o seu mês. A fatura em aberto nunca é estimada abaixo do que já tem.
+        </div>
+        <ul class="rows">
+          {data.basis.map((b) => (
+            <li key={b.card}>
+              <span class="grow">{b.card}</span>
+              <span class="muted">média de {b.bills} fatura(s): {brl(b.average, hidden)}</span>
+            </li>
+          ))}
+        </ul>
+        {data.recurring.length > 0 && (
+          <>
+            <h3>Cobranças que se repetem</h3>
+            <ul class="rows">
+              {data.recurring.map((r) => (
+                <li key={`${r.card}${r.description}`}>
+                  <span class="grow clip">{r.description}</span>
+                  <span class="muted">{r.card} · {r.months} meses</span>
+                  <strong>{brl(r.amount, hidden)}</strong>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
 function InstallmentsTab({ installments, hidden, route }: { installments: ReturnType<typeof useLoad<import('../api.ts').InstallmentsView>>; hidden: boolean; route: Route }) {
   const month = route.params.get('month');
   const card = route.params.get('card') ?? '';
@@ -227,7 +334,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
     <div class="page-body">
       <h1 class="page-title">Cartões</h1>
       <div class="tabs">
-        {[['cards', 'Faturas'], ['installments', 'Parcelas'], ['limits', 'Limites']].map(([id, label]) => (
+        {[['cards', 'Faturas'], ['forecast', 'Futuras'], ['installments', 'Parcelas'], ['limits', 'Limites']].map(([id, label]) => (
           <button key={id} class={tab === id ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: id === 'cards' ? null : id })}>
             {label}
           </button>
@@ -305,6 +412,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
               </div>
             </>
           )}
+          {tab === 'forecast' && <ForecastTab hidden={hidden} />}
           {tab === 'installments' && <InstallmentsTab installments={installments} hidden={hidden} route={route} />}
           {tab === 'limits' && (
             <div class="panel">

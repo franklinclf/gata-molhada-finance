@@ -50,12 +50,12 @@ function fake(table: Record<string, [category: string, confidence: string]>, cos
 const options = (client: AiClient, extra: Partial<Parameters<typeof categorizePending>[1]> = {}) => ({ client, models: ['m1', 'm2'], now: () => NOW, monthlyBudgetUsd: 1, ...extra });
 
 test('a sure answer is applied by itself, an unsure one waits as a suggestion, and the source category is kept', async () => {
-  const store = seeded([tx('t1', 'IFD*PIZZARIA DO ZE', -5000, 'Food delivery'), tx('t2', 'LOJA 02 CENTRO', -3000, 'Shopping')]);
+  const store = seeded([tx('t1', 'IFD*PIZZARIA DO ZE', -5000, 'Services'), tx('t2', 'LOJA 02 CENTRO', -3000, 'Shopping')]);
   const { client } = fake({ 'IFD*PIZZARIA DO ZE': ['Delivery de comida', 'high'], 'LOJA 02 CENTRO': ['Compras online', 'medium'] });
   const result = await categorizePending(store, options(client));
   assert.deepEqual([result.asked, result.applied, result.suggested], [2, 1, 1]);
   const byId = new Map(effectiveTransactions(store, { includeHidden: true }).map((t) => [t.id, t]));
-  assert.deepEqual([byId.get('t1')?.category, byId.get('t1')?.categoryOrigin, byId.get('t1')?.sourceCategory], ['Delivery de comida', 'ai', 'Food delivery']);
+  assert.deepEqual([byId.get('t1')?.category, byId.get('t1')?.categoryOrigin, byId.get('t1')?.sourceCategory], ['Delivery de comida', 'ai', 'Services']);
   assert.deepEqual([byId.get('t2')?.category, byId.get('t2')?.categoryOrigin], ['Shopping', 'source']);
   assert.equal(aiView(store, NOW).suggestions.length, 1);
 });
@@ -182,4 +182,109 @@ test('routes: status with suggestions, accept, reject and accept-all', async () 
   assert.equal(call('POST', '/api/ai/accept', JSON.stringify({ key: 'ghost' }))?.status, 404);
   assert.equal(call('GET', '/api/ai/accept')?.status, 405);
   assert.equal(call('POST', '/api/ai/other'), null);
+});
+
+test('labels the sources use unambiguously are translated by table, not asked of the model', async () => {
+  const store = seeded([tx('t1', 'POSTO X', -5000, 'Groceries'), tx('t2', 'CORRIDA', -2000, 'Taxi and ride-hailing'), tx('t3', 'LOJA Y', -3000, 'Shopping'), tx('t4', 'SEM ROTULO', -1000, null)]);
+  const { client, calls } = fake({});
+  await categorizePending(store, options(client));
+  assert.deepEqual(JSON.parse(calls[0]!.options.user).map((a: { text: string }) => a.text).sort(), ['LOJA Y', 'SEM ROTULO']);
+  const byId = new Map(effectiveTransactions(store, { includeHidden: true }).map((t) => [t.id, t]));
+  assert.deepEqual([byId.get('t1')?.category, byId.get('t2')?.category], ['Supermercado', 'Transporte por aplicativo']);
+  assert.equal(byId.get('t1')?.sourceCategory, 'Groceries');
+});
+
+test('the model gets the account, the labels from both sources, how often it repeats and an amount band, never the amount', async () => {
+  const store = seeded([
+    { ...tx('a', 'MERCADOLIVRE*LOJA', -34567, 'Shopping'), occurredAt: '2026-08-10T15:00:00Z' },
+    { ...tx('b', 'MERCADOLIVRE*LOJA', -34567, 'Shopping'), occurredAt: '2026-09-10T15:00:00Z', installment: { number: 2, total: 6 } },
+  ]);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceTransactions('pierre', [{ externalId: 'p', accountExternalId: 'g', occurredAt: '2026-09-10T15:00:00Z', amount: -34567, description: 'MERCADOLIVRE*LOJA', descriptionRaw: null, status: 'posted', installment: null, category: 'Shopping' }], NOW.toISOString());
+  store.upsertSourceTransactions('pluggy', [{ externalId: 'x', accountExternalId: 'g', occurredAt: '2026-09-10T15:00:00Z', amount: -34567, description: 'MERCADOLIVRE*LOJA', descriptionRaw: null, status: 'posted', installment: null, category: 'Online shopping' }], NOW.toISOString());
+  const { client, calls } = fake({});
+  await categorizePending(store, options(client));
+  const item = JSON.parse(calls[0]!.options.user)[0];
+  assert.deepEqual(
+    [item.institution, item.account_kind, item.direction, item.times_seen, item.months_seen, item.typical_amount, item.installment],
+    ['Bank', 'bank', 'out', 2, 2, 'R$100 to R$500', '2/6'],
+  );
+  assert.ok(item.source_labels.includes('Shopping') && item.source_labels.includes('Online shopping'));
+  assert.equal(calls[0]!.options.user.includes('34567') || calls[0]!.options.user.includes('345,67'), false);
+});
+
+test('the owner\'s own choices go to the model as examples, without anything that carries a person\'s name', async () => {
+  const store = seeded([tx('t1', 'PADARIA DO ZE', -1000, 'Shopping'), tx('t2', 'LOJA NOVA', -1000, 'Shopping'), tx('t3', 'Transferência enviada|Maria Souza', -1000, 'Shopping')]);
+  store.setCategoryRule('padaria do ze', 'Supermercado', NOW.toISOString());
+  store.setCategoryRule('transferencia enviada maria souza', 'Casa da mãe', NOW.toISOString());
+  const { client, calls } = fake({});
+  await categorizePending(store, options(client));
+  const system = calls[0]!.options.system;
+  assert.match(system, /PADARIA DO ZE" -> Supermercado/);
+  assert.equal(system.includes('Maria'), false);
+});
+
+test('an answer of "Outros" or a guess applies nothing and asks the user nothing', async () => {
+  const store = seeded([tx('t1', 'AAA', -1000, 'Shopping'), tx('t2', 'BBB', -1000, 'Shopping'), tx('t3', 'CCC', -1000, 'Shopping')]);
+  const { client, calls } = fake({ AAA: ['Outros', 'high'], BBB: ['Saúde', 'low'], CCC: ['Saúde', 'medium'] });
+  const result = await categorizePending(store, options(client));
+  assert.deepEqual([result.applied, result.suggested], [0, 1]);
+  assert.equal(aiView(store, NOW).suggestions.length, 1);
+  assert.deepEqual(effectiveTransactions(store, { includeHidden: true }).map((t) => t.category), ['Shopping', 'Shopping', 'Shopping']);
+  await categorizePending(store, options(client));
+  assert.equal(calls.length, 1, 'skipped descriptions are not asked again');
+});
+
+test('a transfer to the owner\'s own name is recognized without the model, even when the source only said Transfers', async () => {
+  const { counterpartyOf, ownerNames, isOwner, evidenceRole } = await import('../../src/api/roles.ts');
+  assert.equal(counterpartyOf('Transferência enviada|Maria de Souza Lima'), 'maria de souza lima');
+  assert.equal(counterpartyOf('Pix enviado'), null);
+  const owners = ownerNames([{ sourceCategory: 'Same person transfer', description: 'Transferência enviada|Maria de Souza Lima' }, { sourceCategory: 'Groceries', description: 'Loja|João Ninguem Silva' }]);
+  assert.deepEqual([...owners], ['maria de souza lima']);
+  assert.equal(isOwner('Transferência Recebida|Maria de Souza', owners), true, 'banks truncate the name');
+  assert.equal(isOwner('Transferência Recebida|Maria Souza Lima Filha', owners), false);
+  assert.equal(isOwner('Transferência enviada|Maria', owners), false, 'one word is too little to be sure');
+  assert.equal(evidenceRole('Transfers', 'Transferência enviada|Maria de Souza Lima'), null);
+
+  const store = seeded([tx('o1', 'Transferência enviada|Maria de Souza Lima', -50000, 'Same person transfer'), tx('o2', 'Transferência Recebida|Maria de Souza', 30000, 'Transfers'), tx('o3', 'Transferência enviada|Pedro Alves Costa', -9000, 'Transfers')]);
+  const by = new Map(effectiveTransactions(store, { includeHidden: true }).map((t) => [t.id, t]));
+  assert.deepEqual([by.get('o2')?.role, by.get('o2')?.category], ['own_transfer', 'Transferência entre minhas contas']);
+  assert.deepEqual([by.get('o3')?.role, by.get('o3')?.category], [null, 'Transferências']);
+});
+
+test('past decisions can be reviewed, changed one by one, and reset in bulk', async () => {
+  const store = seeded([tx('t1', 'AAA', -1000, 'Shopping'), tx('t2', 'BBB', -1000, 'Shopping'), tx('t3', 'CCC', -1000, 'Shopping'), tx('t4', 'DDD', -1000, 'Shopping'), tx('t5', 'EEE', -1000, 'Shopping')]);
+  const { client, calls } = fake({ AAA: ['Saúde', 'high'], BBB: ['Saúde', 'medium'], CCC: ['Farmácia', 'medium'], DDD: ['Outros', 'low'], EEE: ['Lazer e esportes', 'high'] });
+  await categorizePending(store, options(client));
+  acceptSuggestion(store, 'bbb', null, NOW);
+  rejectSuggestion(store, 'ccc');
+  const call = (method: string, path: string, query = '', body = '') => apiRoute(method, path, new URLSearchParams(query), store, NOW, body);
+
+  const all = call('GET', '/api/ai/decisions')?.body as { items: Array<{ key: string; status: string; rule: string | null }>; counts: Record<string, number> };
+  assert.deepEqual(all.counts, { applied: 2, accepted: 1, rejected: 1, skipped: 1 });
+  assert.equal(all.items.find((i) => i.key === 'bbb')?.rule, 'Saúde');
+  assert.deepEqual((call('GET', '/api/ai/decisions', 'status=rejected')?.body as { items: Array<{ key: string }> }).items.map((i) => i.key), ['ccc']);
+  assert.deepEqual((call('GET', '/api/ai/decisions', 'q=lazer')?.body as { items: Array<{ key: string }> }).items.map((i) => i.key), ['eee']);
+  assert.equal(call('GET', '/api/ai/decisions', 'status=suggested')?.status, 400);
+
+  // Reject something the AI applied: the category goes back to what the source said.
+  assert.equal(call('POST', '/api/ai/decide', '', JSON.stringify({ key: 'aaa', action: 'reject' }))?.status, 200);
+  const cat = (id: string) => effectiveTransactions(store, { includeHidden: true }).find((t) => t.id === id)?.category;
+  assert.equal(cat('t1'), 'Shopping');
+  // Change an accepted one to another category, then take back the acceptance: the rule goes away.
+  assert.equal(call('POST', '/api/ai/decide', '', JSON.stringify({ key: 'bbb', action: 'accept', category: 'Lazer e esportes' }))?.status, 200);
+  assert.equal(cat('t2'), 'Lazer e esportes');
+  assert.equal(call('POST', '/api/ai/decide', '', JSON.stringify({ key: 'bbb', action: 'reset' }))?.status, 200);
+  assert.deepEqual([cat('t2'), store.listCategoryRules().has('bbb'), store.listAiCategories().has('bbb')], ['Shopping', false, false]);
+  assert.equal(call('POST', '/api/ai/decide', '', JSON.stringify({ key: 'ghost', action: 'reset' }))?.status, 404);
+  assert.equal(call('POST', '/api/ai/decide', '', JSON.stringify({ key: 'eee', action: 'dance' }))?.status, 400);
+
+  // Reset what the AI did by itself, then the rest; the model is asked again about what was forgotten.
+  assert.deepEqual(call('POST', '/api/ai/reset', '', JSON.stringify({ statuses: ['applied', 'skipped'] }))?.body, { reset: 2 });
+  assert.equal(call('POST', '/api/ai/reset', '', JSON.stringify({ statuses: 'nothing' }))?.status, 400);
+  assert.deepEqual(call('POST', '/api/ai/reset', '', JSON.stringify({ statuses: 'all' }))?.body, { reset: 2 });
+  assert.equal(store.listAiCategories().size, 0);
+  const before = calls.length;
+  await categorizePending(store, options(client));
+  assert.equal(calls.length, before + 1);
 });

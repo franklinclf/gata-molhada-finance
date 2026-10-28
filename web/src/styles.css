@@ -388,3 +388,19 @@ span.clip, a.clip, div.clip { min-width: 0; }
 
 .panel.health { border: 1px solid var(--bad); }
 .panel.health h2 { color: var(--bad); }
+
+/* ---------- no accidental text selection; copy has its own button ---------- */
+html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, select, [contenteditable], .selectable { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+img, svg { -webkit-user-drag: none; user-drag: none; }
+.copy { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; margin-left: 6px; padding: 0; background: transparent; border: 0; border-radius: 8px; color: var(--muted); cursor: pointer; vertical-align: middle; flex: none; transition: color 0.12s, background 0.12s; }
+.copy:hover { color: var(--accent); background: rgb(255 255 255 / 0.06); }
+.copy.done { color: var(--good); }
+.copy svg { width: 15px; height: 15px; }
+@media (max-width: 760px) { .copy { width: 32px; height: 32px; } .copy svg { width: 18px; height: 18px; } }
+
+.stack { display: flex; flex-direction: column-reverse; width: 100%; border-radius: 6px 6px 3px 3px; overflow: hidden; min-height: 2px; transition: height 0.2s, opacity 0.15s; }
+.stack > span { display: block; min-height: 0; }
+
+.clickable-row { cursor: pointer; }
+.clickable-row:hover td { background: rgb(255 255 255 / 0.04); }
