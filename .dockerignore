@@ -12,3 +12,4 @@ scripts
 .env.*
 *.md
 dist
+eval
