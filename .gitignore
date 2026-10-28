@@ -4,3 +4,4 @@ data/
 .idea/
 scripts/audit/
 dist/
+eval/results/
