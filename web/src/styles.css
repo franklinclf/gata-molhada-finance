@@ -159,7 +159,8 @@ summary.chip::-webkit-details-marker { display: none; }
 .facts dd { margin: 0; }
 .facts.inline { grid-template-columns: max-content max-content max-content max-content; }
 .recat { display: flex; gap: 8px; }
-.recat input { flex: 1; }
+.recat { align-items: center; }
+.recat input { flex: 1; min-width: 0; }
 .source { background: var(--card-2); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 
 /* ---------- misc ---------- */
@@ -179,6 +180,7 @@ summary.chip::-webkit-details-marker { display: none; }
   .cards-grid { grid-template-columns: 1fr; }
   .facts.inline { grid-template-columns: max-content 1fr; }
   .split { flex-wrap: wrap; }
+  .split > .ring { margin-inline: auto; }
   .stack-cell .widget { min-height: 200px; }
 }
 
@@ -327,6 +329,9 @@ span.clip, a.clip, div.clip { min-width: 0; }
 .candidates { background: var(--card-2); border-radius: 14px; padding: 10px; }
 .suggestion { gap: 12px; flex-wrap: wrap; }
 .suggestion .links { margin-left: auto; align-items: center; }
+.suggestion > .grow { flex: 1 1 240px; }
+.suggestion .grow .muted { white-space: normal; flex: initial; }
+.suggestion .select { max-width: 100%; }
 .widget .note { font-size: 12px; }
 .filter-sheet .filter-panel { padding-top: 6px; }
 
