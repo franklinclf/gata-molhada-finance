@@ -25,7 +25,7 @@ const DESCRIPTION: Array<[RegExp, Role]> = [
   [/^(aplicacao|resgate)\b/, 'investment'],
 ];
 
-/** The categories a person can pick that mean a role. Choosing any other category says the transaction is something else. */
+/** The categories a person can pick that mean a role (ours, or a source label that means the same). Choosing any other category says the transaction is something else. */
 const CHOSEN_CATEGORY: Record<string, Role> = {
   'pagamento de fatura': 'card_payment',
   'transferencia entre minhas contas': 'own_transfer',
@@ -80,7 +80,8 @@ export function isOwner(description: string, owners: Set<string>): boolean {
  */
 export function roleOf(input: { sourceCategory: string | null; labels?: string[]; description: string; category: string | null; categoryOrigin: 'source' | 'override' | 'rule' | 'ai'; owners?: Set<string> }): Role | null {
   if (input.categoryOrigin === 'override' || input.categoryOrigin === 'rule') {
-    return (input.category ? CHOSEN_CATEGORY[normalizeName(input.category)] : undefined) ?? null;
+    // The user may pick our name for it or the sources' ("Credit card payment", "Same person transfer"): both mean the role.
+    return (input.category ? (CHOSEN_CATEGORY[normalizeName(input.category)] ?? evidenceRole(input.category, '')) : null) ?? null;
   }
   const found = evidenceRole(input.labels ?? input.sourceCategory, input.description);
   if (found) return found;

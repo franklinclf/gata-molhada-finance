@@ -289,3 +289,12 @@ test('a card bill paid from the bank account is not spending, whichever way the 
   const result = spending(store, monthRange(NOW), 'category', NOW);
   assert.equal(result.total, 5000);
 });
+
+test('choosing the sources\' own name for a role (Credit card payment) keeps the role', async () => {
+  const { roleOf } = await import('../../src/api/roles.ts');
+  for (const category of ['Credit card payment', 'Pagamento de cartão de crédito', 'Pagamento de fatura']) {
+    assert.equal(roleOf({ sourceCategory: 'Taxas de cartão de crédito', description: 'x', category, categoryOrigin: 'override' }), 'card_payment', category);
+  }
+  assert.equal(roleOf({ sourceCategory: 'x', description: 'x', category: 'Same person transfer', categoryOrigin: 'rule' }), 'own_transfer');
+  assert.equal(roleOf({ sourceCategory: 'Credit card payment', description: 'x', category: 'Aluguel', categoryOrigin: 'override' }), null);
+});
