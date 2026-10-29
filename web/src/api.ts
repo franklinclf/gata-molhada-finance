@@ -14,11 +14,12 @@ import type { RecurringItem } from '../../src/api/recurring.ts';
 import type { TrendView } from '../../src/api/trends.ts';
 import type { NetWorthView } from '../../src/api/networth.ts';
 import type { BudgetsView, BudgetLine, SuggestionLine } from '../../src/api/budgets.ts';
+import type { RuleSuggestion } from '../../src/api/rule-suggestions.ts';
 import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts';
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -192,6 +193,11 @@ export const api = {
   copyBudgets: (from: string, to: string, adjustPercent: number, overwrite: boolean) =>
     request<{ copied: number; skipped: number }>('/api/budgets/copy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to, adjustPercent, overwrite }) }),
   rules: () => request<{ items: RuleRow[] }>('/api/rules'),
+  ruleSuggestions: () => request<{ items: RuleSuggestion[] }>('/api/rules/suggestions'),
+  acceptRuleSuggestion: (merchant: string, category: string) =>
+    request<{ id: number }>('/api/rules/suggestions/accept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ merchant, category }) }),
+  dismissRuleSuggestion: (merchant: string) =>
+    request<Record<string, never>>('/api/rules/suggestions/dismiss', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ merchant }) }),
   saveRule: (rule: { id?: number; name: string; active: boolean; conditions: RuleConditions; actions: { category: string } }) =>
     request<Rule>(rule.id === undefined ? '/api/rules' : `/api/rules/${rule.id}`, { method: rule.id === undefined ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rule) }),
   setRuleActive: (id: number, active: boolean) => request<Rule>(`/api/rules/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active }) }),
