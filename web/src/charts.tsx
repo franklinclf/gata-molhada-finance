@@ -120,14 +120,15 @@ export function Bars({ data, hidden, selected, onSelect, height = 130 }: { data:
 }
 
 /** Running total as a line with a soft fill and a pointer that reads the value of the day under it. */
-export function LineChart({ points, hidden, days }: { points: number[]; hidden: boolean; days?: string[] }) {
+export function LineChart({ points, hidden, days, label: title = 'Gastos acumulados' }: { points: number[]; hidden: boolean; days?: string[]; label?: string }) {
   const [at, setAt] = useState<number | null>(null);
   if (points.length < 2) return <div class="empty">Sem dados no período</div>;
   const width = 300;
   const height = 90;
   const max = Math.max(1, ...points);
+  const min = Math.min(0, ...points);
   const x = (i: number) => (i / (points.length - 1)) * width;
-  const y = (v: number) => height - (v / max) * (height - 6) - 3;
+  const y = (v: number) => height - ((v - min) / (max - min)) * (height - 6) - 3;
   const path = points.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
   const shown = at ?? points.length - 1;
   const label = `${days?.[shown] ? `${dayMonth(days[shown]!)}: ` : ''}${hidden ? '••••' : brl(points[shown] ?? 0)}`;
@@ -141,7 +142,7 @@ export function LineChart({ points, hidden, days }: { points: number[]; hidden: 
       }}
       onMouseLeave={() => setAt(null)}
     >
-      <svg class="line" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={hidden ? 'Gastos acumulados' : `Gastos acumulados, total ${brl(points[points.length - 1] ?? 0)}`}>
+      <svg class="line" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={hidden ? title : `${title}, ${brl(points[points.length - 1] ?? 0)}`}>
         <path d={`${path} L${width} ${height} L0 ${height} Z`} fill="var(--accent)" opacity="0.12" />
         <path d={path} fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" />
         {at !== null && <line x1={x(at)} x2={x(at)} y1="0" y2={height} stroke="var(--muted)" stroke-width="1" vector-effect="non-scaling-stroke" stroke-dasharray="3 3" />}

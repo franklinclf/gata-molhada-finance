@@ -6,6 +6,7 @@ import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
+import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type AssetResult } from './networth.ts';
 import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type BudgetResult } from './budgets.ts';
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
@@ -130,6 +131,32 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
       saveLayout(store, layout, now);
       return { status: 200, body: layout };
+    }
+    case 'networth': {
+      if (parts.length !== 2) return null;
+      return method === 'GET' ? { status: 200, body: netWorth(store, now, opts) } : methodNotAllowed();
+    }
+    case 'assets': {
+      const asResult = <T,>(r: AssetResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
+      if (parts.length === 2) {
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(addAsset(store, input, now)) : badRequest('body must be { name, kind, value?, day? }');
+      }
+      const assetId = Number(id);
+      if (!Number.isInteger(assetId)) return null;
+      if (parts.length === 3) {
+        if (method === 'DELETE') return asResult(deleteAsset(store, assetId));
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(updateAsset(store, assetId, input)) : badRequest('body must be an object');
+      }
+      if (parts.length === 4 && sub === 'values') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(setAssetValue(store, assetId, input, now)) : badRequest('body must be { day, value }');
+      }
+      return null;
     }
     case 'budgets': {
       const asResult = <T,>(r: BudgetResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });

@@ -1,6 +1,15 @@
 import type { CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, TransactionLink } from '../core/canonical.ts';
 import type { Rule } from '../api/rules-engine.ts';
 
+export interface ManualAsset {
+  id: number;
+  name: string;
+  kind: 'asset' | 'liability';
+  archived: boolean;
+  /** Dated values, oldest first. */
+  values: Array<{ day: string; value: number }>;
+}
+
 export type BudgetScope = 'category' | 'group';
 export interface BudgetRow {
   scope: BudgetScope;
@@ -198,6 +207,14 @@ export interface Store {
   listCategoryParents(): Map<string, string>;
   /** Sets the group of a category; null forgets the choice and goes back to the default. */
   setCategoryParent(category: string, parent: string | null, now: string): void;
+  listAssets(): ManualAsset[];
+  /** Creates the asset (throws when the name is taken) and returns its id. */
+  addAsset(name: string, kind: 'asset' | 'liability', now: string): number;
+  renameAsset(id: number, name: string): void;
+  setAssetArchived(id: number, archived: boolean): void;
+  deleteAsset(id: number): void;
+  /** Sets the value of an asset on a day; a null value removes that day. */
+  setAssetValue(id: number, day: string, value: number | null): void;
   listBudgets(): BudgetRow[];
   /** Sets the budget of a target for a month; a null amount removes the row of that month. */
   setBudget(scope: BudgetScope, name: string, month: string, amount: number | null, recurring: boolean, now: string): void;

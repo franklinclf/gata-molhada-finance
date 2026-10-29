@@ -8,6 +8,7 @@ import { CashflowWidget } from './cashflow.tsx';
 import { FindingsWidget } from './findings.tsx';
 import { FreshnessWidget } from './freshness.tsx';
 import { InstallmentsWidget } from './installments.tsx';
+import { NetWorthWidget } from './networth.tsx';
 import { RecentWidget } from './recent.tsx';
 import { SpendingWidget } from './spending.tsx';
 
@@ -28,6 +29,7 @@ export const WIDGETS: Record<WidgetId, { title: string; component: FunctionCompo
   spending: { title: 'Gastos', component: SpendingWidget },
   installments: { title: 'Parcelas', component: InstallmentsWidget },
   budget: { title: 'Orçamento', component: BudgetWidget },
+  networth: { title: 'Patrimônio', component: NetWorthWidget },
   recent: { title: 'Transações recentes', component: RecentWidget },
   freshness: { title: 'Atualização das fontes', component: FreshnessWidget },
   findings: { title: 'Para conferir', component: FindingsWidget },

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { apiRoute } from '../../src/api/routes.ts';
 import { monthRange } from '../../src/api/views.ts';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
+import { addAsset } from '../../src/api/networth.ts';
 import { setBudget } from '../../src/api/budgets.ts';
 import { createRule } from '../../src/api/rules.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -122,6 +123,8 @@ export function buildFixtures(now = new Date()): Fixtures {
   setBudget(store, { scope: 'category', name: 'Supermercado', month: thisMonth, amount: 120000, recurring: true }, now);
   setBudget(store, { scope: 'category', name: 'Compras online', month: thisMonth, amount: 30000, recurring: true }, now);
   setBudget(store, { scope: 'group', name: 'Lazer', month: thisMonth, amount: 40000, recurring: true }, now);
+  addAsset(store, { name: 'Tesouro Direto', kind: 'asset', value: 1850000, day: addDays(today, -40) }, now);
+  addAsset(store, { name: 'Financiamento do carro', kind: 'liability', value: 2400000, day: addDays(today, -40) }, now);
   createRule(store, { name: 'Uber', conditions: { match: 'all', items: [{ field: 'merchant', operator: 'equals', value: 'Uber' }] }, actions: { category: 'Transporte por aplicativo' } }, now);
   createRule(store, { name: 'Compras grandes no cartão', conditions: { match: 'all', items: [{ field: 'direction', operator: 'equals', value: 'out' }, { match: 'any', leaves: [{ field: 'description', operator: 'contains', value: 'amazon' }, { field: 'description', operator: 'contains', value: 'shopee' }] }, { field: 'amount', operator: 'lt', value: -10000 }] }, actions: { category: 'Compras online' } }, now);
   store.setCategoryRule('padaria bom pao', 'Supermercado', at);
@@ -151,6 +154,7 @@ export function buildFixtures(now = new Date()): Fixtures {
     '/api/freshness': call('/api/freshness'),
     '/api/rules': call('/api/rules'),
     '/api/budgets': call('/api/budgets'),
+    '/api/networth': call('/api/networth'),
     '/api/refresh': { available: true, running: false, result: null, timedOut: [] },
     '/api/findings': call('/api/findings'),
     '/api/categories': call('/api/categories'),

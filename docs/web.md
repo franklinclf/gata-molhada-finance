@@ -103,6 +103,15 @@ O que isso muda, sem IA:
 - A IA não escolhe "Transferência entre minhas contas", "Pagamento de fatura" nem "Investimentos": isso é decidido por fatos. Uma resposta antiga da IA com uma dessas categorias é ignorada.
 - A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
 
+## Patrimônio
+
+A tela Patrimônio (`src/api/networth.ts`, tabelas `assets` e `asset_values`, migração 020) soma o que você tem e tira o que deve.
+
+- **Hoje:** saldos das contas correntes e poupanças visíveis, mais os bens lançados à mão, menos as faturas de cartão (o total que o emissor informa, com limite compartilhado contado uma vez), menos dívidas lançadas à mão e saldos negativos.
+- **Histórico (12 meses, não antes de jan/2026):** reconstruído a partir de hoje, desfazendo as transações lançadas depois de cada fim de mês: saldo do mês = saldo de hoje menos o que entrou e saiu depois; dívida do cartão = dívida de hoje mais as compras (negativas) e menos os pagamentos feitos depois. Só transações lançadas contam, porque o saldo do banco não tem as pendentes. A precisão depende de o histórico estar completo.
+- **Bens e dívidas à mão** (investimento, imóvel, carro, empréstimo): cada valor tem uma data e vale até o próximo; antes do primeiro valor o item não conta. Dá para arquivar (sai dos totais) ou excluir. Valores futuros, negativos ou com centavos fracionados são recusados.
+- Há um widget Patrimônio no painel.
+
 ## Orçamento
 
 A tela Orçamento (`src/api/budgets.ts`, tabela `budgets`, migração 019) dá um limite mensal a uma categoria ou a um grupo de categorias.

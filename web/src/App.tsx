@@ -7,6 +7,7 @@ import { Login } from './Login.tsx';
 import { AccountsPage } from './pages/accounts.tsx';
 import { CardsPage } from './pages/cards.tsx';
 import { BudgetsPage } from './pages/budgets.tsx';
+import { NetWorthPage } from './pages/networth.tsx';
 import { CashflowPage } from './pages/cashflow.tsx';
 import { SettingsPage } from './pages/settings.tsx';
 import { SpendingPage } from './pages/spending.tsx';
@@ -25,6 +26,7 @@ const TABS: Array<[string, string, string]> = [
 ];
 const MORE: Array<[string, string]> = [
   ['budgets', 'Orçamento'],
+  ['networth', 'Patrimônio'],
   ['accounts', 'Contas'],
   ['cashflow', 'Fluxo de caixa'],
   ['status', 'Fontes e conferência'],
@@ -37,6 +39,7 @@ const NAV: Array<[string, string]> = [
   ['spending', 'Gastos'],
   ['cards', 'Cartões'],
   ['budgets', 'Orçamento'],
+  ['networth', 'Patrimônio'],
   ['accounts', 'Contas'],
   ['cashflow', 'Fluxo'],
   ['status', 'Fontes'],
@@ -80,6 +83,9 @@ export function App() {
       break;
     case 'budgets':
       page = <BudgetsPage route={route} now={now} hidden={hidden} />;
+      break;
+    case 'networth':
+      page = <NetWorthPage now={now} hidden={hidden} />;
       break;
     case 'accounts':
       page = <AccountsPage now={now} hidden={hidden} />;
