@@ -1,6 +1,7 @@
 import { mapSourceCategory } from '../ai/source-map.ts';
 import { CATEGORY_NAMES } from '../ai/taxonomy.ts';
 import { localMonth } from '../core/time.ts';
+import { monthSpend } from '../ai/spend.ts';
 import type { AiStatus, Store } from '../store/store.ts';
 import { cleanCategoryName, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, ruleKey } from './scope.ts';
@@ -20,7 +21,12 @@ export interface Suggestion {
 export interface AiView {
   /** Written by the background job each run: whether it is on, and when it last ran. */
   job: { enabled: boolean; model: string | null; lastRunAt: string | null; lastResult: string | null };
+  /** What the budget is checked against: the larger of what the app recorded and what OpenRouter says the key spent. */
   spentThisMonth: number;
+  /** What the app recorded from each answer. */
+  recordedThisMonth: number;
+  /** What OpenRouter reported for the key this month (UTC), and when it was asked. Null before the first reading. */
+  keyThisMonth: { usd: number; at: string } | null;
   monthlyBudget: number | null;
   /** Descriptions the AI categorized by itself, and ones waiting for the user. */
   applied: number;
@@ -136,9 +142,12 @@ export function aiView(store: Store, now: Date): AiView {
     .filter((e) => e.status === 'suggested' && byKey.has(e.matchKey) && !byKey.get(e.matchKey)!.settled)
     .map((e) => ({ key: e.matchKey, sample: e.sample, category: e.category, confidence: e.confidence, count: byKey.get(e.matchKey)!.count, sourceCategory: byKey.get(e.matchKey)!.sourceCategory, sampleTransactionId: byKey.get(e.matchKey)!.id }))
     .sort((a, b) => b.count - a.count || a.sample.localeCompare(b.sample));
+  const spend = monthSpend(store, localMonth(now.toISOString()));
   return {
     job: { enabled: job.enabled, model: job.model, lastRunAt: job.lastRunAt, lastResult: job.lastResult },
-    spentThisMonth: store.aiSpent(localMonth(now.toISOString())),
+    spentThisMonth: spend.spent,
+    recordedThisMonth: spend.recorded,
+    keyThisMonth: spend.keyTotal !== null && spend.keyFetchedAt !== null ? { usd: spend.keyTotal, at: spend.keyFetchedAt } : null,
     monthlyBudget: (job as { monthlyBudget?: number }).monthlyBudget ?? null,
     applied: entries.filter((e) => e.status === 'applied').length,
     suggestions,

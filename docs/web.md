@@ -64,6 +64,7 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - Confiança alta é aplicada sozinha. Média e baixa viram sugestão em Ajustes, aba IA, onde você aceita, troca a categoria ou recusa. Uma recusa não é perguntada de novo.
 - Ordem de prioridade da categoria de uma transação: sua escolha nela, sua regra para a descrição, a IA, a fonte. A categoria original da fonte continua guardada e aparece no painel da transação.
 - Custo: todo o histórico de 431 descrições custou cerca de US$ 0,011. O gasto do mês aparece em Ajustes, e o orçamento mensal (`AI_MONTHLY_BUDGET_USD`, padrão US$ 2) interrompe as chamadas quando é atingido.
+- Gasto do mês: o app soma o custo que o OpenRouter devolve em cada resposta (`usage.cost`), inclusive de chamadas que cobraram mas não deram resposta útil (resposta vazia de modelo que gastou tudo pensando). A cada 10 minutos, e depois de cada pergunta ao analista, ele também lê `GET /api/v1/key` (`usage_monthly`, mês em UTC), que é o total da chave que o painel do OpenRouter mostra, com testes e avaliações feitos com a mesma chave. O limite mensal vale para o maior dos dois números, e Ajustes mostra os dois ("De onde vem"). Se a leitura falhar, vale o último valor do mesmo mês. Gasto em outras chaves da mesma conta não aparece aqui.
 - Para rodar à mão: `npm run categorize`.
 
 ## Conferência assistida por IA

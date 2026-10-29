@@ -4,6 +4,7 @@ import { runReconciliation } from '../reconcile/run.ts';
 import { categorizePending, type CategorizerResult } from './categorizer.ts';
 import { matchPending, type MatcherResult } from './matcher.ts';
 import { openRouterClient, type AiClient } from './openrouter.ts';
+import { refreshKeyUsage } from './spend.ts';
 
 export interface AiConfig {
   enabled: boolean;
@@ -59,6 +60,8 @@ export async function runCategorizerOnce(store: Store, config: AiConfig, now: ()
 export function startAiLoop(store: Store, config: AiConfig, signal: AbortSignal, onLine: (line: string) => void, intervalMs = 10 * 60_000): void {
   const tick = async () => {
     if (signal.aborted) return;
+    // Read the key's real spend first, so the budget check in this pass sees calls made outside the app too.
+    if (config.enabled && config.apiKey) await refreshKeyUsage(store, config.apiKey, new Date());
     const result = await runCategorizerOnce(store, config, () => new Date());
     if (result && (result.asked > 0 || result.stoppedBy)) onLine(`ai: ${describe(result)}`);
   };

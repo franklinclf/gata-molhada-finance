@@ -3,6 +3,7 @@ import { counterpartyHashes, effectiveTransactions, type EffectiveTransaction } 
 import type { AiMatch, Store } from '../store/store.ts';
 import { parseJson, type AiClient } from './openrouter.ts';
 import { PAIR_SCHEMA, PAIR_SYSTEM, pairPayload, type Pair } from './pair-prompt.ts';
+import { monthSpend, recordFailedCost } from './spend.ts';
 
 export interface MatcherOptions {
   client: AiClient;
@@ -80,7 +81,7 @@ export async function matchPending(store: Store, options: MatcherOptions): Promi
   let changed = false;
 
   for (let start = 0; start < queue.length; start += size) {
-    if (store.aiSpent(month) >= options.monthlyBudgetUsd) {
+    if (monthSpend(store, month).spent >= options.monthlyBudgetUsd) {
       result.stoppedBy = 'budget';
       break;
     }
@@ -95,7 +96,8 @@ export async function matchPending(store: Store, options: MatcherOptions): Promi
         answers = parseJson<{ results?: Array<{ i?: unknown; same?: unknown; confidence?: unknown }> }>(reply.content).results ?? [];
         usedModel = model;
         break;
-      } catch {
+      } catch (error) {
+        recordFailedCost(store, { kind: 'match', model, items: batch.length, at: options.now().toISOString() }, error);
         // Try the next model.
       }
     }

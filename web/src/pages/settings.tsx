@@ -371,6 +371,13 @@ function AiTab({ hidden }: { hidden: boolean }) {
             US$ {data.spentThisMonth.toFixed(3)}
             {data.monthlyBudget !== null ? ` de US$ ${data.monthlyBudget.toFixed(2)}` : ''}
           </dd>
+          <dt>De onde vem</dt>
+          <dd>
+            O app registrou US$ {data.recordedThisMonth.toFixed(3)} em respostas.{' '}
+            {data.keyThisMonth
+              ? `A chave soma US$ ${data.keyThisMonth.usd.toFixed(3)} no OpenRouter (lido às ${data.keyThisMonth.at.slice(11, 16)} UTC), o que inclui testes e avaliações feitos com a mesma chave. O limite vale para o maior dos dois.`
+              : 'A leitura do total da chave no OpenRouter ainda não aconteceu; ela roda a cada 10 minutos.'}
+          </dd>
           <dt>Já aplicadas</dt>
           <dd>{data.applied} descrições, com confiança alta</dd>
         </dl>

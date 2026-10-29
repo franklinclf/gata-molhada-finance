@@ -8,6 +8,7 @@ import { encryptBackup } from './backup/backup.ts';
 import { ask } from './ai/analyst.ts';
 import { loadAiConfig, startAiLoop } from './ai/job.ts';
 import { openRouterClient } from './ai/openrouter.ts';
+import { refreshKeyUsage } from './ai/spend.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
 import { relyingPartyFor } from './auth/webauthn.ts';
 import { runReconciliation } from './reconcile/run.ts';
@@ -57,7 +58,7 @@ const backup = (passphrase: string): Buffer => {
   }
 };
 const aiConfig = loadAiConfig(process.env);
-const analyst = aiConfig.enabled && aiConfig.apiKey ? (input: { conversationId?: number; question: string }) => ask(store, { client: openRouterClient(aiConfig.apiKey!), models: aiConfig.analystModels, now: () => new Date(), monthlyBudgetUsd: aiConfig.monthlyBudgetUsd }, input) : undefined;
+const analyst = aiConfig.enabled && aiConfig.apiKey ? (input: { conversationId?: number; question: string }) => ask(store, { client: openRouterClient(aiConfig.apiKey!), models: aiConfig.analystModels, now: () => new Date(), monthlyBudgetUsd: aiConfig.monthlyBudgetUsd }, input).finally(() => void refreshKeyUsage(store, aiConfig.apiKey!, new Date())) : undefined;
 // The host watches this file (gmf-deploy.path): writing it starts a deploy. Without a secret the route does not exist.
 const deploySecret = process.env.DEPLOY_WEBHOOK_SECRET?.trim();
 const hookDebounce = new Debounce(10_000);
