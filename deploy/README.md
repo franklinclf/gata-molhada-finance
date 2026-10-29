@@ -14,6 +14,9 @@ Para ligar (uma vez):
 - Gere o segredo e grave no cofre: `openssl rand -hex 32 | GMF_KEYVAULT=<cofre> bash infra/azure/set-secret.sh DEPLOY-WEBHOOK-SECRET`.
 - Crie o webhook no repositório (Settings > Webhooks): URL `https://<seu-host>/api/hooks/deploy`, tipo de conteúdo `application/json`, o mesmo segredo, evento só "Workflow runs".
 - Na VM, instale a unidade nova e o timer lento: `... --scripts "bash /opt/gmf/deploy/install.sh && systemctl start gmf-deploy.service --no-block"` (a troca do segredo é lida na hora porque a execução seguinte usa `--refresh-secrets` abaixo).
+- Ao gravar o segredo por pipe, termine o valor com quebra de linha (`printf '%s\n' "$SECRET" | ... set-secret.sh ...`): sem ela o `read` do script falha e, com `set -e`, ele sai sem gravar e sem mensagem. Confira com `az keyvault secret show --vault-name <cofre> --name DEPLOY-WEBHOOK-SECRET --query attributes.created -o tsv`.
+- Se o `gh` responder "Bad credentials", há um `GITHUB_TOKEN` inválido no ambiente do terminal: rode `unset GITHUB_TOKEN`.
+- O GitHub envia um `ping` ao criar o webhook; se ele chegar antes de a VM ter o segredo, a primeira entrega aparece com erro (401 ou 404). Depois de `deploy.sh --refresh-secrets`, reenvie o ping: a resposta deve ser 202.
 - Para testar: em Settings > Webhooks > Recent Deliveries, reenvie uma entrega; a resposta deve ser 202 com `"decision":"deploy"` para uma execução do CI na `main`.
 
 ## Comandos úteis (sem SSH)
