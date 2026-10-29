@@ -56,7 +56,7 @@ const list = (params: URLSearchParams, name: string): string[] | undefined => {
 };
 
 /** Reads the explorer filters. A day filter is applied only when given, unlike the fixed-period views. */
-function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
+export function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
   const from = params.get('from') ?? undefined;
   const to = params.get('to') ?? undefined;
   if ((from !== undefined && !isRealDay(from)) || (to !== undefined && !isRealDay(to))) return { ok: false, error: 'from and to must be dates like 2026-10-27' };

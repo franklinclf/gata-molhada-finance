@@ -142,6 +142,15 @@ export const api = {
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
   setHidden: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),
+  /** Returns the encrypted file as a Blob. */
+  backup: async (passphrase: string): Promise<Blob> => {
+    const response = await fetch('/api/backup', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passphrase }) });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { message?: string; error?: string } | null;
+      throw new ApiError(response.status, body?.error === 'reauth_required' ? 'Entre de novo com a senha ou a passkey (nos últimos 15 minutos) para baixar o backup.' : (body?.message ?? body?.error ?? response.statusText));
+    }
+    return response.blob();
+  },
   spendingTrend: (months: number) => request<TrendView>(`/api/spending/trend${query({ months })}`),
   netWorth: () => request<NetWorthView>('/api/networth'),
   addAsset: (name: string, kind: 'asset' | 'liability', value: number | null) =>
