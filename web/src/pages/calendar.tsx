@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import type { CalendarDay } from '../api.ts';
 import { brl, dayMonth, monthName } from '../format.ts';
+import { TxRow } from '../ui.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { Loading } from '../ui.tsx';
@@ -32,7 +33,13 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
   const current = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 7);
   const month = route.params.get('month') ?? current;
   const { data, error, loading, reload } = useLoad(() => api.calendar(month), [month]);
-  const [picked, setPicked] = useState<string | null>(null);
+  // One tap selects a day; a second tap on another day selects the days between; a tap on a selected single day clears it.
+  const [picked, setPicked] = useState<{ from: string; to: string } | null>(null);
+  const tap = (day: string) => {
+    if (!picked || picked.from !== picked.to) setPicked(picked && picked.from === picked.to && picked.from === day ? null : { from: day, to: day });
+    else if (picked.from === day) setPicked(null);
+    else setPicked(day < picked.from ? { from: day, to: picked.from } : { from: picked.from, to: day });
+  };
   const go = (m: string) => {
     setPicked(null);
     patchParams({ month: m === current ? null : m });
@@ -40,7 +47,6 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
   if (error || (loading && !data)) return <div class="page-body"><h1 class="page-title">Calendário</h1><Loading error={error} /></div>;
   if (!data) return null;
   const first = new Date(`${month}-01T00:00:00Z`).getUTCDay();
-  const day = picked ? data.days.find((d) => d.day === picked) : undefined;
   return (
     <div class="page-body">
       <h1 class="page-title">Calendário</h1>
@@ -69,42 +75,12 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
             <div key={`b${i}`} class="cal-blank" />
           ))}
           {data.days.map((d) => (
-            <Cell key={d.day} d={d} today={data.today} picked={picked === d.day} hidden={hidden} onPick={() => setPicked(picked === d.day ? null : d.day)} />
+            <Cell key={d.day} d={d} today={data.today} picked={picked !== null && d.day >= picked.from && d.day <= picked.to} hidden={hidden} onPick={() => tap(d.day)} />
           ))}
         </div>
         <div class="note">Em cinza claro e itálico, o que se espera a partir de hoje: contas que se repetem todo mês e as faturas de cartão no vencimento. Só entram cobranças que saem da conta; o que vai no cartão já está na fatura.</div>
       </div>
-      {day && (
-        <section class="panel">
-          <h2>{dayMonth(day.day)}/{day.day.slice(0, 4)}</h2>
-          {day.inflow + day.outflow > 0 && (
-            <div class="muted">
-              Na conta: entrou {brl(day.inflow, hidden)}, saiu {brl(day.outflow, hidden)}.{' '}
-              <button class="link" onClick={() => navigate('transactions', { from: day.day, to: day.day })}>
-                Ver as transações
-              </button>
-            </div>
-          )}
-          {day.projected.length > 0 && (
-            <ul class="rows">
-              {day.projected.map((p, i) => (
-                <li key={i}>
-                  <span class="grow clip">
-                    {p.name} {p.late && <span class="badge bad">atrasado</span>}
-                  </span>
-                  <span class="muted">{p.kind === 'bill' ? 'fatura' : 'esperado'}</span>
-                  <strong class={p.direction === 'in' ? 'good-text' : ''}>
-                    {p.direction === 'in' ? '+' : '−'}
-                    {brl(p.amount, hidden)}
-                  </strong>
-                </li>
-              ))}
-            </ul>
-          )}
-          {day.balance !== null && <div class="muted">Saldo projetado nas contas ao fim do dia: {brl(day.balance, hidden)}</div>}
-          {day.projected.length === 0 && day.inflow + day.outflow === 0 && <div class="empty">Nada neste dia.</div>}
-        </section>
-      )}
+      {picked && <Selection from={picked.from} to={picked.to} days={data.days} hidden={hidden} onClear={() => setPicked(null)} />}
       <section class="panel">
         <h2>Contas e entradas que se repetem</h2>
         <div class="muted">Achadas nas suas transações: pelo menos três, em três meses diferentes, com cerca de um mês entre elas e valor parecido.</div>
@@ -135,5 +111,66 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
         )}
       </section>
     </div>
+  );
+}
+
+/** The transactions of the chosen day or days, what is expected in them, and the totals. */
+function Selection({ from, to, days, hidden, onClear }: { from: string; to: string; days: CalendarDay[]; hidden: boolean; onClear: () => void }) {
+  const list = useLoad(() => api.explore(new URLSearchParams({ from, to, limit: '200', sort: 'date_desc', includeExcluded: 'false' })), [from, to]);
+  const inside = days.filter((d) => d.day >= from && d.day <= to);
+  const expected = inside.flatMap((d) => d.projected.map((p) => ({ ...p, day: d.day })));
+  const last = inside.at(-1);
+  const title = from === to ? `${dayMonth(from)}/${from.slice(0, 4)}` : `${dayMonth(from)} a ${dayMonth(to)}/${to.slice(0, 4)}`;
+  return (
+    <section class="panel">
+      <div class="panel-head">
+        <h2>{title}</h2>
+        <button class="link" onClick={onClear}>
+          Limpar seleção
+        </button>
+      </div>
+      {list.data && (
+        <div class="muted">
+          {list.data.total} {list.data.total === 1 ? 'transação' : 'transações'} · entrou {brl(list.data.sums.income, hidden)} · saiu {brl(list.data.sums.expense, hidden)}
+          {' · '}
+          <button class="link" onClick={() => navigate('transactions', { from, to })}>
+            Abrir em Transações
+          </button>
+        </div>
+      )}
+      {!list.data ? (
+        <Loading error={list.error} />
+      ) : list.data.items.length === 0 ? (
+        <div class="empty">Nenhuma transação {from === to ? 'neste dia' : 'neste período'}.</div>
+      ) : (
+        <ul class="rows tall tx-list">
+          {list.data.items.map((t) => (
+            <TxRow key={t.id} t={t} hidden={hidden} onOpen={(id) => patchParams({ tx: id })} />
+          ))}
+        </ul>
+      )}
+      {list.data && list.data.total > list.data.items.length && <div class="note">Mostrando as {list.data.items.length} mais recentes.</div>}
+      {expected.length > 0 && (
+        <>
+          <h3>Esperado</h3>
+          <ul class="rows">
+            {expected.map((p, i) => (
+              <li key={i}>
+                <span class="muted">{dayMonth(p.day)}</span>
+                <span class="grow clip">
+                  {p.name} {p.late && <span class="badge bad">atrasado</span>}
+                </span>
+                <span class="muted">{p.kind === 'bill' ? 'fatura' : 'esperado'}</span>
+                <strong class={p.direction === 'in' ? 'good-text' : ''}>
+                  {p.direction === 'in' ? '+' : '−'}
+                  {brl(p.amount, hidden)}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {last?.balance != null && <div class="muted">Saldo projetado nas contas ao fim de {dayMonth(last.day)}: {brl(last.balance, hidden)}</div>}
+    </section>
   );
 }
