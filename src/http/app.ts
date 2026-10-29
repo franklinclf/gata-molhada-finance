@@ -30,6 +30,10 @@ export interface AppDeps extends RouterDeps {
   deployHook?: DeployHook;
   /** Answers a question to the analyst. Absent when the AI is off. */
   analyst?: (input: { conversationId?: number; question: string }) => Promise<AnalystReply>;
+  /** Asks the host to look for a newer image now. Returns false when asked too recently. Absent when the app does not run under the deploy service. */
+  deployNow?: () => boolean;
+  /** When this process started, which is when the running version went up. */
+  startedAt?: string;
 }
 
 let chatBusy = false;
@@ -190,6 +194,17 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
       return done(started.started ? json(202, { started: true }) : json(409, { error: 'blocked', reasons: started.reasons }));
     }
 
+    if (pathname === '/api/version') {
+      if (method !== 'GET') return done(notAllowed('GET'));
+      return done(json(200, { version: deps.version, startedAt: deps.startedAt ?? null, canDeploy: deps.deployNow !== undefined }));
+    }
+    if (pathname === '/api/deploy/check') {
+      if (method !== 'POST') return done(notAllowed('POST'));
+      if (!deps.deployNow) return done(json(503, { error: 'unavailable' }));
+      // Starting a deploy is not dangerous in itself (it adopts the newest image that passed CI), but it restarts the app, so it needs a recent sign-in.
+      if (!deps.auth.isFullSession(token)) return done(json(403, { error: 'reauth_required' }));
+      return done(deps.deployNow() ? json(202, { asked: true }) : json(429, { error: 'too_soon' }));
+    }
     if (pathname === '/api/chat/status') return method === 'GET' ? done(json(200, { available: deps.analyst !== undefined })) : done(notAllowed('GET'));
     if (pathname === '/api/chat' && method === 'POST') {
       if (!deps.analyst) return done(json(503, { error: 'unavailable' }));

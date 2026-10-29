@@ -450,8 +450,58 @@ function DataTab() {
       setBusy(false);
     }
   };
+  const version = useLoad(() => api.version(), []);
+  const [updating, setUpdating] = useState<string | null>(null);
+  const checkForUpdate = async () => {
+    const before = version.data?.version;
+    setUpdating('Pedindo ao servidor para procurar uma versão nova…');
+    try {
+      await api.checkForUpdate();
+      // A new version restarts the app, so the answer changes (or the request fails for a few seconds) when it arrives.
+      for (let i = 0; i < 24; i++) {
+        await new Promise((r) => setTimeout(r, 5000));
+        const now = await api.version().catch(() => null);
+        if (now && now.version !== before) {
+          version.reload();
+          setUpdating(`Atualizado para a versão ${now.version.slice(0, 7)}. Recarregue a página para usar a tela nova.`);
+          return;
+        }
+      }
+      setUpdating('Já está na versão mais recente.');
+    } catch (e) {
+      setUpdating(e instanceof ApiError && e.status === 403 ? 'Entre de novo com a senha ou a passkey (nos últimos 15 minutos) para pedir a atualização.' : e instanceof ApiError && e.status === 429 ? 'Pedido recente demais; espere meio minuto.' : e instanceof Error ? e.message : 'Não foi possível pedir a atualização.');
+    }
+  };
   return (
     <>
+      <section class="panel">
+        <h2>Versão</h2>
+        {version.data ? (
+          <>
+            <div>
+              {version.data.version === 'dev' ? (
+                'versão de desenvolvimento'
+              ) : (
+                <a class="go" href={`https://github.com/franklinclf/gata-molhada-finance/commit/${version.data.version}`} target="_blank" rel="noreferrer noopener">
+                  {version.data.version.slice(0, 7)}
+                </a>
+              )}
+              {version.data.startedAt && <span class="muted"> · no ar desde {new Date(version.data.startedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</span>}
+            </div>
+            <p class="muted">Cada alteração que passa nos testes é publicada sozinha em segundos (aviso do GitHub); a cada 30 minutos o servidor também confere por conta própria. Se algo não chegar, o botão abaixo manda o servidor procurar uma versão nova agora.</p>
+            {version.data.canDeploy && (
+              <div class="links">
+                <button class="icon small" disabled={updating !== null && !updating.startsWith('Atualizado') && !updating.startsWith('Já está')} onClick={() => void checkForUpdate()}>
+                  Procurar versão nova agora
+                </button>
+              </div>
+            )}
+            {updating && <div class="note" role="status">{updating}</div>}
+          </>
+        ) : (
+          <Loading error={version.error} />
+        )}
+      </section>
       <section class="panel">
         <h2>Backup</h2>
         <p class="muted">
