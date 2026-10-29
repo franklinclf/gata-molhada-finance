@@ -103,6 +103,10 @@ O que isso muda, sem IA:
 - A IA não escolhe "Transferência entre minhas contas", "Pagamento de fatura" nem "Investimentos": isso é decidido por fatos. Uma resposta antiga da IA com uma dessas categorias é ignorada.
 - A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
 
+## Versão e atualização
+
+Ajustes > Dados > Versão mostra a versão em execução (o commit, com link para o GitHub) e desde quando está no ar (a hora em que o processo subiu, que é a do último deploy, porque cada deploy recria o contêiner). "Procurar versão nova agora" grava o mesmo arquivo que o webhook (`/data/.deploy-requested`), então a VM roda o deploy e, se houver imagem nova, troca o contêiner; a tela espera até 2 minutos pela mudança de versão. Exige login com senha ou passkey nos últimos 15 minutos e só um pedido a cada 30 segundos, e só aparece quando o app roda sob o serviço de deploy (não em desenvolvimento). O timer de 30 minutos não gera custo: é um timer do systemd na VM que já existe e, quando nada mudou, faz um `git pull` e uma consulta ao registro de imagens (e uma leitura dos segredos a cada 30 minutos, cerca de 500 consultas ao Key Vault por dia, muito abaixo da cobrança). Do terminal: `bash infra/azure/deploy-now.sh`.
+
 ## Transações digitadas
 
 "+ Nova" em Transações cria uma transação que nenhuma fonte traz (a cobrança em dólar do cartão Gol que o banco não manda, um pagamento em dinheiro). Ela fica na tabela `manual_transactions` (migração 021) e é somada às transações canônicas no fim de cada reconciliação (`src/reconcile/run.ts`), sem ligação com registro de fonte: a sincronização nunca mexe nela e uma reconciliação nova não a perde. Entra nos gastos, no fluxo, nas faturas do cartão e nas regras como as outras. Valor com sinal de fluxo (gasto negativo), data entre 01/01/2026 e hoje, conta existente. No painel da transação dá para editar e excluir; categoria escolhida ali fica na própria transação. "Ignorar" não vale para ela: exclua. Se a mesma cobrança chegar depois por uma fonte, as duas ficam e é preciso excluir a digitada.
