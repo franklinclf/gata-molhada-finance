@@ -213,3 +213,20 @@ export function StackedBars({ data, hidden, height = 150, selected, onSelect }: 
     </div>
   );
 }
+
+/** A small line for one series, with the last point marked. Needs no axes: it is for comparing shapes. */
+export function Sparkline({ points, color = 'var(--accent)', tip }: { points: number[]; color?: string; tip?: string }) {
+  if (points.length < 2) return null;
+  const width = 80;
+  const height = 24;
+  const max = Math.max(1, ...points);
+  const x = (i: number) => (i / (points.length - 1)) * width;
+  const y = (v: number) => height - (v / max) * (height - 4) - 2;
+  const path = points.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  return (
+    <svg class="spark" viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-hidden="true" data-tip={tip}>
+      <path d={path} fill="none" stroke={color} stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+      <circle cx={x(points.length - 1)} cy={y(points.at(-1) ?? 0)} r="2.2" fill={color} />
+    </svg>
+  );
+}

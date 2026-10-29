@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import type { SpendingView } from '../api.ts';
-import { Bars, LineChart, PALETTE, Ring } from '../charts.tsx';
+import { Bars, LineChart, PALETTE, Ring, Sparkline } from '../charts.tsx';
 import { brl, cumulative, lastMonths, monthBounds, monthName, percent, sumByMonth } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { PeriodPicker, PRESETS } from '../period.tsx';
@@ -64,8 +64,9 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
   const month = PRESETS.find((p) => p.id === 'month')!.range(today);
   const from = route.params.get('from') ?? month.from;
   const to = route.params.get('to') ?? month.to;
-  const view = route.params.get('by') === 'merchant' ? 'merchant' : route.params.get('by') === 'category' ? 'category' : 'group';
+  const view = route.params.get('by') === 'merchant' ? 'merchant' : route.params.get('by') === 'category' ? 'category' : route.params.get('by') === 'trend' ? 'trend' : 'group';
   const by = view === 'merchant' ? 'merchant' : 'category';
+  const trend = useLoad(() => (view === 'trend' ? api.spendingTrend(6) : Promise.resolve(null)), [view]);
   const [open, setOpen] = useState<string | null>(null);
   const [openChild, setOpenChild] = useState<string | null>(null);
   const { data, error, loading } = useLoad(() => api.spending(from, to, by), [from, to, by]);
@@ -79,13 +80,40 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
   return (
     <div class="page-body">
       <h1 class="page-title">Gastos</h1>
-      <PeriodPicker from={from} to={to} now={now} onChange={(r) => patchParams({ from: r.from ?? month.from, to: r.to ?? month.to })} />
+      {view !== 'trend' && <PeriodPicker from={from} to={to} now={now} onChange={(r) => patchParams({ from: r.from ?? month.from, to: r.to ?? month.to })} />}
       <div class="tabs">
         <button class={view === 'group' ? 'tab on' : 'tab'} onClick={() => patchParams({ by: null })}>Grupos</button>
         <button class={view === 'category' ? 'tab on' : 'tab'} onClick={() => patchParams({ by: 'category' })}>Categorias</button>
         <button class={view === 'merchant' ? 'tab on' : 'tab'} onClick={() => patchParams({ by: 'merchant' })}>Estabelecimentos</button>
+        <button class={view === 'trend' ? 'tab on' : 'tab'} onClick={() => patchParams({ by: 'trend' })}>Tendência</button>
       </div>
-      {error || (loading && !data) ? (
+      {view === 'trend' ? (
+        !trend.data ? (
+          <Loading error={trend.error} />
+        ) : (
+          <section class="panel">
+            <h2>Gasto por categoria nos últimos {trend.data.months.length} meses</h2>
+            <div class="muted">A linha vai de {monthName(trend.data.months[0]!)} a {monthName(trend.data.months.at(-1)!)}; o último ponto é o mês em andamento. A seta compara o mês em andamento com a média dos meses fechados.</div>
+            <ul class="rows tall">
+              {trend.data.rows.map((r) => {
+                const diff = r.average > 0 ? r.current / r.average - 1 : null;
+                return (
+                  <li key={r.name} class="trend-row">
+                    <Go class="grow clip" page="spending" params={{ by: 'category' }}>
+                      {r.name}
+                      {r.parent && <span class="muted"> · {r.parent}</span>}
+                    </Go>
+                    <Sparkline points={r.points} tip={r.points.map((p, i) => `${monthName(trend.data!.months[i]!)}: ${hidden ? '••••' : brl(p)}`).join('\n')} />
+                    <span class="muted">média {brl(r.average, hidden)}</span>
+                    <strong>{brl(r.current, hidden)}</strong>
+                    <span class={diff !== null && diff > 0.25 ? 'bad-text' : 'muted'}>{diff === null ? '' : `${diff > 0 ? '▲' : '▼'} ${percent(Math.abs(diff))}`}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )
+      ) : error || (loading && !data) ? (
         <Loading error={error} />
       ) : data ? (
         <>

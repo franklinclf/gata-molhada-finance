@@ -111,3 +111,17 @@ test('the routes validate and answer', () => {
   assert.equal(call('GET', '/api/budgets/suggestions', 'months=4')?.status, 400);
   assert.equal(call('GET', '/api/budgets/suggestions', 'month=2026-10&months=3')?.status, 200);
 });
+
+import { categoryTrend } from '../../src/api/trends.ts';
+
+test('the trend lists spending per category over the last months, with the average of the closed ones', () => {
+  const view = categoryTrend(seeded(), NOW, 4);
+  assert.deepEqual(view.months, ['2026-07', '2026-08', '2026-09', '2026-10']);
+  const market = view.rows.find((r) => r.name === 'Supermercado')!;
+  assert.deepEqual([market.points, market.average, market.current, market.parent], [[50000, 60000, 40000, 50000], 50000, 50000, 'Alimentação']);
+  assert.deepEqual(view.rows.find((r) => r.name === 'Compras online')?.points, [0, 0, 8000, 5000]);
+  assert.equal(view.rows[0]?.name, 'Supermercado', 'biggest first');
+  const route = apiRoute('GET', '/api/spending/trend', new URLSearchParams('months=6'), seeded(), NOW);
+  assert.equal(route?.status, 200);
+  assert.equal(apiRoute('GET', '/api/spending/trend', new URLSearchParams('months=5'), seeded(), NOW)?.status, 400);
+});

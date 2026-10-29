@@ -103,6 +103,11 @@ O que isso muda, sem IA:
 - A IA não escolhe "Transferência entre minhas contas", "Pagamento de fatura" nem "Investimentos": isso é decidido por fatos. Uma resposta antiga da IA com uma dessas categorias é ignorada.
 - A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
 
+## Tendência e navegação por período
+
+- Em Gastos, a aba Tendência (`src/api/trends.ts`) mostra cada categoria nos últimos 6 meses, com uma linha pequena, a média dos meses fechados, o gasto do mês em andamento e a diferença entre os dois. Estorno, Renda e Sem categoria ficam de fora.
+- O seletor de período ganhou as setas ‹ e › (Gastos, Fluxo e Transações). Elas andam o intervalo pelo próprio tamanho: um mês inteiro vai para o mês vizinho (outubro vira setembro, não "os 31 dias antes de 1º de outubro"), três meses inteiros andam três meses, e um intervalo qualquer anda pelo número de dias dele. O mês em andamento é cortado em hoje, e a seta para frente fica desligada quando o intervalo já chega a hoje.
+
 ## Patrimônio
 
 A tela Patrimônio (`src/api/networth.ts`, tabelas `assets` e `asset_values`, migração 020) soma o que você tem e tira o que deve.
