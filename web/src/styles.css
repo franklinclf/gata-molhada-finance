@@ -431,3 +431,5 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .budget-head .grow { min-width: 120px; }
 .budget-note { white-space: normal; }
 .rows li .budget-note { white-space: normal; flex: initial; }
+.trend-row .spark { flex: none; }
+.trend-row > span, .trend-row > strong { white-space: nowrap; }

@@ -1,4 +1,5 @@
 import { daysBefore, localDay } from './format.ts';
+import { shiftRange } from './range.ts';
 
 interface Preset {
   id: string;
@@ -35,6 +36,16 @@ export function PeriodPicker({ from, to, now, onChange }: { from: string | undef
   });
   return (
     <div class="period">
+      {from !== undefined && to !== undefined && (
+        <>
+          <button class="chip" aria-label="Período anterior" onClick={() => onChange(shiftRange(from, to, -1, today) ?? { from, to })}>
+            ‹
+          </button>
+          <button class="chip" aria-label="Próximo período" disabled={shiftRange(from, to, 1, today) === null || to >= today} onClick={() => onChange(shiftRange(from, to, 1, today) ?? { from, to })}>
+            ›
+          </button>
+        </>
+      )}
       {PRESETS.map((p) => (
         <button key={p.id} class={active?.id === p.id ? 'chip on' : 'chip'} onClick={() => onChange(p.range(today))}>
           {p.label}

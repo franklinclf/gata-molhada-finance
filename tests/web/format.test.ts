@@ -38,3 +38,16 @@ test('periodRange starts on the first day of the month, counting back', () => {
 test('cumulative gives one running total per day, filling days without spending', () => {
   assert.deepEqual(cumulative([{ day: '2026-10-02', amount: 100 }, { day: '2026-10-04', amount: 50 }], '2026-10-01', '2026-10-05'), [0, 100, 100, 150, 150]);
 });
+
+import { shiftRange } from '../../web/src/range.ts';
+
+test('shiftRange moves whole months by months and other ranges by their own length', () => {
+  const today = '2026-10-28';
+  assert.deepEqual(shiftRange('2026-10-01', '2026-10-28', -1, today), { from: '2026-09-01', to: '2026-09-30' });
+  assert.deepEqual(shiftRange('2026-09-01', '2026-09-30', 1, today), { from: '2026-10-01', to: '2026-10-28' }, 'the current month is cut at today');
+  assert.deepEqual(shiftRange('2026-07-01', '2026-09-30', -1, today), { from: '2026-04-01', to: '2026-06-30' }, 'three months back');
+  assert.deepEqual(shiftRange('2026-10-22', '2026-10-28', -1, today), { from: '2026-10-15', to: '2026-10-21' }, 'seven days back');
+  assert.equal(shiftRange('2026-10-01', '2026-10-28', 1, today), null, 'nothing after today');
+  assert.deepEqual(shiftRange('2026-01-01', '2026-01-31', -1, today), { from: '2025-12-01', to: '2025-12-31' }, 'across the year');
+  assert.deepEqual(shiftRange('2026-10-10', '2026-10-20', 1, today), { from: '2026-10-21', to: '2026-10-28' });
+});

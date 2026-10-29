@@ -11,12 +11,12 @@ const MAX_AMOUNT = 1_000_000_000; // R$ 10 million, in cents
 /** The first month the app holds data for. Averages never look before it. */
 const DATA_START_MONTH = '2026-01';
 
-const addMonths = (month: string, n: number): string => {
+export const addMonths = (month: string, n: number): string => {
   const [y, m] = month.split('-').map(Number) as [number, number];
   const t = y * 12 + (m - 1) + n;
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
 };
-const lastDay = (month: string): string => {
+export const lastDay = (month: string): string => {
   const next = addMonths(month, 1);
   return new Date(Date.parse(`${next}-01T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
 };
@@ -65,7 +65,7 @@ export interface BudgetsView {
   totals: { budget: number; actual: number; pace: number; over: number };
 }
 
-function monthActuals(store: Store, month: string, now: Date): { byCategory: Map<string, number>; byGroup: Map<string, number> } {
+export function monthActuals(store: Store, month: string, now: Date): { byCategory: Map<string, number>; byGroup: Map<string, number> } {
   const view = spending(store, { from: `${month}-01`, to: lastDay(month) }, 'category', now);
   const byCategory = new Map<string, number>();
   const byGroup = new Map<string, number>();

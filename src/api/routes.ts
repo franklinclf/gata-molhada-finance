@@ -6,6 +6,7 @@ import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
+import { categoryTrend } from './trends.ts';
 import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type AssetResult } from './networth.ts';
 import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type BudgetResult } from './budgets.ts';
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
@@ -246,6 +247,12 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       return method === 'GET' ? { status: 200, body: { items: views.findings(store, params.get('includeResolved') === 'true') } } : methodNotAllowed();
     case 'cashflow':
     case 'spending': {
+      if (resource === 'spending' && parts.length === 3 && id === 'trend') {
+        if (method !== 'GET') return methodNotAllowed();
+        const months = Number(params.get('months') ?? '6');
+        if (![3, 6, 12].includes(months)) return badRequest('months must be 3, 6 or 12');
+        return { status: 200, body: categoryTrend(store, now, months) };
+      }
       if (parts.length !== 2) return null;
       if (method !== 'GET') return methodNotAllowed();
       const range = parseRange(params, now);

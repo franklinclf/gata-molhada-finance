@@ -6,13 +6,14 @@ import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
 import type { InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
+import type { TrendView } from '../../src/api/trends.ts';
 import type { NetWorthView } from '../../src/api/networth.ts';
 import type { BudgetsView, BudgetLine, SuggestionLine } from '../../src/api/budgets.ts';
 import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts';
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -141,6 +142,7 @@ export const api = {
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
   setHidden: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),
+  spendingTrend: (months: number) => request<TrendView>(`/api/spending/trend${query({ months })}`),
   netWorth: () => request<NetWorthView>('/api/networth'),
   addAsset: (name: string, kind: 'asset' | 'liability', value: number | null) =>
     request<{ id: number }>('/api/assets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, kind, value }) }),
