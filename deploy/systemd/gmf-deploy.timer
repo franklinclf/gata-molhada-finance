@@ -1,9 +1,9 @@
 [Unit]
-Description=Run the Gata Molhada Finance deploy every 2 minutes
+Description=Safety net: run the Gata Molhada Finance deploy every 30 minutes, in case a webhook was missed
 
 [Timer]
 OnBootSec=1min
-OnUnitInactiveSec=2min
+OnUnitInactiveSec=30min
 AccuracySec=15s
 
 [Install]

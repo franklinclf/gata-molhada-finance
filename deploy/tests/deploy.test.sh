@@ -29,7 +29,7 @@ setup() {
   cp "$here/stubs/docker" "$here/stubs/git" "$here/stubs/sha256sum" "$tmp/bin/"
   chmod +x "$tmp/bin/"*
   cp "$deploy_dir/deploy.sh" "$tmp/app/deploy/deploy.sh"
-  printf '#!/usr/bin/env bash\necho "GMF_SMOKE_TEST=x" > "$GMF_ENV_OUT"\n' > "$tmp/app/deploy/fetch-secrets.sh"
+  printf '#!/usr/bin/env bash\necho "GMF_SMOKE_TEST=x" > "$GMF_ENV_OUT"\necho fetched >> "$STUB_STATE/fetch.log"\n' > "$tmp/app/deploy/fetch-secrets.sh"
   chmod +x "$tmp/app/deploy/"*.sh
   echo "GMF_HOST=example.test" > "$tmp/vm.env"
   export PATH="$tmp/bin:$PATH" GMF_VM_ENV="$tmp/vm.env" GMF_APP_DIR="$tmp/app" \
@@ -54,6 +54,19 @@ check "first deploy recreates the app once" "1" "$(app_ups)"
 run_deploy
 check "unchanged image is a no-op" "0" "$rc"
 check "unchanged image does not recreate the app" "1" "$(app_ups)"
+
+# 2b. A run with nothing new does not read the secrets again; a stale copy, a changed image or --refresh-secrets does.
+fetches() { grep -c fetched "$STUB_STATE/fetch.log" 2> /dev/null || true; }
+before="$(fetches)"
+run_deploy
+check "a run with nothing new makes no Key Vault call" "$before" "$(fetches)"
+touch -t 202001010000 "$tmp/run/app.env"
+run_deploy
+check "a saved copy older than the limit is read again" "$((before + 1))" "$(fetches)"
+bash "$tmp/app/deploy/deploy.sh" --refresh-secrets > "$tmp/out.log" 2>&1
+check "--refresh-secrets reads them again" "$((before + 2))" "$(fetches)"
+if bash "$tmp/app/deploy/deploy.sh" --bogus > "$tmp/out.log" 2>&1; then rc=0; else rc=$?; fi
+check "an unknown argument is refused" "2" "$rc"
 
 # 3. A healthy update takes a database backup and keeps the previous image.
 touch "$tmp/data/gmf.sqlite"

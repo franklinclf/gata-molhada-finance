@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync, rmSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { Debounce } from './http/deploy-hook.ts';
 import { encryptBackup } from './backup/backup.ts';
 import { loadAiConfig, startAiLoop } from './ai/job.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
@@ -49,7 +50,11 @@ const backup = (passphrase: string): Buffer => {
     rmSync(copy, { force: true });
   }
 };
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, backup }, config.webDir);
+// The host watches this file (gmf-deploy.path): writing it starts a deploy. Without a secret the route does not exist.
+const deploySecret = process.env.DEPLOY_WEBHOOK_SECRET?.trim();
+const hookDebounce = new Debounce(10_000);
+const deployHook = deploySecret ? { secret: deploySecret, trigger: () => hookDebounce.allow() && writeFileSync(join(dirname(config.dbPath), '.deploy-requested'), `${new Date().toISOString()}\n`) } : undefined;
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, backup, deployHook }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {

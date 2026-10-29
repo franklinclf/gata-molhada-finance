@@ -60,6 +60,23 @@ printf 'QUOTE-SECRET\n' > "$GMF_SECRETS_LIST"
 if bash "$script" 2> /dev/null; then rc=0; else rc=$?; fi
 check "rejects a value with a single quote" "nonzero" "$([[ $rc -ne 0 ]] && echo nonzero || echo zero)"
 
+# 4. A secret marked optional ("NAME?") is skipped when it does not exist, but other failures still stop the run.
+new_env
+printf 'GOOD-SECRET\nOPTIONAL-MISSING?\nOTHER-SECRET?\n' > "$GMF_SECRETS_LIST"
+bash "$script"
+check "skips an optional secret the vault does not have" $'GOOD_SECRET=\'value-of-GOOD-SECRET\'\nOTHER_SECRET=\'value-of-OTHER-SECRET\'' "$(cat "$GMF_ENV_OUT")"
+check "leaves no temporary files behind after a run" "app.env" "$(ls "$tmp/run")"
+
+new_env
+printf 'MISSING-SECRET\n' > "$GMF_SECRETS_LIST"
+if bash "$script" 2> /dev/null; then rc=0; else rc=$?; fi
+check "a missing secret that is not optional still fails" "nonzero" "$([[ $rc -ne 0 ]] && echo nonzero || echo zero)"
+
+new_env
+printf 'BROKEN-SECRET?\n' > "$GMF_SECRETS_LIST"
+if bash "$script" 2> /dev/null; then rc=0; else rc=$?; fi
+check "an optional secret with a server error still fails" "nonzero" "$([[ $rc -ne 0 ]] && echo nonzero || echo zero)"
+
 if (( failures > 0 )); then
   echo "$failures check(s) failed"
   exit 1

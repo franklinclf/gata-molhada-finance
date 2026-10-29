@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Pull-based deploy. Fetches secrets, pulls the image, switches the app
-# container and rolls back to the previous image if the new one is not healthy.
+# Deploy on the VM. Pulls the image, switches the app container and rolls back to the previous
+# image if the new one is not healthy. It runs when the app is told a new image is out (see
+# gmf-deploy.path) and, as a safety net, on a slow timer. A run with nothing new makes one
+# registry check and no Key Vault calls: the secrets are read again only when the image
+# changes, when the saved copy is older than GMF_SECRETS_TTL_MIN minutes, or with --refresh-secrets.
 set -euo pipefail
 
 VM_ENV="${GMF_VM_ENV:-/etc/gmf/vm.env}"
@@ -10,13 +13,25 @@ ENV_OUT="${GMF_ENV_OUT:-/run/gmf/app.env}"
 IMAGE_REPO="${GMF_IMAGE_REPO:-ghcr.io/franklinclf/gata-molhada-finance}"
 HEALTH_TIMEOUT="${GMF_HEALTH_TIMEOUT:-60}"
 KEEP_BACKUPS="${GMF_KEEP_BACKUPS:-5}"
+SECRETS_TTL_MIN="${GMF_SECRETS_TTL_MIN:-30}"
 FAILED_MARKER="$DATA_DIR/.failed-image-id"
 
 log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
+refresh_secrets=false
+pull=true
+for arg in "$@"; do
+  case "$arg" in
+    --no-pull) pull=false ;;
+    --refresh-secrets) refresh_secrets=true ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
 # Update the deploy files first, then restart this script so it runs the new version.
-if [[ "${1:-}" != "--no-pull" ]]; then
+if [[ "$pull" == true ]]; then
   git -C "$APP_DIR" pull --ff-only --quiet || log "git pull failed, using the current deploy files"
+  if [[ "$refresh_secrets" == true ]]; then exec "$0" --no-pull --refresh-secrets; fi
   exec "$0" --no-pull
 fi
 
@@ -38,12 +53,14 @@ wait_healthy() {
   return 1
 }
 
-"$APP_DIR/deploy/fetch-secrets.sh"
-env_hash="$(sha256sum "$ENV_OUT" | cut -d' ' -f1)"
-
 docker pull --quiet "$IMAGE_REPO:latest" > /dev/null
 new_id="$(docker image inspect -f '{{.Id}}' "$IMAGE_REPO:latest")"
 cur_id="$(docker inspect -f '{{.Image}}' gmf-app 2>/dev/null || true)"
+
+if [[ "$refresh_secrets" == true || "$new_id" != "$cur_id" || ! -s "$ENV_OUT" || -n "$(find "$ENV_OUT" -mmin "+$SECRETS_TTL_MIN" 2> /dev/null)" ]]; then
+  "$APP_DIR/deploy/fetch-secrets.sh"
+fi
+env_hash="$(sha256sum "$ENV_OUT" | cut -d' ' -f1)"
 cur_health="$(docker inspect -f '{{.State.Health.Status}}' gmf-app 2>/dev/null || true)"
 cur_env_hash="$(docker inspect -f '{{index .Config.Labels "gmf.env-hash"}}' gmf-app 2>/dev/null || true)"
 

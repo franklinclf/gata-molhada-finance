@@ -4,6 +4,7 @@ import { transactionsCsv, type CsvStyle } from '../api/export.ts';
 import { explore } from '../api/explorer.ts';
 import { apiRoute, parseExplorer } from '../api/routes.ts';
 import { localDay } from '../core/time.ts';
+import { decide, validSignature, type DeployHook } from './deploy-hook.ts';
 import type { Refresher } from '../scheduler/web-refresh.ts';
 import { route, type RouteResult, type RouterDeps } from './router.ts';
 
@@ -24,6 +25,8 @@ export interface AppDeps extends RouterDeps {
   refresher?: Refresher;
   /** Builds an encrypted copy of the database. Absent when backups are not available. */
   backup?: (passphrase: string) => Buffer;
+  /** Lets GitHub tell the app that a new image was published. Absent (and the route answers 404) when no secret is set. */
+  deployHook?: DeployHook;
 }
 
 export const COOKIE_NAME = 'gmf_session';
@@ -115,6 +118,22 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
     const credential = body?.credential as AssertionInput | undefined;
     if (!body || !credential?.response || typeof credential.rawId !== 'string') return json(400, { error: 'bad_request' });
     return loginResponse(deps.auth.passkeyLogin(credential, trustFrom(body)), deps);
+  }
+
+  // GitHub's webhook cannot hold a session: it proves who it is with a signature over the body.
+  if (pathname === '/api/hooks/deploy') {
+    if (!deps.deployHook) return json(404, { error: 'not_found' });
+    if (method !== 'POST') return notAllowed('POST');
+    if (!validSignature(request.body, request.headers['x-hub-signature-256'], deps.deployHook.secret)) return json(401, { error: 'bad_signature' });
+    let payload: unknown = null;
+    try {
+      payload = JSON.parse(request.body);
+    } catch {
+      return json(400, { error: 'bad_request' });
+    }
+    const decision = decide(request.headers['x-github-event'], payload);
+    if (decision === 'deploy') deps.deployHook.trigger();
+    return json(202, { decision });
   }
 
   // ---------- everything else needs a session; a trusted device can start one ----------

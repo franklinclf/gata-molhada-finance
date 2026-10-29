@@ -104,3 +104,54 @@ test('writes need a JSON content type', () => {
   const json: AppRequest = { ...plain, headers: { cookie, 'content-type': 'application/json' } };
   assert.equal(handle(json, deps).status, 404);
 });
+
+import { createHmac } from 'node:crypto';
+import { Debounce, decide, validSignature } from '../../src/http/deploy-hook.ts';
+
+const SECRET = 'a-webhook-secret';
+const sign = (body: string, secret = SECRET) => `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
+const ci = (extra: Record<string, unknown> = {}) => JSON.stringify({ action: 'completed', workflow_run: { name: 'CI', conclusion: 'success', head_branch: 'main', event: 'push', ...extra } });
+const hook = (body: string, headers: Record<string, string>): AppRequest => ({ method: 'POST', pathname: '/api/hooks/deploy', headers: { 'content-type': 'application/json', ...headers }, body });
+
+test('the deploy webhook does not exist without a secret', () => {
+  const { deps } = setup();
+  assert.equal(handle(hook(ci(), { 'x-github-event': 'workflow_run', 'x-hub-signature-256': sign(ci()) }), deps).status, 404);
+});
+
+test('the deploy webhook needs a valid signature, and only a green CI run on main triggers a deploy', () => {
+  const { deps } = setup();
+  let triggered = 0;
+  const armed: AppDeps = { ...deps, deployHook: { secret: SECRET, trigger: () => void triggered++ } };
+  const send = (body: string, event: string, signature = sign(body)) => handle(hook(body, { 'x-github-event': event, 'x-hub-signature-256': signature }), armed);
+
+  assert.equal(send(ci(), 'workflow_run', 'sha256=00').status, 401, 'a wrong signature is refused');
+  assert.equal(send(ci(), 'workflow_run', sign(ci(), 'other-secret')).status, 401);
+  assert.equal(handle(hook(ci(), { 'x-github-event': 'workflow_run' }), armed).status, 401, 'no signature at all');
+  assert.equal(triggered, 0);
+
+  assert.deepEqual(JSON.parse(send('{"zen":"x"}', 'ping').body ?? ''), { decision: 'ping' });
+  assert.equal(JSON.parse(send(ci({ conclusion: 'failure' }), 'workflow_run').body ?? '').decision, 'ignore');
+  assert.equal(JSON.parse(send(ci({ head_branch: 'feature' }), 'workflow_run').body ?? '').decision, 'ignore');
+  assert.equal(JSON.parse(send(ci({ event: 'pull_request' }), 'workflow_run').body ?? '').decision, 'ignore');
+  assert.equal(JSON.parse(send(ci({ name: 'Other' }), 'workflow_run').body ?? '').decision, 'ignore');
+  assert.equal(JSON.parse(send(ci(), 'push').body ?? '').decision, 'ignore');
+  assert.equal(triggered, 0);
+
+  const ok = send(ci(), 'workflow_run');
+  assert.deepEqual([ok.status, JSON.parse(ok.body ?? '').decision, triggered], [202, 'deploy', 1]);
+  assert.equal(send('not json', 'workflow_run').status, 400);
+  assert.equal(handle({ ...hook(ci(), {}), method: 'GET' }, armed).status, 405);
+});
+
+test('signature and decision helpers, and the debounce', () => {
+  assert.equal(validSignature('body', sign('body'), SECRET), true);
+  assert.equal(validSignature('body', sign('body'), ''), false, 'an empty secret never validates');
+  assert.equal(validSignature('body', undefined, SECRET), false);
+  assert.equal(validSignature('body', 'sha256=zz', SECRET), false);
+  assert.equal(decide('workflow_run', null), 'ignore');
+  let clock = 1_000_000;
+  const gate = new Debounce(10_000, () => clock);
+  assert.deepEqual([gate.allow(), gate.allow()], [true, false]);
+  clock += 10_001;
+  assert.equal(gate.allow(), true);
+});
