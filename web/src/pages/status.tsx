@@ -6,6 +6,14 @@ import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
 import { Loading } from '../ui.tsx';
 
+function alertText(event: string, code: string | null): string {
+  if (event === 'item/waiting_user_input') return 'o banco pede um código ou uma confirmação.';
+  if (event === 'item/waiting_user_action') return 'autorize o acesso no app do banco.';
+  if (code === 'USER_AUTHORIZATION_PENDING' || code === 'USER_AUTHORIZATION_NOT_GRANTED') return 'a autorização no banco está pendente ou foi negada.';
+  if (code === 'INVALID_CREDENTIALS' || code === 'ACCOUNT_LOCKED') return 'o banco recusou o acesso, reconecte.';
+  return 'a última leitura deu erro' + (code ? ` (${code})` : '') + '.';
+}
+
 export function StatusPage({ now }: { now: Date }) {
   const fresh = useLoad(() => api.freshness(), [], 60_000);
   const findings = useLoad(() => api.findings(), []);
@@ -58,6 +66,23 @@ export function StatusPage({ now }: { now: Date }) {
           </ul>
         </section>
       )}
+      {fresh.data && fresh.data.connectionAlerts.length > 0 && (
+        <section class="panel health" role="alert">
+          <h2>Uma conexão precisa de você</h2>
+          <ul class="rows">
+            {fresh.data.connectionAlerts.map((a) => (
+              <li key={a.institution}>
+                <span class="grow">
+                  {a.institution}: {alertText(a.event, a.code)} <span class="muted">({ago(a.at, now)})</span>
+                </span>
+                <a class="small" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer noopener">
+                  Abrir o Meu Pluggy
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section class="panel">
         <div class="panel-head">
           <h2>Última leitura de cada banco</h2>
@@ -96,7 +121,7 @@ export function StatusPage({ now }: { now: Date }) {
             ))}
           </ul>
         )}
-        <div class="note">As horas são de quando o Meu Pluggy leu cada banco, o que ele faz sozinho uma vez por dia. Este app consulta o Meu Pluggy a cada 2 minutos e traz os dados novos assim que aparecem, sem pedir nada aos bancos.</div>
+        <div class="note">As horas são de quando o Meu Pluggy leu cada banco, o que ele faz sozinho uma vez por dia. Com o aviso do Meu Pluggy (webhook) ligado, os dados novos entram em segundos e o app confere por garantia a cada 30 minutos. Sem ele, a conferência é a cada 2 minutos. Nos dois casos nada é pedido aos bancos.</div>
       </section>
       <section class="panel">
         <h2>Leituras do mês por banco</h2>

@@ -128,3 +128,37 @@ test('run stops at once when the signal is already aborted', async () => {
   await observer.run(controller.signal);
   assert.equal(adapter.freshnessCalls, 0);
 });
+
+test('a wake makes the source due now and a forced read happens even when the sync time did not move', async () => {
+  const adapter = new ScriptedAdapter('pluggy', { reads: [[at('pluggy', 30)]] });
+  const { observer, events, sources, store } = setup([adapter]);
+  await observer.tick(sources[0]!);
+  events.length = 0;
+  observer.wake('pluggy');
+  await observer.tick(sources[0]!);
+  assert.deepEqual(events.map((e) => e.type), ['checked']);
+  observer.wake('pluggy', true);
+  await observer.tick(sources[0]!);
+  assert.deepEqual(events.map((e) => e.type), ['checked', 'synced']);
+  assert.equal(adapter.transactionCalls.length, 2);
+  assert.equal(store.listFreshness().length, 1);
+});
+
+test('a wake during a running check schedules another one right after it', async () => {
+  const adapter = new ScriptedAdapter('pluggy', { reads: [[at('pluggy', 30)]] });
+  const { observer, sources, clock } = setup([adapter], [300_000]);
+  const original = adapter.fetchFreshness.bind(adapter);
+  adapter.fetchFreshness = async () => {
+    observer.wake('pluggy');
+    return original();
+  };
+  await observer.tick(sources[0]!);
+  const states = (observer as unknown as { states: Map<string, { nextDueAt: number }> }).states;
+  assert.equal(states.get('pluggy')?.nextDueAt, 0);
+  assert.ok(clock.t > 0);
+});
+
+test('waking an unknown source does nothing', () => {
+  const { observer } = setup([new ScriptedAdapter('pluggy')]);
+  observer.wake('nobody', true);
+});

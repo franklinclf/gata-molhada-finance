@@ -19,6 +19,17 @@ Para ligar (uma vez):
 - O GitHub envia um `ping` ao criar o webhook; se ele chegar antes de a VM ter o segredo, a primeira entrega aparece com erro (401 ou 404). Depois de `deploy.sh --refresh-secrets`, reenvie o ping: a resposta deve ser 202.
 - Para testar: em Settings > Webhooks > Recent Deliveries, reenvie uma entrega; a resposta deve ser 202 com `"decision":"deploy"` para uma execução do CI na `main`.
 
+## Aviso do Meu Pluggy (webhook)
+
+O Meu Pluggy sincroniza cada banco sozinho uma vez por dia. Com um webhook, ele avisa o app quando termina e o app lê os dados na hora; sem o webhook, o app confere a cada 2 minutos. O dashboard da Pluggy (Applications > editar > Webhooks) só pede a URL e o evento, não deixa definir cabeçalhos, então o segredo vai no último trecho da URL.
+
+- Gere o segredo e grave no cofre: `printf '%s\n' "$(openssl rand -hex 32)" | GMF_KEYVAULT=<cofre> bash infra/azure/set-secret.sh PLUGGY-WEBHOOK-SECRET`. Leia-o de volta para montar a URL: `az keyvault secret show --vault-name <cofre> --name PLUGGY-WEBHOOK-SECRET --query value -o tsv`.
+- Leia o segredo na VM: `bash infra/azure/deploy-now.sh --refresh-secrets`. Os logs mostram `observer on: pluggy every 30 min (Pluggy webhook on)`.
+- No dashboard da Pluggy, crie o webhook com URL `https://<seu-host>/api/hooks/pluggy/<segredo>` e evento `all`.
+- Token errado ou ausente responde 404, igual a uma rota que não existe. Eventos válidos respondem 202, inclusive os que o app não usa (a Pluggy não repete depois de 400, 401, 403, 404 ou 405).
+- Para testar: Applications > Events no dashboard da Pluggy mostra cada entrega e permite reenviar. No log do app aparece `pluggy webhook: item/updated for <banco>`.
+- O segredo aparece na tela de eventos do dashboard da Pluggy (só admins do time) e fica fora dos logs do app e do Caddy, que não registram acessos. Se vazar, grave outro segredo, leia de novo e edite a URL do webhook.
+
 ## Comandos úteis (sem SSH)
 
 Troque `rg-gmf` e `vm-gmf` se usou outros nomes.

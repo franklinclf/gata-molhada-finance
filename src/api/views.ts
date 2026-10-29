@@ -9,6 +9,7 @@ import { cyclesFor, type Cycle } from './cycles.ts';
 import { installments } from './installments.ts';
 import { quotaReport } from '../scheduler/quota.ts';
 import type { Store } from '../store/store.ts';
+import { readAlerts } from '../http/pluggy-hook.ts';
 import { stamp, type Stamped } from './stamp.ts';
 import { effectiveTransactions, visibleAccounts, visibleLimitGroups, type EffectiveTransaction, type ViewOptions } from './scope.ts';
 
@@ -349,6 +350,8 @@ export interface FreshnessView {
   generatedAt: string;
   health: HealthIssue[];
   sources: Array<{ sourceId: string; institution: string; lastUpdatedAt: string; observedAt: string; quotaExhausted: boolean }>;
+  /** Connections the provider said need the owner (login expired, consent to renew). */
+  connectionAlerts: Array<{ institution: string; event: string; code: string | null; message: string | null; at: string }>;
   quota: ReturnType<typeof quotaReport>;
 }
 
@@ -357,6 +360,7 @@ export function freshness(store: Store, now: Date): FreshnessView {
     generatedAt: now.toISOString(),
     health: dataHealth(store, now),
     sources: store.listFreshness().map((f) => ({ sourceId: f.sourceId, institution: f.institution, lastUpdatedAt: f.lastUpdatedAt, observedAt: f.observedAt, quotaExhausted: f.quotaExhausted === true })),
+    connectionAlerts: Object.values(readAlerts(store)).sort((a, b) => a.institution.localeCompare(b.institution)),
     quota: quotaReport(store, now),
   };
 }
