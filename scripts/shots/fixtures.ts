@@ -155,6 +155,7 @@ export function buildFixtures(now = new Date()): Fixtures {
     '/api/rules': call('/api/rules'),
     '/api/budgets': call('/api/budgets'),
     '/api/networth': call('/api/networth'),
+    '/api/calendar': call('/api/calendar'),
     '/api/spending/trend': call('/api/spending/trend', 'months=6'),
     '/api/refresh': { available: true, running: false, result: null, timedOut: [] },
     '/api/findings': call('/api/findings'),

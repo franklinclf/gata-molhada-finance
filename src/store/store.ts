@@ -219,6 +219,8 @@ export interface Store {
   listCategoryParents(): Map<string, string>;
   /** Sets the group of a category; null forgets the choice and goes back to the default. */
   setCategoryParent(category: string, parent: string | null, now: string): void;
+  listRecurringIgnored(): Set<string>;
+  setRecurringIgnored(key: string, ignored: boolean, now: string): void;
   listManualTransactions(): ManualTransaction[];
   /** Saves a manual transaction: without an id it is created. Returns the saved one. */
   saveManualTransaction(t: Omit<ManualTransaction, 'id'> & { id?: number }, now: string): ManualTransaction;

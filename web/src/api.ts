@@ -6,6 +6,8 @@ import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
 import type { InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
+import type { CalendarView, CalendarDay } from '../../src/api/calendar.ts';
+import type { RecurringItem } from '../../src/api/recurring.ts';
 import type { TrendView } from '../../src/api/trends.ts';
 import type { NetWorthView } from '../../src/api/networth.ts';
 import type { BudgetsView, BudgetLine, SuggestionLine } from '../../src/api/budgets.ts';
@@ -13,7 +15,7 @@ import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts'
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -147,6 +149,9 @@ export const api = {
   updateManual: (id: string, patch: { accountId?: string; day?: string; amount?: number; description?: string; category?: string }) =>
     request<Record<string, never>>(`/api/manual-transactions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }),
   deleteManual: (id: string) => request<Record<string, never>>(`/api/manual-transactions/${id}`, { method: 'DELETE' }),
+  calendar: (month: string) => request<CalendarView>(`/api/calendar${query({ month })}`),
+  ignoreRecurring: (key: string, ignored: boolean) =>
+    request<{ ok: true }>('/api/recurring/ignore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, ignored }) }),
   spendingTrend: (months: number) => request<TrendView>(`/api/spending/trend${query({ months })}`),
   netWorth: () => request<NetWorthView>('/api/networth'),
   addAsset: (name: string, kind: 'asset' | 'liability', value: number | null) =>
