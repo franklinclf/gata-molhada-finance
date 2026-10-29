@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 import { api } from './api.ts';
-import { brl, dayMonth, localDay, monthName } from './format.ts';
+import { brl, dayMonth, foreignMoney, localDay, monthName } from './format.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { CopyButton } from './copy.tsx';
@@ -172,6 +172,15 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
             <dl class="facts">
               <dt>Data</dt>
               <dd>{dayMonth(localDay(d.transaction.occurredAt))}/{localDay(d.transaction.occurredAt).slice(0, 4)}</dd>
+              {d.transaction.foreign && (
+                <>
+                  <dt>Valor original</dt>
+                  <dd>
+                    {hidden ? '••••' : foreignMoney(d.transaction.foreign.amount, d.transaction.foreign.currency)}
+                    <span class="muted"> {d.transaction.foreign.converted ? '· o banco cobrou o valor acima em reais' : '· sem conversão: o valor mostrado é o número original'}</span>
+                  </dd>
+                </>
+              )}
               <dt>Conta</dt>
               <dd>
                 {d.account.institution} · {d.account.name}

@@ -197,6 +197,8 @@ export interface Store {
   upsertSourceAccounts(sourceId: SourceId, accounts: SourceAccount[], seenAt: string): void;
   /** Fills who paid, who received and the merchant code on a record that was saved before they were read. */
   setSourceTransactionParties(sourceId: SourceId, externalId: string, parties: Parties): void;
+  /** Corrects the amount of a saved record. */
+  setSourceTransactionAmount(sourceId: SourceId, externalId: string, amount: number): void;
   upsertSourceTransactions(sourceId: SourceId, transactions: SourceTransaction[], seenAt: string): void;
   upsertSourceBills(sourceId: SourceId, bills: SourceBill[], seenAt: string): void;
   listSourceAccounts(sourceId: SourceId): StoredSourceAccount[];

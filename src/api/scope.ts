@@ -2,7 +2,7 @@ import type { CanonicalAccount, CanonicalTransaction, LimitGroup } from '../core
 import { normalizeName } from '../core/names.ts';
 import { mapSourceCategory } from '../ai/source-map.ts';
 import { localDay } from '../core/time.ts';
-import type { Parties } from '../core/parties.ts';
+import type { ForeignAmount, Parties } from '../core/parties.ts';
 import { categoryForMcc } from './mcc.ts';
 import { categoryFromRules, sortRules, type RuleSubject } from './rules-engine.ts';
 import { merchantOf } from '../core/merchant.ts';
@@ -30,6 +30,8 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   mcc: string | null;
   /** The kind of operation the source reports (PIX, TED, BOLETO ...), when it does. */
   operation: string | null;
+  /** The original amount of a purchase made in another currency (the transaction amount is in reais). */
+  foreign: ForeignAmount | null;
 }
 
 export interface Counterparty {
@@ -138,7 +140,7 @@ export function effectiveTransactions(
       const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: roleOrigin, owners, ownerDocument: counterparty?.isOwner === true && /^(pix|ted|transferencia)/i.test(parties?.operation ?? '') }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
       // What the source or the AI called it must agree with what it is for the arithmetic.
       if (role && (origin === 'source' || origin === 'ai' || engineHit)) category = ROLE_CATEGORY[role];
-      return { ...t, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null };
+      return { ...t, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null };
     });
 }
 
@@ -166,7 +168,7 @@ function sourceFacts(store: Store): { labels: Map<string, string[]>; parties: Ma
     if (record.label) labels.set(l.transactionId, [...(labels.get(l.transactionId) ?? []), record.label]);
     if (record.parties) {
       const have = parties.get(l.transactionId);
-      parties.set(l.transactionId, have ? { operation: have.operation ?? record.parties.operation, mcc: have.mcc ?? record.parties.mcc, payer: have.payer ?? record.parties.payer, receiver: have.receiver ?? record.parties.receiver } : record.parties);
+      parties.set(l.transactionId, have ? { operation: have.operation ?? record.parties.operation, mcc: have.mcc ?? record.parties.mcc, payer: have.payer ?? record.parties.payer, receiver: have.receiver ?? record.parties.receiver, foreign: have.foreign ?? record.parties.foreign ?? null } : record.parties);
     }
   }
   return { labels, parties };
