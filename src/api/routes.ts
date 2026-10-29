@@ -6,6 +6,7 @@ import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
+import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type BudgetResult } from './budgets.ts';
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
@@ -129,6 +130,30 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
       saveLayout(store, layout, now);
       return { status: 200, body: layout };
+    }
+    case 'budgets': {
+      const asResult = <T,>(r: BudgetResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
+      const month = params.get('month') ?? localDay(now.toISOString()).slice(0, 7);
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return badRequest('month must look like 2026-10');
+      if (parts.length === 2) {
+        if (method === 'GET') return { status: 200, body: budgetsFor(store, month, now) };
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(setBudget(store, input, now)) : badRequest('body must be { scope, name, month, amount, recurring }');
+      }
+      if (parts.length === 3 && id === 'suggestions') {
+        if (method !== 'GET') return methodNotAllowed();
+        const months = Number(params.get('months') ?? '3');
+        if (![3, 6, 12].includes(months)) return badRequest('months must be 3, 6 or 12');
+        return { status: 200, body: { month, months, items: suggestBudgets(store, month, months, now) } };
+      }
+      if (parts.length === 3 && (id === 'batch' || id === 'copy')) {
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be an object');
+        return id === 'batch' ? asResult(createBudgets(store, input.month, input.items, now)) : asResult(copyBudgets(store, input, now));
+      }
+      return null;
     }
     case 'rules': {
       const asResult = <T,>(r: RuleResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });

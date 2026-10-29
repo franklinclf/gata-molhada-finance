@@ -103,6 +103,18 @@ O que isso muda, sem IA:
 - A IA não escolhe "Transferência entre minhas contas", "Pagamento de fatura" nem "Investimentos": isso é decidido por fatos. Uma resposta antiga da IA com uma dessas categorias é ignorada.
 - A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
 
+## Orçamento
+
+A tela Orçamento (`src/api/budgets.ts`, tabela `budgets`, migração 019) dá um limite mensal a uma categoria ou a um grupo de categorias.
+
+- **Um valor por mês, com herança:** a linha de um mês vale só para ele, a marcada "repetir nos meses seguintes" vale para ele e para os seguintes até haver outra mais nova. Mudar o limite de outubro não reescreve agosto, e remover a linha mais nova traz a anterior de volta.
+- **Gasto do mês** é o mesmo número da tela Gastos (por data da compra, estornos descontam). O ritmo é o gasto até hoje dividido pelos dias passados, vezes os dias do mês; mês fechado não tem projeção.
+- **Sem dupla contagem:** uma categoria e o grupo em que ela está não podem ter orçamento ao mesmo tempo (o sistema recusa). Categorias dentro de um grupo com orçamento não aparecem separadas.
+- **Gastos sem orçamento** aparecem na lista com o botão Definir.
+- **Sugestão pela média:** média do gasto líquido dos últimos 3, 6 ou 12 meses fechados antes do mês escolhido, arredondada para R$ 10. O mês em andamento e meses antes de janeiro/2026 não entram, e Renda e Estorno nunca são sugeridos. Criar vários de uma vez é tudo ou nada.
+- **Copiar do mês anterior** copia o que cada alvo vale no mês de origem como linha própria do mês de destino, com ajuste de -100% a +1000%, arredondado ao centavo. Quem já tem linha no mês é mantido, a menos que se peça para substituir, e quem já resolve para o mesmo valor não ganha linha.
+- Há um widget Orçamento no painel (quanto sobra, quantas categorias passaram do limite, as mais usadas).
+
 ## Regras de categorização
 
 Ajustes > Regras define a categoria por condições (`src/api/rules-engine.ts`, tabela `rules`, migração 018). Uma regra tem condições e uma categoria. As condições combinam "todas" ou "qualquer", e podem ter grupos de um nível ("A e (B ou C)").

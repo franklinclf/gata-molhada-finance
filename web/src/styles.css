@@ -182,6 +182,8 @@ summary.chip::-webkit-details-marker { display: none; }
   .facts.inline { grid-template-columns: max-content 1fr; }
   .split { flex-wrap: wrap; }
   .panel.split { flex-direction: column; align-items: stretch; }
+  .recat { flex-wrap: wrap; }
+  .recat input { flex: 1 1 120px; }
   .split > .ring { margin-inline: auto; }
   .stack-cell .widget { min-height: 200px; }
 }
@@ -422,3 +424,10 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .rule-editor { gap: 10px; }
 .file-pick { cursor: pointer; }
 .file-pick { display: inline-flex; align-items: center; }
+.rows li.budget-line { flex-direction: column; align-items: stretch; gap: 6px; }
+.budget-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.budget-note { font-size: 12px; }
+.amount-input { max-width: 110px; }
+.budget-head .grow { min-width: 120px; }
+.budget-note { white-space: normal; }
+.rows li .budget-note { white-space: normal; flex: initial; }

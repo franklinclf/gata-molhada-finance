@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { apiRoute } from '../../src/api/routes.ts';
 import { monthRange } from '../../src/api/views.ts';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
+import { setBudget } from '../../src/api/budgets.ts';
 import { createRule } from '../../src/api/rules.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 import { addDays, addMonthsToDay } from '../../src/api/cycles.ts';
@@ -117,6 +118,10 @@ export function buildFixtures(now = new Date()): Fixtures {
     at,
   );
   store.addCustomCategory('Viagem 2027', at);
+  const thisMonth = now.toISOString().slice(0, 7);
+  setBudget(store, { scope: 'category', name: 'Supermercado', month: thisMonth, amount: 120000, recurring: true }, now);
+  setBudget(store, { scope: 'category', name: 'Compras online', month: thisMonth, amount: 30000, recurring: true }, now);
+  setBudget(store, { scope: 'group', name: 'Lazer', month: thisMonth, amount: 40000, recurring: true }, now);
   createRule(store, { name: 'Uber', conditions: { match: 'all', items: [{ field: 'merchant', operator: 'equals', value: 'Uber' }] }, actions: { category: 'Transporte por aplicativo' } }, now);
   createRule(store, { name: 'Compras grandes no cartão', conditions: { match: 'all', items: [{ field: 'direction', operator: 'equals', value: 'out' }, { match: 'any', leaves: [{ field: 'description', operator: 'contains', value: 'amazon' }, { field: 'description', operator: 'contains', value: 'shopee' }] }, { field: 'amount', operator: 'lt', value: -10000 }] }, actions: { category: 'Compras online' } }, now);
   store.setCategoryRule('padaria bom pao', 'Supermercado', at);
@@ -145,6 +150,7 @@ export function buildFixtures(now = new Date()): Fixtures {
     '/api/transactions': call('/api/transactions', 'limit=50'),
     '/api/freshness': call('/api/freshness'),
     '/api/rules': call('/api/rules'),
+    '/api/budgets': call('/api/budgets'),
     '/api/refresh': { available: true, running: false, result: null, timedOut: [] },
     '/api/findings': call('/api/findings'),
     '/api/categories': call('/api/categories'),
