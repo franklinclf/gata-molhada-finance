@@ -1,4 +1,5 @@
 import type { CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, TransactionLink } from '../core/canonical.ts';
+import type { Rule } from '../api/rules-engine.ts';
 import type { Parties } from '../core/parties.ts';
 import type { Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction } from '../core/types.ts';
 
@@ -188,6 +189,12 @@ export interface Store {
   listCategoryParents(): Map<string, string>;
   /** Sets the group of a category; null forgets the choice and goes back to the default. */
   setCategoryParent(category: string, parent: string | null, now: string): void;
+  listRules(): Rule[];
+  /** Creates the rule (id 0) or updates the one with that id. Returns the saved rule. Throws when the name is taken. */
+  saveRule(rule: Omit<Rule, 'id'> & { id?: number }, now: string): Rule;
+  deleteRule(id: number): void;
+  /** Gives the rules the priorities 10, 20, 30 ... in the order of the ids. Ids that are not listed keep their place after the listed ones. */
+  reorderRules(ids: number[], now: string): void;
   listCustomCategories(): string[];
   addCustomCategory(name: string, now: string): void;
   /** Removes a custom category and every override and rule that points to it. */

@@ -6,6 +6,7 @@ import { brl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
 import { Go, Loading } from '../ui.tsx';
+import { RulesTab } from './rules.tsx';
 
 const KIND: Record<string, string> = { checking: 'Conta corrente', savings: 'Poupança', credit_card: 'Cartão de crédito' };
 
@@ -455,6 +456,9 @@ export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boo
         <button class={tab === 'categories' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'categories' })}>
           Categorias
         </button>
+        <button class={tab === 'rules' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'rules' })}>
+          Regras
+        </button>
         <button class={tab === 'ai' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'ai' })}>
           IA
         </button>
@@ -462,7 +466,7 @@ export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boo
           Segurança
         </button>
       </div>
-      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : <AccountsTab hidden={hidden} />}
+      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : <AccountsTab hidden={hidden} />}
     </div>
   );
 }

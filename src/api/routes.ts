@@ -6,6 +6,7 @@ import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
+import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
@@ -128,6 +129,32 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
       saveLayout(store, layout, now);
       return { status: 200, body: layout };
+    }
+    case 'rules': {
+      const asResult = <T,>(r: RuleResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
+      if (parts.length === 2) {
+        if (method === 'GET') return { status: 200, body: { items: listRules(store) } };
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(createRule(store, input, now)) : badRequest('body must be a rule');
+      }
+      if (parts.length === 3 && method === 'GET' && id === 'export') return { status: 200, body: exportRules(store) };
+      if (parts.length === 3 && (id === 'preview' || id === 'reorder' || id === 'import')) {
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be an object');
+        if (id === 'preview') return asResult(previewRule(store, input));
+        if (id === 'import') return asResult(importRules(store, input, now));
+        return asResult(reorderRules(store, input.ids, now));
+      }
+      const ruleId = Number(id);
+      if (parts.length !== 3 || !Number.isInteger(ruleId)) return null;
+      if (method === 'DELETE') return asResult(deleteRule(store, ruleId));
+      if (method === 'PUT') {
+        const input = parseBody(body);
+        return input ? asResult(updateRule(store, ruleId, input, now)) : badRequest('body must be a rule');
+      }
+      return methodNotAllowed();
     }
     case 'balances':
       if (parts.length !== 2) return null;
