@@ -2,6 +2,7 @@ import type { FunctionComponent } from 'preact';
 import type { LayoutItem, WidgetId } from '../api.ts';
 import type { SizeClass } from '../grid.ts';
 import { BalancesWidget } from './balances.tsx';
+import { BudgetWidget } from './budget.tsx';
 import { CardsWidget } from './cards.tsx';
 import { CashflowWidget } from './cashflow.tsx';
 import { FindingsWidget } from './findings.tsx';
@@ -26,6 +27,7 @@ export const WIDGETS: Record<WidgetId, { title: string; component: FunctionCompo
   cashflow: { title: 'Fluxo de caixa', component: CashflowWidget },
   spending: { title: 'Gastos', component: SpendingWidget },
   installments: { title: 'Parcelas', component: InstallmentsWidget },
+  budget: { title: 'Orçamento', component: BudgetWidget },
   recent: { title: 'Transações recentes', component: RecentWidget },
   freshness: { title: 'Atualização das fontes', component: FreshnessWidget },
   findings: { title: 'Para conferir', component: FindingsWidget },

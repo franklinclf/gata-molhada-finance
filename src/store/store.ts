@@ -1,5 +1,14 @@
 import type { CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, TransactionLink } from '../core/canonical.ts';
 import type { Rule } from '../api/rules-engine.ts';
+
+export type BudgetScope = 'category' | 'group';
+export interface BudgetRow {
+  scope: BudgetScope;
+  name: string;
+  month: string;
+  amount: number;
+  recurring: boolean;
+}
 import type { Parties } from '../core/parties.ts';
 import type { Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction } from '../core/types.ts';
 
@@ -189,6 +198,9 @@ export interface Store {
   listCategoryParents(): Map<string, string>;
   /** Sets the group of a category; null forgets the choice and goes back to the default. */
   setCategoryParent(category: string, parent: string | null, now: string): void;
+  listBudgets(): BudgetRow[];
+  /** Sets the budget of a target for a month; a null amount removes the row of that month. */
+  setBudget(scope: BudgetScope, name: string, month: string, amount: number | null, recurring: boolean, now: string): void;
   listRules(): Rule[];
   /** Creates the rule (id 0) or updates the one with that id. Returns the saved rule. Throws when the name is taken. */
   saveRule(rule: Omit<Rule, 'id'> & { id?: number }, now: string): Rule;

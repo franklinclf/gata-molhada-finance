@@ -6,11 +6,12 @@ import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
 import type { InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
+import type { BudgetsView, BudgetLine, SuggestionLine } from '../../src/api/budgets.ts';
 import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts';
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -139,6 +140,14 @@ export const api = {
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
   setHidden: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),
+  budgets: (month: string) => request<BudgetsView>(`/api/budgets${query({ month })}`),
+  setBudget: (scope: 'category' | 'group', name: string, month: string, amount: number | null, recurring: boolean) =>
+    request<Record<string, never>>('/api/budgets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope, name, month, amount, recurring }) }),
+  budgetSuggestions: (month: string, months: number) => request<{ items: SuggestionLine[] }>(`/api/budgets/suggestions${query({ month, months })}`),
+  createBudgets: (month: string, items: Array<{ name: string; amount: number }>) =>
+    request<{ created: number }>('/api/budgets/batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ month, items }) }),
+  copyBudgets: (from: string, to: string, adjustPercent: number, overwrite: boolean) =>
+    request<{ copied: number; skipped: number }>('/api/budgets/copy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from, to, adjustPercent, overwrite }) }),
   rules: () => request<{ items: RuleRow[] }>('/api/rules'),
   saveRule: (rule: { id?: number; name: string; active: boolean; conditions: RuleConditions; actions: { category: string } }) =>
     request<Rule>(rule.id === undefined ? '/api/rules' : `/api/rules/${rule.id}`, { method: rule.id === undefined ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rule) }),

@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
+import type { BudgetRow, BudgetScope } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -710,6 +711,16 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setCategoryParent(category: string, parent: string | null, now: string): void {
       if (parent === null) db.prepare('DELETE FROM category_parents WHERE category = ?').run(category);
       else db.prepare('INSERT INTO category_parents (category, parent, updated_at) VALUES (?, ?, ?) ON CONFLICT(category) DO UPDATE SET parent = excluded.parent, updated_at = excluded.updated_at').run(category, parent, now);
+    },
+
+    listBudgets(): BudgetRow[] {
+      const rows = db.prepare('SELECT scope, name, month, amount, recurring FROM budgets ORDER BY scope, name, month').all() as Array<{ scope: BudgetScope; name: string; month: string; amount: number; recurring: number }>;
+      return rows.map((r) => ({ scope: r.scope, name: r.name, month: r.month, amount: r.amount, recurring: r.recurring === 1 }));
+    },
+
+    setBudget(scope: BudgetScope, name: string, month: string, amount: number | null, recurring: boolean, now: string): void {
+      if (amount === null) db.prepare('DELETE FROM budgets WHERE scope = ? AND name = ? AND month = ?').run(scope, name, month);
+      else db.prepare('INSERT INTO budgets (scope, name, month, amount, recurring, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(scope, name, month) DO UPDATE SET amount = excluded.amount, recurring = excluded.recurring, updated_at = excluded.updated_at').run(scope, name, month, amount, recurring ? 1 : 0, now);
     },
 
     listRules(): Rule[] {
