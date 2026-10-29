@@ -93,7 +93,7 @@ export interface RefreshView {
   running?: boolean;
   startedAt?: string | null;
   finishedAt?: string | null;
-  result?: 'completed' | 'timeout' | 'failed' | null;
+  result?: 'completed' | 'timeout' | 'failed' | 'refused' | null;
   timedOut?: string[];
   error?: string | null;
 }

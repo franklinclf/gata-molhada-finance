@@ -42,3 +42,19 @@ test('explains why a refresh is not allowed right after another one', async () =
   assert.equal(blocked.started, false);
   assert.match((blocked as { reasons: string[] }).reasons.join(' '), /minimum 15/);
 });
+
+test('when the source refuses refresh requests, the page is told so and the request is not repeated', async () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pierre', kind: 'aggregator', capabilities: {} }, T0);
+  const refused = new Error('Pluggy refused the refresh (Nubank: HTTP 400)');
+  refused.name = 'RefreshRefusedError';
+  const adapter = new ScriptedAdapter('pierre', { refreshOnDemand: true, reads: [[syncTime('pierre', 'Bank A', '2026-10-26T10:00:00.000Z')]], refreshError: refused });
+  const refresher = createRefresher({ store, adapter, now: () => new Date(T0), waitMs: 1_000, pollMs: 1 });
+  assert.deepEqual(refresher.start(), { started: true });
+  await until(() => !refresher.state().running);
+  assert.equal(refresher.state().result, 'refused');
+  assert.match(refresher.state().error ?? '', /HTTP 400/);
+  const again = refresher.start();
+  assert.equal(again.started, false);
+  assert.equal(adapter.refreshCalls, 1, 'the second click did not ask the source again');
+});
