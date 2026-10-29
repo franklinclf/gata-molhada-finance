@@ -146,6 +146,7 @@ Ajustes > Regras define a categoria por condições (`src/api/rules-engine.ts`, 
 - **Prévia:** "Ver o que mudaria" usa o mesmo código da regra salva e mostra quantas transações casam, quantas mudariam e as 15 mais recentes.
 - **Exportar e importar:** arquivo JSON com a categoria pelo nome. Importar sobre regras existentes pede confirmação e substitui tudo; regras inválidas ou repetidas são ignoradas e listadas; se nada do arquivo serve, as regras atuais ficam.
 - **Categoria apagada:** a regra que apontava para ela é desligada, não apagada.
+- **Regras sugeridas** (`src/api/rule-suggestions.ts`): estabelecimentos (nome limpo, fora pessoas e pagamentos de fatura) com 3 transações ou mais em que pelo menos 90% têm a mesma categoria, quando alguma destoa ou o banco escreve o lugar de mais de um jeito. "Criar regra" faz `estabelecimento é X → categoria`, que também acerta as que destoavam. É contagem, sem IA e sem custo; a IA só categoriza (por texto) e não cria regras sozinha.
 
 ## Grupos de categorias
 

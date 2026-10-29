@@ -208,6 +208,7 @@ function RuleEditor({ draft, setDraft, categories, onSaved, onCancel, hidden }: 
 
 export function RulesTab({ hidden }: { hidden: boolean }) {
   const rules = useLoad(() => api.rules(), []);
+  const suggestions = useLoad(() => api.ruleSuggestions(), []);
   const categories = useLoad(() => api.categories(), []);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -216,6 +217,7 @@ export function RulesTab({ hidden }: { hidden: boolean }) {
     try {
       await work();
       rules.reload();
+      suggestions.reload();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Não foi possível concluir.');
     }
@@ -275,6 +277,35 @@ export function RulesTab({ hidden }: { hidden: boolean }) {
         </label>
       </div>
       {message && <div class="note">{message}</div>}
+      {suggestions.data && suggestions.data.items.length > 0 && !draft && (
+        <section class="panel">
+          <h2>Regras sugeridas</h2>
+          <div class="muted">Estabelecimentos em que quase todas as transações têm a mesma categoria. Uma regra mantém assim, acerta as que destoam e já cobre o próximo texto que o banco inventar para o mesmo lugar. Achadas contando, sem usar IA.</div>
+          <ul class="rows tall">
+            {suggestions.data.items.map((s) => (
+              <li key={s.merchant} class="suggestion">
+                <div class="grow">
+                  <div class="clip">
+                    {s.merchant} → {s.category}
+                  </div>
+                  <div class="muted">
+                    {s.count} transações, {s.descriptions} {s.descriptions === 1 ? 'texto' : 'textos'} diferentes
+                    {s.differing > 0 ? ` · ${s.differing} em outra categoria` : ''}
+                  </div>
+                </div>
+                <div class="links" data-no-nav>
+                  <button class="primary small" onClick={() => void run(() => api.acceptRuleSuggestion(s.merchant, s.category))}>
+                    Criar regra
+                  </button>
+                  <button class="link" onClick={() => void run(() => api.dismissRuleSuggestion(s.merchant))}>
+                    Dispensar
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {draft && <RuleEditor draft={draft} setDraft={setDraft} categories={categories.data?.items ?? []} hidden={hidden} onCancel={() => setDraft(null)} onSaved={() => { setDraft(null); rules.reload(); }} />}
       <section class="panel">
         <h2>Regras ({items.length})</h2>
