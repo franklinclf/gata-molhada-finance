@@ -199,7 +199,7 @@ test('requestRefresh asks Pluggy to update each item once', async () => {
   assert.equal(http.callsTo('PATCH', '/items/item-1').length, 1);
 });
 
-test('requestRefresh explains when Pluggy refuses every item', async () => {
+test('requestRefresh reports the status Pluggy answered when it refuses every item', async () => {
   const { adapter } = build(baseRoutes([{ method: 'PATCH', match: '/items/item-1', respond: () => ({ status: 400, body: { code: 400 } }) }]));
-  await assert.rejects(() => adapter.requestRefresh(), /Refresh these connections in the Meu Pluggy app/);
+  await assert.rejects(() => adapter.requestRefresh(), (error: Error) => error.name === 'RefreshRefusedError' && /Bank A: HTTP 400/.test(error.message));
 });
