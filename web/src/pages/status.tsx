@@ -60,15 +60,25 @@ export function StatusPage({ now }: { now: Date }) {
       )}
       <section class="panel">
         <div class="panel-head">
-          <h2>Última sincronização de cada banco</h2>
-          {refresh.data?.available && (
+          <h2>Última leitura de cada banco</h2>
+          {refresh.data?.available && refresh.data.result !== 'refused' && (
             <button class="primary small" disabled={running} onClick={() => void refreshNow()}>
               {running ? 'Atualizando...' : 'Atualizar agora'}
             </button>
           )}
+          {refresh.data?.result === 'refused' && (
+            <a class="primary small" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer noopener">
+              Abrir o Meu Pluggy
+            </a>
+          )}
         </div>
         {refreshMessage && <div class="error">{refreshMessage}</div>}
         {!running && refresh.data?.result === 'timeout' && <div class="note">Estes bancos não responderam a tempo e seguem com os dados anteriores: {refresh.data.timedOut?.join(', ')}.</div>}
+        {refresh.data?.result === 'refused' && (
+          <div class="note">
+            O Meu Pluggy não aceita pedido de atualização vindo daqui ({refresh.data.error?.replace('Pluggy refused the refresh ', '')}). Ele lê cada banco sozinho uma vez por dia. Para atualizar já, abra o Meu Pluggy e atualize a conexão; esta tela percebe em até 2 minutos e traz os dados.
+          </div>
+        )}
         {!running && refresh.data?.result === 'failed' && <div class="error">A atualização falhou: {refresh.data.error}</div>}
         {!running && refresh.data?.result === 'completed' && <div class="note">Atualização concluída.</div>}
         {!fresh.data ? (
@@ -86,6 +96,7 @@ export function StatusPage({ now }: { now: Date }) {
             ))}
           </ul>
         )}
+        <div class="note">As horas são de quando o Meu Pluggy leu cada banco, o que ele faz sozinho uma vez por dia. Este app consulta o Meu Pluggy a cada 2 minutos e traz os dados novos assim que aparecem, sem pedir nada aos bancos.</div>
       </section>
       <section class="panel">
         <h2>Leituras do mês por banco</h2>

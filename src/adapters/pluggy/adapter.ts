@@ -42,6 +42,17 @@ function hasQuotaWarning(item: Record<string, unknown>): boolean {
   });
 }
 
+/** Pluggy answered every refresh request with an error status, so nothing was asked of the banks. */
+export class RefreshRefusedError extends Error {
+  readonly refused: Array<{ label: string; status: number }>;
+
+  constructor(refused: Array<{ label: string; status: number }>) {
+    super(`Pluggy refused the refresh (${refused.map((r) => `${r.label}: HTTP ${r.status}`).join(', ')})`);
+    this.name = 'RefreshRefusedError';
+    this.refused = refused;
+  }
+}
+
 export class PluggyAdapter implements SourceAdapter {
   readonly id = 'pluggy';
   readonly capabilities: AdapterCapabilities = {
@@ -183,14 +194,14 @@ export class PluggyAdapter implements SourceAdapter {
   /** Asks Pluggy to sync every item with its bank. Sent once per item and never retried, because each sync uses bank read quota. */
   async requestRefresh(): Promise<RefreshHandle> {
     let accepted = 0;
-    const refused: string[] = [];
+    const refused: Array<{ label: string; status: number }> = [];
     for (const item of this.config.items) {
       const response = await this.call('PATCH', `/items/${item.itemId}`, {}, false);
       if (response.status >= 200 && response.status < 300) accepted++;
-      // Meu Pluggy items cannot always be updated through the API: the user refreshes them in the Meu Pluggy app, and the next read picks it up.
-      else refused.push(item.label);
+      // Meu Pluggy items are not meant to be updated through the API: Pluggy updates them once a day, and the owner can update one in the Meu Pluggy app.
+      else refused.push({ label: item.label, status: response.status });
     }
-    if (accepted === 0) throw new Error(`Pluggy did not accept the refresh for ${refused.join(', ')}. Refresh these connections in the Meu Pluggy app; the next read will pick it up.`);
+    if (accepted === 0) throw new RefreshRefusedError(refused);
     return { requestedAt: this.now().toISOString() };
   }
 
