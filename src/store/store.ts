@@ -282,5 +282,7 @@ export interface Store {
   markTransactionsBilled(ids: string[]): void;
   getSetting(key: string): string | null;
   setSetting(key: string, value: string, updatedAt: string): void;
+  /** Writes a consistent copy of the whole database to a new file (VACUUM INTO). */
+  copyTo(path: string): void;
   close(): void;
 }

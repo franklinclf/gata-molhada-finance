@@ -1,6 +1,9 @@
 import type { AuthService } from '../auth/service.ts';
 import type { AssertionInput, RegistrationInput } from '../auth/webauthn.ts';
-import { apiRoute } from '../api/routes.ts';
+import { transactionsCsv, type CsvStyle } from '../api/export.ts';
+import { explore } from '../api/explorer.ts';
+import { apiRoute, parseExplorer } from '../api/routes.ts';
+import { localDay } from '../core/time.ts';
 import type { Refresher } from '../scheduler/web-refresh.ts';
 import { route, type RouteResult, type RouterDeps } from './router.ts';
 
@@ -19,6 +22,8 @@ export interface AppDeps extends RouterDeps {
   secureCookies: boolean;
   /** Asks the sources to sync now. Absent when no source can refresh on demand. */
   refresher?: Refresher;
+  /** Builds an encrypted copy of the database. Absent when backups are not available. */
+  backup?: (passphrase: string) => Buffer;
 }
 
 export const COOKIE_NAME = 'gmf_session';
@@ -159,6 +164,33 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
       if (!deps.refresher) return done(json(503, { error: 'unavailable' }));
       const started = deps.refresher.start();
       return done(started.started ? json(202, { started: true }) : json(409, { error: 'blocked', reasons: started.reasons }));
+    }
+
+    if (pathname === '/api/export/transactions.csv') {
+      if (method !== 'GET') return done(notAllowed('GET'));
+      const params = new URLSearchParams(request.search ?? '');
+      const parsed = parseExplorer(params);
+      if (!parsed.ok) return done(json(400, { error: 'bad_request', message: parsed.error }));
+      const ids = new Set(params.getAll('id'));
+      // Rows picked by hand come as they are, whatever the other filters say.
+      const query = ids.size > 0 ? { ...parsed.value, from: undefined, to: undefined, kind: 'all' as const, categories: undefined, accountIds: undefined, institutions: undefined, q: undefined, merchant: undefined, status: undefined, states: undefined, min: undefined, max: undefined, cycle: undefined, spendingOnly: false, hideOwnTransfers: false, includeExcluded: true } : parsed.value;
+      const result = explore(deps.store, { ...query, limit: 200_000, offset: 0 }, deps.now());
+      const rows = ids.size > 0 ? result.items.filter((t) => ids.has(t.id)) : result.items;
+      const style: CsvStyle = params.get('style') === 'intl' ? 'intl' : 'br';
+      const name = `transacoes-${localDay(deps.now().toISOString())}.csv`;
+      return done({ status: 200, headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${name}"`, ...SECURITY_HEADERS }, body: transactionsCsv(rows, localDay, style) });
+    }
+
+    if (pathname === '/api/backup') {
+      if (method !== 'POST') return done(notAllowed('POST'));
+      if (!deps.backup) return done(json(503, { error: 'unavailable' }));
+      // A copy of everything leaves the server, so it needs a recent password or passkey sign-in, like changing how you sign in.
+      if (!deps.auth.isFullSession(token)) return done(json(403, { error: 'reauth_required' }));
+      const input = parseJson(request);
+      const passphrase = typeof input?.passphrase === 'string' ? input.passphrase : '';
+      if (passphrase.length < 12) return done(json(400, { error: 'bad_request', message: 'the passphrase needs at least 12 characters' }));
+      const file = deps.backup(passphrase);
+      return done({ status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="gmf-backup-${localDay(deps.now().toISOString())}.gmfbak"`, ...SECURITY_HEADERS }, body: null, bytes: file });
     }
 
     const result = apiRoute(method, pathname, new URLSearchParams(request.search ?? ''), deps.store, deps.now(), request.body);

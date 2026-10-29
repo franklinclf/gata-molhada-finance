@@ -964,6 +964,10 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').run(key, value, updatedAt);
     },
 
+    copyTo(path: string): void {
+      db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
+    },
+
     close(): void {
       db.close();
     },
