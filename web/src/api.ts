@@ -162,6 +162,8 @@ export const api = {
   updateManual: (id: string, patch: { accountId?: string; day?: string; amount?: number; description?: string; category?: string }) =>
     request<Record<string, never>>(`/api/manual-transactions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }),
   deleteManual: (id: string) => request<Record<string, never>>(`/api/manual-transactions/${id}`, { method: 'DELETE' }),
+  version: () => request<{ version: string; startedAt: string | null; canDeploy: boolean }>('/api/version'),
+  checkForUpdate: () => request<{ asked: true }>('/api/deploy/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
   chatStatus: () => request<{ available: boolean }>('/api/chat/status'),
   chatConversations: () => request<{ items: ChatConversation[] }>('/api/chat/conversations'),
   chatMessages: (id: number) => request<{ items: ChatMessage[] }>(`/api/chat/conversations/${id}`),

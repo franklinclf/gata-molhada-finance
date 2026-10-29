@@ -26,7 +26,7 @@ Troque `rg-gmf` e `vm-gmf` se usou outros nomes.
 - Registro da implantação: `az vm run-command invoke -g rg-gmf -n vm-gmf --command-id RunShellScript --scripts "journalctl -u gmf-deploy --no-pager -n 50" --query "value[0].message" -o tsv`
 - Estado dos contêineres: `... --scripts "docker ps --format '{{.Names}} {{.Status}}'"`
 - Registro do app: `... --scripts "docker logs --tail 100 gmf-app"`
-- Forçar uma implantação agora: `... --scripts "systemctl start gmf-deploy.service"`. Para ler os segredos de novo na hora (depois de trocar um valor): `... --scripts "/opt/gmf/deploy/deploy.sh --refresh-secrets"`.
+- Forçar uma implantação agora, do terminal: `bash infra/azure/deploy-now.sh` (com `--refresh-secrets` para ler os segredos de novo). Pelo app: Ajustes > Dados > Versão > "Procurar versão nova agora". Sem essas duas, o comando cru: `... --scripts "systemctl start gmf-deploy.service"`. Para ler os segredos de novo na hora (depois de trocar um valor): `... --scripts "/opt/gmf/deploy/deploy.sh --refresh-secrets"`.
 - Backups do banco antes de cada implantação: `/var/lib/gmf/backups/pre-deploy-*.sqlite` (os 5 mais recentes).
 
 ## Segredos

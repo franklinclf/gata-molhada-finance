@@ -184,3 +184,16 @@ test('the chat needs a session, answers through a deferred result, and takes one
   assert.ok(send({ question: 'agora pode' }).deferred, 'free again once the first is done');
   assert.deepEqual(JSON.parse(handle(get('/api/chat/status', { cookie }), armed).body ?? ''), { available: true });
 });
+
+test('the version route tells what is running, and checking for a new version needs a recent sign-in and is rate limited', () => {
+  const { deps, code } = setup();
+  let asked = 0;
+  const armed: AppDeps = { ...deps, version: 'abc1234', startedAt: '2026-10-29T16:24:00.000Z', deployNow: () => (asked++ === 0) };
+  assert.equal(handle(get('/api/version'), armed).status, 401);
+  const cookie = cookieOf(handle(post('/api/auth/login', { password: PASSWORD, code: code() }), armed).headers['Set-Cookie']);
+  assert.deepEqual(JSON.parse(handle(get('/api/version', { cookie }), armed).body ?? ''), { version: 'abc1234', startedAt: '2026-10-29T16:24:00.000Z', canDeploy: true });
+  assert.equal(handle(post('/api/deploy/check', {}, { cookie }), deps).status, 503, 'not under the deploy service');
+  assert.equal(handle(post('/api/deploy/check', {}, { cookie }), armed).status, 202);
+  assert.equal(handle(post('/api/deploy/check', {}, { cookie }), armed).status, 429, 'asked again too soon');
+  assert.equal(handle(get('/api/deploy/check', { cookie }), armed).status, 405);
+});

@@ -61,7 +61,11 @@ const analyst = aiConfig.enabled && aiConfig.apiKey ? (input: { conversationId?:
 const deploySecret = process.env.DEPLOY_WEBHOOK_SECRET?.trim();
 const hookDebounce = new Debounce(10_000);
 const deployHook = deploySecret ? { secret: deploySecret, trigger: () => hookDebounce.allow() && writeFileSync(join(dirname(config.dbPath), '.deploy-requested'), `${new Date().toISOString()}\n`) } : undefined;
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, backup, deployHook, analyst }, config.webDir);
+// The deploy service watches this file; the webhook and the "check for a new version" button both write it.
+const deployFile = join(dirname(config.dbPath), '.deploy-requested');
+const deployDebounce = new Debounce(30_000);
+const deployNow = () => deployDebounce.allow() && (writeFileSync(deployFile, `${new Date().toISOString()}\n`), true);
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, backup, deployHook, analyst, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {
