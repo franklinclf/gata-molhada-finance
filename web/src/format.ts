@@ -1,6 +1,15 @@
 const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 export const MASK = 'R$ ••••';
 
+/** An amount in another currency, from its minor units, for example 900 EUR as "€ 9,00". */
+export function foreignMoney(cents: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency }).format(cents / 100);
+  } catch {
+    return `${currency} ${(cents / 100).toFixed(2).replace('.', ',')}`;
+  }
+}
+
 export function brl(cents: number, hidden = false): string {
   return hidden ? MASK : BRL.format(cents / 100);
 }

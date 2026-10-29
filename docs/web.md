@@ -89,6 +89,12 @@ A conferência entre duas fontes continua no código (junção, pares para confe
 
 A cada leitura o adaptador pede as transações duas vezes por conta e junta pelo id: pela data da transação (`dateFrom`, vê a mudança de pendente para lançada de lançamentos recentes) e pela data em que o Pluggy criou o registro (`createdAtFrom`, pega o que o Pluggy ingere tarde mas data para trás, como pagamento de fatura datado no fechamento ou compra que liquida semanas depois). Só a primeira janela perdia esses lançamentos. Limite, disponível, pagamento mínimo, vencimento e final do cartão que a fonte deixa de informar numa leitura não apagam o valor que ela deu antes.
 
+## Compras em outra moeda
+
+O Meu Pluggy manda, numa compra em euro ou dólar, `amount` na moeda original e `amountInAccountCurrency` em reais. O app usava `amount` e contava 9 euros como R$ 9,00. Agora vale o valor cobrado em reais (`chargedAmount`, `src/adapters/pluggy/normalize.ts`), e a moeda e o valor originais ficam guardados (migração 025) para exibir: um selo com a moeda (EUR, USD) na lista e "Valor original" no painel da transação. Se a fonte não trouxer o valor em reais, o número fica como veio e o painel avisa que não houve conversão. Os registros já salvos são corrigidos uma vez, na subida do servidor, a partir das respostas brutas guardadas (`src/sync/backfill-foreign.ts`), inclusive os do Pierre, para os pares continuarem batendo. Numa cópia dos dados de produção a conta corrigiu 6 valores: o Real-Debrid de 26/10 (€ 9,00) passou de R$ 9,00 para R$ 60,85 e o OpenRouter de 01/09 (US$ 10,80) para R$ 58,64; o cartão Gol final 3432 foi de R$ 11,13 para R$ 62,98 e os gastos do mês subiram R$ 51,85.
+
+A etiqueta "só pluggy" some da lista: com uma única fonte ativa ela não informa nada.
+
 ## Quem pagou e quem recebeu
 
 Pix, TED e boleto trazem o documento (CPF ou CNPJ) de quem paga e de quem recebe nas duas fontes, e compras no cartão trazem o código de categoria do estabelecimento (MCC). Os adaptadores guardam isso em `source_transactions` (migração 016): o documento vira um hash, para comparar pessoas, mais os 4 últimos dígitos, para mostrar; o número inteiro não é guardado nessa tabela (as respostas brutas em `raw_snapshots` continuam com ele). Os registros antigos são preenchidos uma vez, na subida do servidor, a partir dessas respostas brutas (`src/sync/backfill-parties.ts`).

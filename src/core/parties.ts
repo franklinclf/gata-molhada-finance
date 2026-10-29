@@ -17,6 +17,17 @@ export interface Parties {
   mcc: string | null;
   payer: Party | null;
   receiver: Party | null;
+  /** The original amount of a purchase made in another currency. */
+  foreign?: ForeignAmount | null;
+}
+
+/** What a purchase in another currency cost in that currency. */
+export interface ForeignAmount {
+  currency: string;
+  /** Absolute amount in minor units (cents) of `currency`. */
+  amount: number;
+  /** False when the source gave no amount in reais, so the transaction amount is the foreign number as it came. */
+  converted: boolean;
 }
 
 /** A party from a name and a document as written by the source ("123.456.789-00"). Null when there is neither. */
@@ -32,6 +43,6 @@ export function partyFrom(name: string | null, document: string | null, type: st
 }
 
 /** Parties from the fields a source sends, or undefined when it sent none (so records without them stay as they were). */
-export function partiesFrom(input: { operation: string | null; mcc: string | null; payer: Party | null; receiver: Party | null }): Parties | undefined {
-  return input.operation === null && input.mcc === null && input.payer === null && input.receiver === null ? undefined : input;
+export function partiesFrom(input: { operation: string | null; mcc: string | null; payer: Party | null; receiver: Party | null; foreign?: ForeignAmount | null }): Parties | undefined {
+  return input.operation === null && input.mcc === null && input.payer === null && input.receiver === null && !input.foreign ? undefined : input;
 }

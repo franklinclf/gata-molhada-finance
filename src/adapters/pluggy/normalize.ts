@@ -1,7 +1,7 @@
 import type { AccountKind, SourceAccount, SourceBill, SourceTransaction } from '../../core/types.ts';
 import { SourceFormatError } from '../../core/http.ts';
 import { toCents } from '../../core/money.ts';
-import { partiesFrom, partyFrom, type Party } from '../../core/parties.ts';
+import { partiesFrom, partyFrom, type ForeignAmount, type Party } from '../../core/parties.ts';
 import { toCashFlow, toStatus } from '../cash-flow.ts';
 import { asRecord, optDay, optNumber, optString, reqIsoInstant, reqNumber, reqString, UnsupportedAccountError } from '../shape.ts';
 
@@ -44,11 +44,24 @@ function partyOf(side: unknown): Party | null {
   return partyFrom(optString(record, 'name'), typeof number.value === 'string' ? number.value : null, typeof number.type === 'string' ? number.type : null);
 }
 
+/**
+ * The amount the account was charged. A purchase in another currency comes with `amount` in that currency and
+ * `amountInAccountCurrency` in reais; using `amount` would count 9 euros as 9 reais.
+ */
+export function chargedAmount(r: Record<string, unknown>): { value: number; foreign: ForeignAmount | null } {
+  const amount = reqNumber(r, 'amount', 'pluggy.transaction');
+  const currency = optString(r, 'currencyCode');
+  if (currency === null || currency === 'BRL') return { value: amount, foreign: null };
+  const inAccount = optNumber(r, 'amountInAccountCurrency');
+  const sign = amount < 0 ? -1 : 1;
+  return { value: inAccount === null ? amount : sign * Math.abs(inAccount), foreign: { currency, amount: Math.abs(toCents(amount)), converted: inAccount !== null } };
+}
+
 export function partiesOf(r: Record<string, unknown>) {
   const data = typeof r.paymentData === 'object' && r.paymentData !== null ? (r.paymentData as Record<string, unknown>) : {};
   const card = typeof r.creditCardMetadata === 'object' && r.creditCardMetadata !== null ? (r.creditCardMetadata as Record<string, unknown>) : {};
   const mcc = card.payeeMCC;
-  return partiesFrom({ operation: optString(r, 'operationType'), mcc: typeof mcc === 'string' || typeof mcc === 'number' ? String(mcc) : null, payer: partyOf(data.payer), receiver: partyOf(data.receiver) });
+  return partiesFrom({ operation: optString(r, 'operationType'), mcc: typeof mcc === 'string' || typeof mcc === 'number' ? String(mcc) : null, payer: partyOf(data.payer), receiver: partyOf(data.receiver), foreign: chargedAmount(r).foreign });
 }
 
 export function normalizeTransaction(raw: unknown, kind: AccountKind): SourceTransaction {
@@ -71,7 +84,7 @@ export function normalizeTransaction(raw: unknown, kind: AccountKind): SourceTra
     externalId: reqString(r, 'id', path),
     accountExternalId: reqString(r, 'accountId', path),
     occurredAt: reqIsoInstant(r, 'date', path),
-    amount: toCashFlow(kind, reqNumber(r, 'amount', path)),
+    amount: toCashFlow(kind, chargedAmount(r).value),
     description: reqString(r, 'description', path),
     descriptionRaw: optString(r, 'descriptionRaw'),
     status,

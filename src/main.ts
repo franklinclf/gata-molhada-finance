@@ -10,6 +10,7 @@ import { openRouterClient } from './ai/openrouter.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
 import { relyingPartyFor } from './auth/webauthn.ts';
 import { runReconciliation } from './reconcile/run.ts';
+import { backfillForeignAmounts } from './sync/backfill-foreign.ts';
 import { backfillParties } from './sync/backfill-parties.ts';
 import { loadConfig } from './config.ts';
 import { createHttpServer } from './http/server.ts';
@@ -27,9 +28,11 @@ const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
 const config = loadConfig(process.env);
 const store = openSqliteStore(config.dbPath, migrationsDir);
 const backfilled = backfillParties(store, new Date());
-if (backfilled > 0) {
+const corrected = backfillForeignAmounts(store, new Date());
+if (backfilled > 0 || corrected > 0) {
   runReconciliation(store);
-  console.log(`read who paid and who received on ${backfilled} saved records`);
+  if (backfilled > 0) console.log(`read who paid and who received on ${backfilled} saved records`);
+  if (corrected > 0) console.log(`corrected the amount of ${corrected} purchases made in another currency`);
 }
 const authConfig = loadAuthConfig(process.env);
 if (!authConfig) console.warn('AUTH_PASSWORD_HASH or AUTH_TOTP_SECRET is not set, so login is disabled and the API stays closed');
