@@ -6,6 +6,7 @@ import { useStoredFlag } from './hooks.ts';
 import { Login } from './Login.tsx';
 import { AccountsPage } from './pages/accounts.tsx';
 import { CardsPage } from './pages/cards.tsx';
+import { ChatPage } from './pages/chat.tsx';
 import { GoalsPage } from './pages/goals.tsx';
 import { CalendarPage } from './pages/calendar.tsx';
 import { BudgetsPage } from './pages/budgets.tsx';
@@ -31,24 +32,29 @@ const MORE: Array<[string, string]> = [
   ['networth', 'Patrimônio'],
   ['goals', 'Metas'],
   ['calendar', 'Calendário'],
+  ['chat', 'Analista'],
   ['accounts', 'Contas'],
   ['cashflow', 'Fluxo de caixa'],
   ['status', 'Fontes e conferência'],
   ['settings', 'Ajustes'],
 ];
 
+/** The sections kept in the top bar of a wide screen; the others sit under "Mais". */
 const NAV: Array<[string, string]> = [
   ['', 'Painel'],
   ['transactions', 'Transações'],
   ['spending', 'Gastos'],
   ['cards', 'Cartões'],
   ['budgets', 'Orçamento'],
+  ['accounts', 'Contas'],
+  ['chat', 'Analista'],
+];
+const NAV_MORE: Array<[string, string]> = [
   ['networth', 'Patrimônio'],
   ['goals', 'Metas'],
   ['calendar', 'Calendário'],
-  ['accounts', 'Contas'],
-  ['cashflow', 'Fluxo'],
-  ['status', 'Fontes'],
+  ['cashflow', 'Fluxo de caixa'],
+  ['status', 'Fontes e conferência'],
   ['settings', 'Ajustes'],
 ];
 
@@ -58,12 +64,26 @@ export function App() {
   const [hidden, setHidden] = useStoredFlag('gmf.hidden', true);
   const [now, setNow] = useState(() => new Date());
   const [more, setMore] = useState(false);
+  const [menu, setMenu] = useState(false);
   const route = useRoute();
 
   useEffect(() => {
     setUnauthorizedHandler(() => setPhase('out'));
     api.session().then(() => setPhase('in')).catch(() => setPhase('out'));
   }, []);
+
+  // The top bar menu closes on a click anywhere else or on Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(false);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    document.addEventListener('click', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
 
   // Keeps the "há N min" labels current.
   useEffect(() => {
@@ -89,6 +109,9 @@ export function App() {
       break;
     case 'budgets':
       page = <BudgetsPage route={route} now={now} hidden={hidden} />;
+      break;
+    case 'chat':
+      page = <ChatPage route={route} hidden={hidden} />;
       break;
     case 'goals':
       page = <GoalsPage now={now} hidden={hidden} />;
@@ -125,6 +148,20 @@ export function App() {
               {label}
             </a>
           ))}
+          <div class="nav-more">
+            <button class={NAV_MORE.some(([id]) => id === route.page) ? 'navlink on' : 'navlink'} aria-expanded={menu} onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>
+              Mais ▾
+            </button>
+            {menu && (
+              <div class="nav-menu" role="menu">
+                {NAV_MORE.map(([id, label]) => (
+                  <a key={id} role="menuitem" class={route.page === id ? 'navlink on' : 'navlink'} href={hrefFor(id)} onClick={() => setMenu(false)}>
+                    {label}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
         </nav>
         <div class="topbar-actions">
           <button class="icon" onClick={() => setHidden(!hidden)} aria-pressed={hidden} title={hidden ? 'Mostrar valores' : 'Ocultar valores'}>

@@ -108,6 +108,8 @@ export function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
   };
 }
 
+const resourceIs = (parts: string[], second: string): boolean => parts[2] === second;
+
 const badRequest = (message: string): ApiResult => ({ status: 400, body: { error: 'bad_request', message } });
 const methodNotAllowed = (): ApiResult => ({ status: 405, body: { error: 'method_not_allowed' } });
 const fromMutation = (result: MutationResult): ApiResult => (result.ok ? { status: 200, body: { ok: true } } : { status: result.status, body: { error: result.error } });
@@ -136,6 +138,21 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
       saveLayout(store, layout, now);
       return { status: 200, body: layout };
+    }
+    case 'chat': {
+      if (resourceIs(parts, 'conversations')) {
+        if (parts.length === 3) return method === 'GET' ? { status: 200, body: { items: store.listChatConversations() } } : methodNotAllowed();
+        const convoId = Number(parts[3]);
+        if (parts.length !== 4 || !Number.isInteger(convoId)) return null;
+        if (!store.listChatConversations().some((c) => c.id === convoId)) return { status: 404, body: { error: 'not_found' } };
+        if (method === 'GET') return { status: 200, body: { items: store.listChatMessages(convoId) } };
+        if (method === 'DELETE') {
+          store.deleteChatConversation(convoId);
+          return { status: 200, body: { ok: true } };
+        }
+        return methodNotAllowed();
+      }
+      return null;
     }
     case 'goals': {
       const asResult = <T,>(r: GoalResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });

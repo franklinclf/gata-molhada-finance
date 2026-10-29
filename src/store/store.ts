@@ -38,6 +38,24 @@ export interface Goal {
   archived: boolean;
 }
 
+export interface ChatConversation {
+  id: number;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  conversationId: number;
+  role: 'user' | 'assistant';
+  content: string;
+  steps: Array<{ tool: string; args: Record<string, unknown>; summary: string }> | null;
+  model: string | null;
+  costUsd: number | null;
+  createdAt: string;
+}
+
 export type BudgetScope = 'category' | 'group';
 export interface BudgetRow {
   scope: BudgetScope;
@@ -235,6 +253,11 @@ export interface Store {
   listCategoryParents(): Map<string, string>;
   /** Sets the group of a category; null forgets the choice and goes back to the default. */
   setCategoryParent(category: string, parent: string | null, now: string): void;
+  listChatConversations(): ChatConversation[];
+  createChatConversation(title: string, now: string): number;
+  deleteChatConversation(id: number): void;
+  listChatMessages(conversationId: number): ChatMessage[];
+  addChatMessage(m: Omit<ChatMessage, 'id'>): number;
   listGoals(): Goal[];
   saveGoal(goal: Omit<Goal, 'id'> & { id?: number }): Goal;
   deleteGoal(id: number): void;

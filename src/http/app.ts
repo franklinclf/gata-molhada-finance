@@ -4,6 +4,7 @@ import { transactionsCsv, type CsvStyle } from '../api/export.ts';
 import { explore } from '../api/explorer.ts';
 import { apiRoute, parseExplorer } from '../api/routes.ts';
 import { localDay } from '../core/time.ts';
+import type { AnalystReply } from '../ai/analyst.ts';
 import { decide, validSignature, type DeployHook } from './deploy-hook.ts';
 import type { Refresher } from '../scheduler/web-refresh.ts';
 import { route, type RouteResult, type RouterDeps } from './router.ts';
@@ -27,7 +28,11 @@ export interface AppDeps extends RouterDeps {
   backup?: (passphrase: string) => Buffer;
   /** Lets GitHub tell the app that a new image was published. Absent (and the route answers 404) when no secret is set. */
   deployHook?: DeployHook;
+  /** Answers a question to the analyst. Absent when the AI is off. */
+  analyst?: (input: { conversationId?: number; question: string }) => Promise<AnalystReply>;
 }
+
+let chatBusy = false;
 
 export const COOKIE_NAME = 'gmf_session';
 const SECURITY_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' };
@@ -183,6 +188,31 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
       if (!deps.refresher) return done(json(503, { error: 'unavailable' }));
       const started = deps.refresher.start();
       return done(started.started ? json(202, { started: true }) : json(409, { error: 'blocked', reasons: started.reasons }));
+    }
+
+    if (pathname === '/api/chat/status') return method === 'GET' ? done(json(200, { available: deps.analyst !== undefined })) : done(notAllowed('GET'));
+    if (pathname === '/api/chat' && method === 'POST') {
+      if (!deps.analyst) return done(json(503, { error: 'unavailable' }));
+      const input = parseJson(request);
+      const question = typeof input?.question === 'string' ? input.question : '';
+      const conversationId = typeof input?.conversationId === 'number' && Number.isInteger(input.conversationId) ? input.conversationId : undefined;
+      if (question.trim() === '') return done(json(400, { error: 'bad_request', message: 'question is required' }));
+      if (chatBusy) return done(json(429, { error: 'busy', message: 'uma pergunta ainda está sendo respondida' }));
+      const analyst = deps.analyst;
+      const base = done(json(200, {}));
+      return {
+        ...base,
+        deferred: async () => {
+          chatBusy = true;
+          try {
+            return json(200, await analyst({ conversationId, question }));
+          } catch (error) {
+            return error instanceof RangeError ? json(400, { error: 'bad_request', message: error.message }) : json(500, { error: 'internal_error' });
+          } finally {
+            chatBusy = false;
+          }
+        },
+      };
     }
 
     if (pathname === '/api/export/transactions.csv') {
