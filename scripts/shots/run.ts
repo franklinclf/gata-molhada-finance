@@ -50,12 +50,14 @@ const ROUTES: Array<[string, string, number]> = [
   ['ajustes-ia', 'settings?tab=ai', 1500],
   ['ajustes-seguranca', 'settings?tab=security', 1100],
   ['detalhe', 'transactions?tx=detail', 1300],
+  ['seletor-categoria', `transactions?tx=detail&__click=${encodeURIComponent('.select-btn[aria-label="Categoria"]')}`, 1300],
+  ['seletor-grupo', `settings?tab=categories&__click=${encodeURIComponent('.select-btn[aria-label^="Grupo de"]')}`, 1200],
 ];
 
 const args = process.argv.slice(2);
 const sizeFlag = args.indexOf('--size');
 const sizes = sizeFlag >= 0 ? [args[sizeFlag + 1]!] : Object.keys(SIZES);
-const wanted = args.filter((a, i) => !a.startsWith('--') && i !== sizeFlag + 1);
+const wanted = args.filter((a, i) => !a.startsWith('--') && (sizeFlag < 0 || i !== sizeFlag + 1));
 
 console.log('building the app for photos...');
 execFileSync('npx', ['vite', 'build', '--config', 'web/vite.config.ts', '--base', './', '--outDir', '../dist/shots', '--emptyOutDir'], { cwd: root, stdio: 'ignore' });

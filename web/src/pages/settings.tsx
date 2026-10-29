@@ -6,6 +6,8 @@ import { brl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
 import { Go, Loading } from '../ui.tsx';
+import { CategorySelect } from '../CategorySelect.tsx';
+import { Select } from '../Select.tsx';
 import { RulesTab } from './rules.tsx';
 
 const KIND: Record<string, string> = { checking: 'Conta corrente', savings: 'Poupança', credit_card: 'Cartão de crédito' };
@@ -88,29 +90,19 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
         <h2>Categorias ({data.items.length})</h2>
         <ul class="rows">
           {data.items.map((c) => (
-            <li key={c.name}>
+            <li key={c.name} class="cat-row">
               <Go class="grow clip" page="transactions" params={{ category: c.name }}>
                 {c.name}
               </Go>
-              <select
-                class="select"
-                aria-label={`Grupo de ${c.name}`}
+              <Select
+                ariaLabel={`Grupo de ${c.name}`}
                 value={c.parent ?? ''}
-                onChange={(e) => {
-                  const value = (e.currentTarget as HTMLSelectElement).value;
-                  const parent = value === '__new' ? window.prompt('Nome do novo grupo')?.trim() : value === '' ? null : value;
-                  if (parent !== undefined && parent !== '') void run(() => api.setCategoryParent(c.name, parent));
-                  else reload();
-                }}
-              >
-                <option value="">Sem grupo</option>
-                {groups.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-                <option value="__new">+ Novo grupo...</option>
-              </select>
+                emptyLabel="Sem grupo"
+                creatable
+                placeholder="Sem grupo"
+                options={groups.map((g) => ({ value: g, label: g }))}
+                onChange={(value) => void run(() => api.setCategoryParent(c.name, value === '' ? null : value))}
+              />
               {c.custom && <span class="badge info">sua</span>}
               {c.builtin && c.count === 0 && <span class="badge muted">padrão</span>}
               <span class="muted">{c.count} transações</span>
@@ -295,13 +287,7 @@ function DecisionsPanel() {
                 </div>
               </div>
               {d.status !== 'skipped' && d.status !== 'rejected' && (
-                <select class="select" value={choice[d.key] ?? d.rule ?? d.category} onChange={(e) => setChoice({ ...choice, [d.key]: (e.currentTarget as HTMLSelectElement).value })} aria-label="Categoria">
-                  {[...new Set([d.rule ?? d.category, ...(categories.data?.items.map((c) => c.name) ?? [])])].map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                <CategorySelect value={choice[d.key] ?? d.rule ?? d.category} categories={categories.data?.items} onChange={(value) => setChoice({ ...choice, [d.key]: value })} />
               )}
               <div class="links" data-no-nav>
                 {d.status === 'applied' && (
@@ -413,13 +399,7 @@ function AiTab({ hidden }: { hidden: boolean }) {
                     {s.count} transação(ões){s.sourceCategory ? ` · a fonte diz: ${s.sourceCategory}` : ''} · confiança {CONFIDENCE[s.confidence]}
                   </div>
                 </div>
-                <select class="select" value={choice[s.key] ?? s.category} onChange={(e) => setChoice({ ...choice, [s.key]: (e.currentTarget as HTMLSelectElement).value })} aria-label="Categoria">
-                  {[...new Set([s.category, ...(categories.data?.items.map((c) => c.name) ?? [])])].map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                <CategorySelect value={choice[s.key] ?? s.category} categories={categories.data?.items} onChange={(value) => setChoice({ ...choice, [s.key]: value })} />
                 <div class="links" data-no-nav>
                   <button class="primary small" onClick={() => void run(() => api.acceptAi(s.key, choice[s.key] ?? s.category))}>
                     Aceitar

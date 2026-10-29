@@ -2,6 +2,8 @@ import { useState } from 'preact/hooks';
 import { api, ApiError } from '../api.ts';
 import type { BudgetLine, SuggestionLine } from '../api.ts';
 import { Meter } from '../charts.tsx';
+import { CategorySelect } from '../CategorySelect.tsx';
+import { Select } from '../Select.tsx';
 import { brl, monthName, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
@@ -151,12 +153,8 @@ function NewBudget({ month, onSaved, onError }: { month: string; onSaved: () => 
   const options = scope === 'category' ? (categories.data?.items.map((c) => c.name) ?? []) : [...new Set((categories.data?.items ?? []).map((c) => c.parent).filter((g): g is string => g !== null))];
   return (
     <div class="recat">
-      <select class="select" aria-label="Tipo" value={scope} onChange={(e) => { setScope((e.currentTarget as HTMLSelectElement).value as 'category' | 'group'); setName(''); }}>
-        <option value="category">Categoria</option>
-        <option value="group">Grupo</option>
-      </select>
-      <input aria-label="Nome" list="budget-names" placeholder={scope === 'category' ? 'Categoria' : 'Grupo'} value={name} onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)} />
-      <datalist id="budget-names">{options.map((o) => <option key={o} value={o} />)}</datalist>
+      <Select ariaLabel="Tipo" value={scope} options={[{ value: 'category', label: 'Categoria' }, { value: 'group', label: 'Grupo' }]} onChange={(next) => { setScope(next as 'category' | 'group'); setName(''); }} />
+      {scope === 'category' ? <CategorySelect value={name} onChange={setName} categories={categories.data?.items} creatable={false} placeholder="Escolher categoria" /> : <Select ariaLabel="Grupo" value={name} onChange={setName} options={options.map((o) => ({ value: o, label: o }))} placeholder="Escolher grupo" />}
       <input inputMode="decimal" aria-label="Limite em reais" placeholder="Limite" value={amount} onInput={(e) => setAmount((e.currentTarget as HTMLInputElement).value)} />
       <button
         class="primary small"

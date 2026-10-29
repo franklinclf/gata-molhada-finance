@@ -4,6 +4,7 @@ import { brl, dayMonth, localDay, monthName } from './format.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { CopyButton } from './copy.tsx';
+import { CategorySelect } from './CategorySelect.tsx';
 import { ManualForm } from './ManualForm.tsx';
 import { Loading, STATE_LABEL, StatusBadge } from './ui.tsx';
 
@@ -221,18 +222,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
               {d.transaction.categoryOrigin !== 'source' && d.transaction.sourceCategory !== null && <div class="muted">A fonte diz: {d.transaction.sourceCategory}</div>}
             </div>
             <div class="recat">
-              <input
-                list="category-options"
-                placeholder="Escolha ou digite uma categoria nova"
-                value={draft}
-                onInput={(e) => setDraft((e.currentTarget as HTMLInputElement).value)}
-                maxLength={60}
-              />
-              <datalist id="category-options">
-                {(categories.data?.items ?? []).map((c) => (
-                  <option key={c.name} value={c.name} />
-                ))}
-              </datalist>
+              <CategorySelect value={draft} onChange={setDraft} categories={categories.data?.items} placeholder="Escolha ou crie uma categoria" />
               <button class="primary" disabled={saving || draft.trim() === ''} onClick={() => void save(draft)}>
                 Salvar
               </button>

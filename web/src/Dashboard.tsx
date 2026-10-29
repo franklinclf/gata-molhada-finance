@@ -6,6 +6,7 @@ import { freeSlot, sizeClass } from './grid.ts';
 import { Grid } from './Grid.tsx';
 import { useLoad } from './hooks.ts';
 import { Loading } from './ui.tsx';
+import { Select } from './Select.tsx';
 import { WIDGETS } from './widgets/index.ts';
 
 function useNarrow(): boolean {
@@ -71,14 +72,7 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
         )}
         {editing && !narrow && (
           <>
-            <select class="select" value="" onChange={(e) => { const value = (e.currentTarget as HTMLSelectElement).value as WidgetId; if (value) add(value); }} aria-label="Adicionar widget">
-              <option value="">+ Adicionar widget</option>
-              {WIDGET_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {WIDGETS[id].title}
-                </option>
-              ))}
-            </select>
+            <Select ariaLabel="Adicionar widget" value="" placeholder="+ Adicionar widget" onChange={(value) => value && add(value as WidgetId)} options={WIDGET_IDS.map((id) => ({ value: id, label: WIDGETS[id].title }))} />
             <button class="icon" onClick={() => update(defaultLayout().items)}>
               Restaurar padrão
             </button>

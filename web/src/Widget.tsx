@@ -2,6 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { ago, isStale } from './format.ts';
 import { hrefFor, navigate } from './router.ts';
+import { Select } from './Select.tsx';
 
 interface Props {
   title: string;
@@ -77,12 +78,6 @@ export function Widget({ title, to, asOf, now, loading, error, actions, head, ch
 
 export function PeriodSelect<T extends string>({ value, options, onChange }: { value: T; options: Array<{ id: T; label: string }>; onChange: (id: T) => void }) {
   return (
-    <select class="select" value={value} onChange={(e) => onChange((e.currentTarget as HTMLSelectElement).value as T)} aria-label="Período">
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <Select ariaLabel="Período" value={value} onChange={(next) => onChange(next as T)} options={options.map((o) => ({ value: o.id, label: o.label }))} />
   );
 }

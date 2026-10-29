@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import type { NetWorthView } from '../api.ts';
 import { LineChart } from '../charts.tsx';
+import { Select } from '../Select.tsx';
 import { brl, dayMonth, localDay } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
@@ -111,10 +112,7 @@ export function NetWorthPage({ now, hidden }: { now: Date; hidden: boolean }) {
           </ul>
         )}
         <div class="recat">
-          <select class="select" aria-label="Tipo" value={kind} onChange={(e) => setKind((e.currentTarget as HTMLSelectElement).value as 'asset' | 'liability')}>
-            <option value="asset">Bem</option>
-            <option value="liability">Dívida</option>
-          </select>
+          <Select ariaLabel="Tipo" value={kind} onChange={(next) => setKind(next as 'asset' | 'liability')} options={[{ value: 'asset', label: 'Bem' }, { value: 'liability', label: 'Dívida' }]} />
           <input aria-label="Nome" placeholder="Nome (Carro, Tesouro Direto...)" maxLength={60} value={name} onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)} />
           <input inputMode="decimal" aria-label="Valor de hoje em reais" placeholder="Valor hoje" value={value} onInput={(e) => setValue((e.currentTarget as HTMLInputElement).value)} />
           <button class="primary small" disabled={name.trim() === ''} onClick={() => void add()}>
