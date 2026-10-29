@@ -98,3 +98,32 @@ test('saved records get their parties from the raw answers once', () => {
   assert.equal(store.listSourceTransactions('pluggy')[0]?.parties?.receiver?.last4, '7788');
   assert.equal(backfillParties(store, NOW), 0);
 });
+
+import { backfillForeignAmounts } from '../../src/sync/backfill-foreign.ts';
+
+const euro = (id: string, extra: Record<string, unknown> = {}) => ({ id, accountId: 'acc', description: 'REAL-DEBRID*20753682', amount: 9, currencyCode: 'EUR', amountInAccountCurrency: 60.85, date: '2026-10-26T12:00:00Z', status: 'POSTED', ...extra });
+
+test('a purchase in another currency is counted by what the bank charged in reais, and keeps the original amount', () => {
+  const t = pierre(euro('e1'), 'credit_card');
+  assert.equal(t.amount, -6085, '9 euros are R$ 60,85, not R$ 9,00');
+  assert.deepEqual(t.parties?.foreign, { currency: 'EUR', amount: 900, converted: true });
+  assert.equal(pierre({ ...euro('e2'), amount: -9, amountInAccountCurrency: -60.85 }, 'checking').amount, -6085, 'a refund keeps its sign');
+  const unconverted = pierre(euro('e3', { amountInAccountCurrency: null }), 'credit_card');
+  assert.deepEqual([unconverted.amount, unconverted.parties?.foreign?.converted], [-900, false], 'without a conversion the number stays as it came, and says so');
+  assert.equal(pierre({ ...euro('e4'), currencyCode: 'BRL', amountInAccountCurrency: null }, 'credit_card').parties?.foreign, undefined, 'reais are not foreign');
+});
+
+test('records saved with the foreign number are corrected once from the raw answers', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'aggregator', capabilities: {} }, NOW.toISOString());
+  store.registerSource({ id: 'pierre', kind: 'aggregator', capabilities: {} }, NOW.toISOString());
+  const saved = { accountExternalId: 'acc', occurredAt: '2026-10-26T12:00:00.000Z', amount: -900, description: 'REAL-DEBRID', descriptionRaw: null, status: 'posted' as const, installment: null, category: null };
+  store.upsertSourceTransactions('pluggy', [{ ...saved, externalId: 'e1' }, { ...saved, externalId: 'brl', amount: -5000 }], NOW.toISOString());
+  store.upsertSourceTransactions('pierre', [{ ...saved, externalId: 'p1' }], NOW.toISOString());
+  store.saveSnapshot({ sourceId: 'pluggy', endpoint: '/v2/transactions?accountId=acc', fetchedAt: NOW.toISOString(), httpStatus: 200, body: { results: [euro('e1'), { id: 'brl', currencyCode: 'BRL', amount: 50 }] } });
+  store.saveSnapshot({ sourceId: 'pierre', endpoint: 'get-transactions?startDate=2026-10-01', fetchedAt: NOW.toISOString(), httpStatus: 200, body: { data: [{ id: 'p1', currency_code: 'EUR', amount: '9', amount_in_account_currency: '60.85' }] } });
+  assert.equal(backfillForeignAmounts(store, NOW), 2);
+  assert.deepEqual(store.listSourceTransactions('pluggy').map((t) => [t.externalId, t.amount, t.parties?.foreign?.currency ?? null]), [['brl', -5000, null], ['e1', -6085, 'EUR']]);
+  assert.equal(store.listSourceTransactions('pierre')[0]?.amount, -6085);
+  assert.equal(backfillForeignAmounts(store, NOW), 0, 'it runs once');
+});
