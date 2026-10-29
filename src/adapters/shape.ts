@@ -28,7 +28,7 @@ export function optString(record: Json, key: string): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
 }
 
-/** Accepts a number or a numeric string, as Pierre sends balances and bill totals as strings. */
+/** Accepts a number or a numeric string. */
 export function reqNumber(record: Json, key: string, path: string): number {
   const value = record[key];
   const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;

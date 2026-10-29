@@ -1,8 +1,6 @@
-import type { PierreConfig } from '../adapters/pierre/adapter.ts';
 import type { PluggyConfig, PluggyItemConfig } from '../adapters/pluggy/adapter.ts';
 
 export interface AdapterEnv {
-  pierre?: PierreConfig;
   pluggy?: PluggyConfig;
 }
 
@@ -33,9 +31,6 @@ export function parsePluggyItems(value: string): PluggyItemConfig[] {
 
 export function loadAdapterEnv(env: Record<string, string | undefined>): AdapterEnv {
   const out: AdapterEnv = {};
-
-  const apiKey = env.PIERRE_API_KEY?.trim();
-  if (apiKey) out.pierre = { apiKey };
 
   const clientId = env.PLUGGY_CLIENT_ID?.trim();
   const clientSecret = env.PLUGGY_CLIENT_SECRET?.trim();

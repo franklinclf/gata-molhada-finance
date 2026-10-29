@@ -1,4 +1,3 @@
-import { PierreAdapter } from '../adapters/pierre/adapter.ts';
 import { PluggyAdapter } from '../adapters/pluggy/adapter.ts';
 import type { SourceAdapter } from '../core/adapter.ts';
 import type { HttpClient } from '../core/http.ts';
@@ -17,9 +16,6 @@ export function buildAdapters(env: AdapterEnv, deps: BuildDeps): SourceAdapter[]
   const now = deps.now ?? (() => new Date());
   const adapters: SourceAdapter[] = [];
 
-  if (env.pierre) {
-    adapters.push(new PierreAdapter(env.pierre, { http: deps.http, sink: createSnapshotSink(deps.store, 'pierre', now), now }));
-  }
   if (env.pluggy) {
     adapters.push(new PluggyAdapter(env.pluggy, { http: deps.http, sink: createSnapshotSink(deps.store, 'pluggy', now), now }));
   }

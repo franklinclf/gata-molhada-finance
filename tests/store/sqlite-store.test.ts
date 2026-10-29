@@ -73,3 +73,18 @@ test('a source that leaves out a card limit or due date for one read does not er
   const saved = store.listSourceAccounts('pluggy')[0]!;
   assert.deepEqual([saved.balance, saved.creditLimit, saved.availableLimit, saved.minimumPayment, saved.dueDate, saved.last4], [2000, 500000, 400000, 5000, '2026-11-10', '1234']);
 });
+
+test('a retired source keeps its records but stops reporting freshness, and comes back when registered again', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  for (const id of ['old', 'live']) {
+    store.registerSource({ id, kind: 'test', capabilities: {} }, '2026-10-01T00:00:00Z');
+    store.upsertFreshness({ sourceId: id, institution: 'Bank', lastUpdatedAt: '2026-10-01T00:00:00Z', observedAt: '2026-10-01T00:00:00Z' });
+  }
+  store.upsertSourceTransactions('old', [{ externalId: 't1', accountExternalId: 'a', occurredAt: '2026-10-01T00:00:00Z', amount: -100, description: 'X', descriptionRaw: null, status: 'posted', installment: null, category: null }], '2026-10-01T00:00:00Z');
+  assert.deepEqual(store.retireSourcesExcept(['live']), ['old']);
+  assert.deepEqual(store.listFreshness().map((f) => f.sourceId), ['live']);
+  assert.equal(store.listSourceTransactions('old').length, 1);
+  assert.deepEqual(store.retireSourcesExcept(['live']), [], 'retiring twice does nothing');
+  store.registerSource({ id: 'old', kind: 'test', capabilities: {} }, '2026-10-02T00:00:00Z');
+  assert.equal(store.listFreshness().length, 2);
+});

@@ -29,10 +29,10 @@ new_env() {
 
 # 1. Reads secrets, skips comments and blanks, maps dashes to underscores.
 new_env
-printf '# comment\n\nPIERRE-API-KEY\nGMF-SMOKE-TEST\n' > "$GMF_SECRETS_LIST"
+printf '# comment\n\nPLUGGY-CLIENT-ID\nGMF-SMOKE-TEST\n' > "$GMF_SECRETS_LIST"
 bash "$script"
 check "writes mapped variable names and values" \
-  $'PIERRE_API_KEY=\'value-of-PIERRE-API-KEY\'\nGMF_SMOKE_TEST=\'value-of-GMF-SMOKE-TEST\'' "$(cat "$GMF_ENV_OUT")"
+  $'PLUGGY_CLIENT_ID=\'value-of-PLUGGY-CLIENT-ID\'\nGMF_SMOKE_TEST=\'value-of-GMF-SMOKE-TEST\'' "$(cat "$GMF_ENV_OUT")"
 check "output file is readable only by the owner" "-rw-------" "$(ls -l "$GMF_ENV_OUT" | cut -c1-10)"
 
 # 2. A missing secret fails and keeps the previous file untouched.

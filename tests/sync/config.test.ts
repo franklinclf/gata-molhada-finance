@@ -23,9 +23,8 @@ test('parsePluggyItems rejects malformed and duplicate entries', () => {
 
 test('loadAdapterEnv enables only the configured sources', () => {
   assert.deepEqual(loadAdapterEnv({}), {});
-  assert.deepEqual(loadAdapterEnv({ PIERRE_API_KEY: ' sk-1 ' }), { pierre: { apiKey: 'sk-1' } });
+  assert.deepEqual(loadAdapterEnv({ PIERRE_API_KEY: ' sk-1 ' }), {}, 'the Pierre integration was removed, so its key is ignored');
   const both = loadAdapterEnv({
-    PIERRE_API_KEY: 'sk-1',
     PLUGGY_CLIENT_ID: 'cid',
     PLUGGY_CLIENT_SECRET: 'sec',
     PLUGGY_ITEMS: `Banco A:${UUID_A}`,

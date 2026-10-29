@@ -36,7 +36,7 @@ try {
   }
 
   if (adapters.length === 0) {
-    console.error('No source to sync. Set PIERRE_API_KEY and/or the PLUGGY_* variables, or check --source.');
+    console.error('No source to sync. Set the PLUGGY_* variables, or check --source.');
     process.exitCode = 1;
   }
 

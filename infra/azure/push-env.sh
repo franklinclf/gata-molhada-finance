@@ -17,7 +17,6 @@ env_file="${1:-.env}"
 [[ -f "$env_file" ]] || { echo "No such file: $env_file" >&2; exit 1; }
 
 VARIABLES=(
-  PIERRE_API_KEY
   PLUGGY_CLIENT_ID
   PLUGGY_CLIENT_SECRET
   PLUGGY_ITEMS

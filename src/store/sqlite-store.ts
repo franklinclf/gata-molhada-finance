@@ -197,7 +197,7 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     registerSource(source: SourceRegistration, now: string): void {
       db.prepare(
         `INSERT INTO sources (id, kind, active, capabilities, added_at) VALUES (?, ?, 1, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, capabilities = excluded.capabilities`,
+         ON CONFLICT (id) DO UPDATE SET kind = excluded.kind, capabilities = excluded.capabilities, active = 1`,
       ).run(source.id, source.kind, JSON.stringify(source.capabilities), now);
     },
 
@@ -275,8 +275,15 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       };
     },
 
+    retireSourcesExcept(activeIds: SourceId[]): SourceId[] {
+      const rows = db.prepare('SELECT id FROM sources WHERE active = 1').all() as Array<{ id: string }>;
+      const retired = rows.map((r) => r.id).filter((id) => !activeIds.includes(id));
+      for (const id of retired) db.prepare('UPDATE sources SET active = 0 WHERE id = ?').run(id);
+      return retired;
+    },
+
     listFreshness(): Freshness[] {
-      const rows = db.prepare('SELECT * FROM freshness ORDER BY source_id, institution').all() as unknown as FreshnessRow[];
+      const rows = db.prepare('SELECT f.* FROM freshness f JOIN sources s ON s.id = f.source_id WHERE s.active = 1 ORDER BY f.source_id, f.institution').all() as unknown as FreshnessRow[];
       return rows.map((r) => ({
         sourceId: r.source_id,
         institution: r.institution,

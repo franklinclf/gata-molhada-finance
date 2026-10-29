@@ -37,7 +37,7 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - Um relato de "lançada" de qualquer fonte vence o de "pendente". Pendente que só uma fonte vê e que tem mais de 7 dias fica fora dos totais (também quando existe uma gêmea lançada com o mesmo valor a até 5 dias). Pendente que as duas fontes veem vale, porque o banco diz o mesmo.
 - Dados anteriores a 2026-01-01 são apagados a cada reconciliação (`DEFAULT_DATA_START` em `src/reconcile/run.ts`).
 - Em "Fontes e conferência" aparecem só os pares que parecem a mesma transação em fontes diferentes (mesmo valor, até 5 dias de diferença). "É a mesma" junta os dois; "Não é" descarta a sugestão para sempre.
-- O botão "Atualizar agora" em Fontes e conferência pede ao Pierre que sincronize todos os bancos (`POST /api/refresh`). Roda em segundo plano, segue as mesmas regras do `npm run refresh` (intervalo mínimo de 15 minutos, bloqueio perto do limite mensal de leituras, um pedido por vez) e, ao terminar, lê os dados e reconcilia. Quando bloqueia, a tela explica o motivo. Só aparece se a chave do Pierre estiver configurada.
+- O botão "Atualizar agora" em Fontes e conferência pede ao Meu Pluggy que atualize cada conexão (`POST /api/refresh`, um `PATCH` por item). Se o Pluggy recusar o pedido para todas, a tela avisa e diz para atualizar no app Meu Pluggy; a próxima leitura pega o resultado. Roda em segundo plano, segue as mesmas regras do `npm run refresh` (intervalo mínimo de 15 minutos, bloqueio perto do limite mensal de leituras, um pedido por vez) e, ao terminar, lê os dados e reconcilia. Quando bloqueia, a tela explica o motivo. Só aparece se a chave do Pierre estiver configurada.
 - No painel de uma transação: "Juntar com outra transação" (lista as candidatas da outra fonte na mesma conta), "Separar o que juntei" e "Ignorar (tirar dos totais)". As escolhas ficam gravadas por registro da fonte e sobrevivem a cada nova reconciliação.
 
 ## Interação
@@ -78,6 +78,12 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - **Mexer em como entrar** (criar ou remover passkey, confiar ou esquecer aparelho) exige uma entrada feita nos últimos 15 minutos com senha e código ou passkey. Uma sessão restaurada por aparelho confiável, ou uma sessão cookie antiga, não basta. Assim, um cookie copiado não vira acesso permanente.
 - **Limites:** erros de passkey não travam o login por senha (uma assinatura não se adivinha); só há um limite de 30 por 15 minutos para frear inundação. Erros de senha continuam travando em 5 por 15 minutos.
 - **Endereço:** a passkey fica presa ao endereço `PUBLIC_ORIGIN` (no servidor é `https://` mais o nome da VM). Abrir o app por outro nome (IP, outro domínio) desliga as passkeys, e a senha continua funcionando. Se o domínio mudar um dia, é preciso criar as passkeys de novo.
+
+## Fonte única
+
+O Meu Pluggy é a única fonte lida. A integração com o Pierre foi removida (adaptador, chave `PIERRE_API_KEY` e segredo no Key Vault): a assinatura de R$ 40 por mês não acrescentava dados que o Meu Pluggy e a IA não deem. Os registros que o Pierre já tinha trazido continuam guardados como histórico (`sources.active = 0`, `retireSourcesExcept`): sem eles, cerca de 20 transações que só o Pierre viu (como pendências de cartão) sumiriam dos totais. Esse histórico não recebe dados novos e não aparece em Fontes. Os nomes de ids de transações, regras e escolhas suas não mudam. Para apagar o histórico de vez seria preciso decidir o que fazer com essas transações, e isso não foi feito.
+
+A conferência entre duas fontes continua no código (junção, pares para conferir, IA de pares), mas hoje só atua sobre o histórico. Um pendente com mais de 7 dias que só uma fonte vê continua saindo dos totais; faturas de cartão que o provam o devolvem (prova pela fatura).
 
 ## Leitura do Meu Pluggy
 

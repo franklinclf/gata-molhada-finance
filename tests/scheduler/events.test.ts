@@ -19,12 +19,12 @@ test('formats changes, reads and errors in one line each', () => {
 });
 
 test('each source is checked at its own interval, and sources without a check are left out', () => {
-  const pierre = new ScriptedAdapter('pierre');
+  const pluggy = new ScriptedAdapter('pluggy');
   const other = new ScriptedAdapter('other');
   const plain = new ScriptedAdapter('plain');
   Object.defineProperty(plain, 'fetchFreshness', { value: undefined });
-  const sources = observedSources([pierre, other, plain]);
-  assert.deepEqual(sources.map((s) => [s.adapter.id, s.intervalMs]), [['pierre', POLL_INTERVAL_MS.pierre], ['other', 300_000]]);
+  const sources = observedSources([pluggy, other, plain]);
+  assert.deepEqual(sources.map((s) => [s.adapter.id, s.intervalMs]), [['pluggy', POLL_INTERVAL_MS.pluggy], ['other', 300_000]]);
   assert.equal(POLL_INTERVAL_MS.pluggy, 120_000);
 });
 
