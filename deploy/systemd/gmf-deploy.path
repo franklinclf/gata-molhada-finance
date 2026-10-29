@@ -1,0 +1,10 @@
+[Unit]
+Description=Start a deploy when the app is told a new image was published
+
+[Path]
+# The app writes this file when GitHub's webhook reports a successful CI run on main.
+PathChanged=/var/lib/gmf/.deploy-requested
+Unit=gmf-deploy.service
+
+[Install]
+WantedBy=multi-user.target

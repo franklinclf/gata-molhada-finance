@@ -3,7 +3,7 @@ import { AuthService } from '../auth/service.ts';
 import { handle, type AppDeps } from './app.ts';
 import { serveStatic } from './static.ts';
 
-const MAX_BODY_BYTES = 16 * 1024;
+const MAX_BODY_BYTES = 256 * 1024;
 
 async function readBody(req: IncomingMessage): Promise<string | null> {
   const chunks: Buffer[] = [];

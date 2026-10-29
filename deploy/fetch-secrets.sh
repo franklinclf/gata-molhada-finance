@@ -20,14 +20,31 @@ token="$(curl -fsS -H 'Metadata: true' \
   'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net' \
   | jq -er .access_token)"
 
+body="$(mktemp)"
+trap 'rm -f "$tmp" "$body"' EXIT
+
 while IFS= read -r name || [[ -n "$name" ]]; do
   [[ -z "$name" || "$name" == \#* ]] && continue
+  # A trailing "?" marks a secret that may not exist yet: it is skipped when the vault says 404.
+  optional=false
+  if [[ "$name" == *\? ]]; then
+    optional=true
+    name="${name%\?}"
+  fi
   if [[ ! "$name" =~ ^[A-Za-z0-9-]+$ ]]; then
     echo "invalid secret name: $name" >&2
     exit 1
   fi
-  value="$(curl -fsS -H "Authorization: Bearer $token" \
-    "https://${GMF_KEYVAULT}.vault.azure.net/secrets/${name}?api-version=7.4" | jq -er .value)"
+  status="$(curl -sS -o "$body" -w '%{http_code}' -H "Authorization: Bearer $token" \
+    "https://${GMF_KEYVAULT}.vault.azure.net/secrets/${name}?api-version=7.4")" || { echo "could not reach the vault for $name" >&2; exit 1; }
+  if [[ "$status" == 404 && "$optional" == true ]]; then
+    continue
+  fi
+  if [[ "$status" != 200 ]]; then
+    echo "reading secret $name failed with HTTP $status" >&2
+    exit 1
+  fi
+  value="$(jq -er .value < "$body")"
   if [[ "$value" == *$'\n'* ]]; then
     echo "secret $name has a newline; only single-line values are supported" >&2
     exit 1
@@ -42,4 +59,5 @@ done < "$SECRETS_LIST"
 
 chmod 600 "$tmp"
 mv "$tmp" "$OUT"
+rm -f "$body"
 trap - EXIT

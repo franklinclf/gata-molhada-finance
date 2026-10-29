@@ -7,5 +7,7 @@ SRC=/opt/gmf/deploy/systemd
 chmod 0755 /opt/gmf/deploy/deploy.sh /opt/gmf/deploy/fetch-secrets.sh
 install -m 0644 "$SRC/gmf-deploy.service" /etc/systemd/system/gmf-deploy.service
 install -m 0644 "$SRC/gmf-deploy.timer" /etc/systemd/system/gmf-deploy.timer
+install -m 0644 "$SRC/gmf-deploy.path" /etc/systemd/system/gmf-deploy.path
 systemctl daemon-reload
 systemctl enable --now gmf-deploy.timer
+systemctl enable --now gmf-deploy.path

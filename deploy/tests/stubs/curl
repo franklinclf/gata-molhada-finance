@@ -1,24 +1,37 @@
 #!/usr/bin/env bash
 # Test double for curl: answers the metadata token call and Key Vault secret reads.
-url=""
-for arg in "$@"; do
-  case "$arg" in http*) url="$arg" ;; esac
+# Understands -o FILE and -w '%{http_code}' like the real one.
+url="" out="" write=""
+while (( $# > 0 )); do
+  case "$1" in
+    -o) out="$2"; shift ;;
+    -w) write="$2"; shift ;;
+    http*) url="$1" ;;
+  esac
+  shift
 done
 
+status=200
 case "$url" in
   *metadata/identity/oauth2/token*)
-    echo '{"access_token":"stub-token"}' ;;
-  *.vault.azure.net/secrets/MISSING-SECRET*)
-    exit 22 ;;
+    body='{"access_token":"stub-token"}' ;;
+  *.vault.azure.net/secrets/MISSING-SECRET*|*.vault.azure.net/secrets/OPTIONAL-MISSING*)
+    status=404; body='{"error":{"code":"SecretNotFound"}}' ;;
+  *.vault.azure.net/secrets/BROKEN-SECRET*)
+    status=500; body='{"error":{"code":"InternalServerError"}}' ;;
   *.vault.azure.net/secrets/QUOTE-SECRET*)
-    printf '{"value":"it'"'"'s"}\n' ;;
+    body='{"value":"it'"'"'s"}' ;;
   *.vault.azure.net/secrets/MULTILINE-SECRET*)
-    printf '{"value":"line1\\nline2"}\n' ;;
+    body='{"value":"line1\nline2"}' ;;
   *.vault.azure.net/secrets/*)
     name="${url##*/secrets/}"
     name="${name%%\?*}"
-    printf '{"value":"value-of-%s"}\n' "$name" ;;
+    body="{\"value\":\"value-of-$name\"}" ;;
   *)
     echo "curl stub: unhandled url: $url" >&2
     exit 99 ;;
 esac
+
+if [[ -n "$out" ]]; then printf '%s\n' "$body" > "$out"; else printf '%s\n' "$body"; fi
+[[ "$write" == *http_code* ]] && printf '%s' "$status"
+exit 0
