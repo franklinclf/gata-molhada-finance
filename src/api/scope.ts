@@ -4,7 +4,9 @@ import { mapSourceCategory } from '../ai/source-map.ts';
 import { localDay } from '../core/time.ts';
 import type { Parties } from '../core/parties.ts';
 import { categoryForMcc } from './mcc.ts';
-import { counterpartyOf, ownerNames, roleOf, slipBillPayments, type Role } from './roles.ts';
+import { categoryFromRules, sortRules, type RuleSubject } from './rules-engine.ts';
+import { merchantOf } from '../core/merchant.ts';
+import { counterpartyOf, evidenceRole, ownerNames, roleOf, slipBillPayments, type Role } from './roles.ts';
 import type { Store } from '../store/store.ts';
 
 export interface ViewOptions {
@@ -46,6 +48,25 @@ const ROLE_CATEGORY: Record<Role, string> = { card_payment: 'Pagamento de fatura
 
 const ROLE_CATEGORY_NAMES = new Set(Object.values(ROLE_CATEGORY));
 
+/** What a rule sees of a transaction. */
+export function ruleSubjectOf(t: { description: string; counterparty: { name: string | null } | null; sourceLabels: string[]; accountId: string; operation: string | null; mcc: string | null; status: 'pending' | 'posted'; amount: number; occurredAt: string; role: string | null }, institution: string): RuleSubject {
+  return {
+    description: t.description,
+    merchant: merchantOf(t),
+    counterparty: t.counterparty?.name ?? '',
+    sourceLabel: t.sourceLabels.join(' | '),
+    institution,
+    account: t.accountId,
+    operation: t.operation ?? '',
+    mcc: t.mcc ?? '',
+    status: t.status,
+    direction: t.amount < 0 ? 'out' : 'in',
+    amount: t.amount,
+    date: localDay(t.occurredAt),
+    role: t.role ?? '',
+  };
+}
+
 export function ruleKey(description: string): string {
   // "Store 03/12" and "Store 04/12" are the same shop, so the installment number is not part of the key.
   return normalizeName(description.replace(/\s*\d{1,2}\s*\/\s*\d{1,2}\s*$/, ''));
@@ -79,6 +100,9 @@ export function effectiveTransactions(
   const installmentOverrides = store.listInstallmentOverrides();
   const all = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: options.includeExcluded });
   const { labels: labelsOf, parties: partiesOf } = sourceFacts(store);
+  const engineRules = sortRules(store.listRules());
+  const regexes = new Map<string, RegExp | null>();
+  const institutionOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a.institution]));
   const people = peopleIn(store.listCanonicalTransactions({ includeExcluded: true }), partiesOf);
   const owners = ownerNames(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => ({ sourceCategory: t.category, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })));
   // A card bill paid by boleto or Pix QR code looks like any transfer; its amount gives it away.
@@ -95,11 +119,13 @@ export function effectiveTransactions(
       const counterparty = counterpartyFor(t.amount, parties, people);
       let category = t.category;
       let origin: CategoryOrigin = 'source';
+      let engineHit: ReturnType<typeof categoryFromRules> = null;
       const override = overrides.get(t.id);
       const rule = rules.get(ruleKey(t.description));
       const suggested = ai.get(ruleKey(t.description));
       if (override !== undefined) [category, origin] = [override, 'override'];
       else if (rule !== undefined) [category, origin] = [rule, 'rule'];
+      else if (engineRules.length > 0 && (engineHit = categoryFromRules(ruleSubjectOf({ ...t, counterparty, sourceLabels: labels, operation: parties?.operation ?? null, mcc: parties?.mcc ?? null, role: evidenceRole(labels, t.description) }, institutionOf.get(t.accountId) ?? ''), engineRules, regexes))) [category, origin] = [engineHit.category, 'rule'];
       else if (labels.some((l) => mapSourceCategory(l) !== null)) category = labels.map((l) => mapSourceCategory(l)).find((c) => c !== null) ?? category;
       // Money sent by Pix or TED to a person (a CPF) is a transfer, whatever the text says. A company could be a shop, so that is left to the label, the merchant code and the AI.
       else if (/^(pix|ted)$/i.test(parties?.operation ?? '') && counterparty?.kind === 'person' && !counterparty.isOwner) category = 'Transferências';
@@ -107,9 +133,11 @@ export function effectiveTransactions(
       else if (categoryForMcc(partiesOf.get(t.id)?.mcc ?? null) !== null) category = categoryForMcc(partiesOf.get(t.id)?.mcc ?? null)!;
       else if (suggested?.status === 'applied' && !ROLE_CATEGORY_NAMES.has(suggested.category)) [category, origin] = [suggested.category, 'ai'];
       const installment = installmentOverrides.get(t.id) ?? t.installment;
-      const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: origin, owners, ownerDocument: counterparty?.isOwner === true && /^(pix|ted|transferencia)/i.test(parties?.operation ?? '') }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
+      // A condition rule matches on text and amounts, so on its own it must not turn a card payment into spending. Only a rule that names a role category sets the role.
+      const roleOrigin: CategoryOrigin = engineHit && !ROLE_CATEGORY_NAMES.has(category ?? '') ? 'ai' : origin;
+      const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: roleOrigin, owners, ownerDocument: counterparty?.isOwner === true && /^(pix|ted|transferencia)/i.test(parties?.operation ?? '') }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
       // What the source or the AI called it must agree with what it is for the arithmetic.
-      if (role && (origin === 'source' || origin === 'ai')) category = ROLE_CATEGORY[role];
+      if (role && (origin === 'source' || origin === 'ai' || engineHit)) category = ROLE_CATEGORY[role];
       return { ...t, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null };
     });
 }

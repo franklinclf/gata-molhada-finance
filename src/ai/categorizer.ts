@@ -101,7 +101,7 @@ export async function categorizePending(store: Store, options: CategorizerOption
   for (const [key, list] of groups) {
     const latest = list[0]!;
     // A label that says one thing is translated by a table; only the generic or missing ones need the model.
-    if (rules.has(key) || list.some((t) => t.categoryOrigin === 'override') || latest.sourceLabels.some((l) => mapSourceCategory(l) !== null) || latest.role !== null) continue;
+    if (rules.has(key) || list.some((t) => t.categoryOrigin === 'override' || t.categoryOrigin === 'rule') || latest.sourceLabels.some((l) => mapSourceCategory(l) !== null) || latest.role !== null) continue;
     // Pix to a person is a transfer, known without the model. The same text for payments to different people or companies
     // ("Pix key transfer") says nothing about any of them: one answer would be copied to all. An old answer for these is dropped.
     const toPerson = /^(pix|ted)$/i.test(latest.operation ?? '') && latest.counterparty?.kind === 'person';

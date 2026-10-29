@@ -40,6 +40,7 @@ const ROUTES: Array<[string, string, number]> = [
   ['fluxo', 'cashflow', 1500],
   ['fontes', 'status', 1300],
   ['ajustes-contas', 'settings', 1100],
+  ['ajustes-regras', 'settings?tab=rules', 1100],
   ['ajustes-ia', 'settings?tab=ai', 1500],
   ['ajustes-seguranca', 'settings?tab=security', 1100],
   ['detalhe', 'transactions?tx=detail', 1300],

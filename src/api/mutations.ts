@@ -90,6 +90,8 @@ export function setCategoryParent(store: Store, category: string, parent: unknow
 export function removeCategory(store: Store, name: string): MutationResult {
   if (!store.listCustomCategories().includes(name)) return { ok: false, status: 404, error: 'only categories you created can be deleted' };
   store.deleteCustomCategory(name);
+  // A rule that points to a removed category would give transactions a category that no longer exists. It is switched off, not deleted.
+  for (const rule of store.listRules()) if (rule.actions.category === name && rule.active) store.saveRule({ ...rule, active: false }, new Date().toISOString());
   return { ok: true };
 }
 

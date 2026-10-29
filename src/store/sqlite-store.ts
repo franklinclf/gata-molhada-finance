@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
+import type { Rule } from '../api/rules-engine.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -709,6 +710,33 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setCategoryParent(category: string, parent: string | null, now: string): void {
       if (parent === null) db.prepare('DELETE FROM category_parents WHERE category = ?').run(category);
       else db.prepare('INSERT INTO category_parents (category, parent, updated_at) VALUES (?, ?, ?) ON CONFLICT(category) DO UPDATE SET parent = excluded.parent, updated_at = excluded.updated_at').run(category, parent, now);
+    },
+
+    listRules(): Rule[] {
+      const rows = db.prepare('SELECT * FROM rules ORDER BY priority, id').all() as Array<{ id: number; name: string; priority: number; active: number; conditions: string; actions: string }>;
+      return rows.map((r) => ({ id: r.id, name: r.name, priority: r.priority, active: r.active === 1, conditions: JSON.parse(r.conditions) as Rule['conditions'], actions: JSON.parse(r.actions) as Rule['actions'] }));
+    },
+
+    saveRule(rule: Omit<Rule, 'id'> & { id?: number }, now: string): Rule {
+      const conditions = JSON.stringify(rule.conditions);
+      const actions = JSON.stringify(rule.actions);
+      if (rule.id === undefined) {
+        const info = db.prepare('INSERT INTO rules (name, priority, active, conditions, actions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(rule.name, rule.priority, rule.active ? 1 : 0, conditions, actions, now, now);
+        return { ...rule, id: Number(info.lastInsertRowid) };
+      }
+      db.prepare('UPDATE rules SET name = ?, priority = ?, active = ?, conditions = ?, actions = ?, updated_at = ? WHERE id = ?').run(rule.name, rule.priority, rule.active ? 1 : 0, conditions, actions, now, rule.id);
+      return { ...rule, id: rule.id };
+    },
+
+    deleteRule(id: number): void {
+      db.prepare('DELETE FROM rules WHERE id = ?').run(id);
+    },
+
+    reorderRules(ids: number[], now: string): void {
+      inTransaction(() => {
+        const rest = (db.prepare('SELECT id FROM rules ORDER BY priority, id').all() as Array<{ id: number }>).map((r) => r.id).filter((id) => !ids.includes(id));
+        [...ids, ...rest].forEach((id, i) => db.prepare('UPDATE rules SET priority = ?, updated_at = ? WHERE id = ?').run((i + 1) * 10, now, id));
+      });
     },
 
     listCustomCategories(): string[] {

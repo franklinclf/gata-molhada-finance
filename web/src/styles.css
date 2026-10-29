@@ -414,3 +414,11 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .panel-head h2 { margin: 0; }
 .sub-rows { margin: 4px 0 8px 24px; padding-left: 10px; border-left: 2px solid var(--track); }
+.rule-leaf { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.rule-leaf .select, .rule-leaf input { min-width: 0; flex: 1 1 140px; }
+.rule-group { border-left: 2px solid var(--track); padding-left: 10px; display: flex; flex-direction: column; gap: 8px; }
+.rule-match { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; color: var(--muted); }
+.rule-preview { display: flex; flex-direction: column; gap: 8px; }
+.rule-editor { gap: 10px; }
+.file-pick { cursor: pointer; }
+.file-pick { display: inline-flex; align-items: center; }

@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { apiRoute } from '../../src/api/routes.ts';
 import { monthRange } from '../../src/api/views.ts';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
+import { createRule } from '../../src/api/rules.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 import { addDays, addMonthsToDay } from '../../src/api/cycles.ts';
 import { localDay } from '../../src/core/time.ts';
@@ -41,11 +42,11 @@ export function buildFixtures(now = new Date()): Fixtures {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   const at = now.toISOString();
   const today = localDay(at);
-  store.registerSource({ id: 'pierre', kind: 'test', capabilities: {} }, at);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, at);
   store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, at);
 
   const base = (over: Partial<CanonicalAccount>): CanonicalAccount => ({
-    id: 'x', institution: 'Banco Alfa', kind: 'checking', name: 'Conta', last4: null, balance: 0, balanceSourceId: 'pierre', balanceAsOf: new Date(now.getTime() - 40 * 60_000).toISOString(),
+    id: 'x', institution: 'Banco Alfa', kind: 'checking', name: 'Conta', last4: null, balance: 0, balanceSourceId: 'pluggy', balanceAsOf: new Date(now.getTime() - 40 * 60_000).toISOString(),
     creditLimit: null, availableLimit: null, minimumPayment: null, dueDate: null, limitGroupId: null, refs: [], ...over,
   });
   const accounts: CanonicalAccount[] = [
@@ -53,17 +54,17 @@ export function buildFixtures(now = new Date()): Fixtures {
     base({ id: 'sav1', institution: 'Banco Beta', kind: 'savings', name: 'Poupança', balance: 250000, balanceAsOf: new Date(now.getTime() - 26 * 3_600_000).toISOString() }),
     base({ id: 'chk2', institution: 'Banco Beta', name: 'Conta corrente', balance: 189000 }),
     base({ id: 'wallet', institution: 'Carteira Pay', name: 'Conta digital', balance: 33210 }),
-    base({ id: 'cardA', institution: 'Banco Alfa', kind: 'credit_card', name: 'Gold', last4: '1111', balance: 336581, creditLimit: 1840000, availableLimit: 1503419, limitGroupId: 'lgA', refs: [{ sourceId: 'pierre', externalId: 'ext-cardA', role: 'member' }] }),
-    base({ id: 'cardA2', institution: 'Banco Alfa', kind: 'credit_card', name: 'Platinum', last4: '2222', balance: 336581, creditLimit: 1840000, availableLimit: 1503419, limitGroupId: 'lgA', refs: [{ sourceId: 'pierre', externalId: 'ext-cardA2', role: 'member' }] }),
-    base({ id: 'cardB', institution: 'Banco Beta', kind: 'credit_card', name: 'Click', last4: '0576', balance: 28090, creditLimit: 518500, availableLimit: 490410, refs: [{ sourceId: 'pierre', externalId: 'ext-cardB', role: 'member' }] }),
-    base({ id: 'cardC', institution: 'Carteira Pay', kind: 'credit_card', name: 'Roxo', last4: '4527', balance: 120535, creditLimit: 840000, availableLimit: 719465, refs: [{ sourceId: 'pierre', externalId: 'ext-cardC', role: 'member' }] }),
+    base({ id: 'cardA', institution: 'Banco Alfa', kind: 'credit_card', name: 'Gold', last4: '1111', balance: 336581, creditLimit: 1840000, availableLimit: 1503419, limitGroupId: 'lgA', refs: [{ sourceId: 'pluggy', externalId: 'ext-cardA', role: 'member' }] }),
+    base({ id: 'cardA2', institution: 'Banco Alfa', kind: 'credit_card', name: 'Platinum', last4: '2222', balance: 336581, creditLimit: 1840000, availableLimit: 1503419, limitGroupId: 'lgA', refs: [{ sourceId: 'pluggy', externalId: 'ext-cardA2', role: 'member' }] }),
+    base({ id: 'cardB', institution: 'Banco Beta', kind: 'credit_card', name: 'Click', last4: '0576', balance: 28090, creditLimit: 518500, availableLimit: 490410, refs: [{ sourceId: 'pluggy', externalId: 'ext-cardB', role: 'member' }] }),
+    base({ id: 'cardC', institution: 'Carteira Pay', kind: 'credit_card', name: 'Roxo', last4: '4527', balance: 120535, creditLimit: 840000, availableLimit: 719465, refs: [{ sourceId: 'pluggy', externalId: 'ext-cardC', role: 'member' }] }),
   ];
   store.replaceCanonicalAccounts(accounts, [{ id: 'lgA', institution: 'Banco Alfa', creditLimit: 1840000, memberIds: ['cardA', 'cardA2'] }], at);
 
   const list: CanonicalTransaction[] = [];
   let n = 0;
   const add = (accountId: string, day: string, amount: number, description: string, category: string | null, extra: Partial<CanonicalTransaction> = {}) => {
-    list.push({ id: `t${++n}`, accountId, occurredAt: `${day}T15:00:00Z`, amount, description, descriptionRaw: description, status: 'posted', installment: null, category, state: 'confirmed', sourceIds: ['pierre', 'pluggy'], excluded: false, ...extra });
+    list.push({ id: `t${++n}`, accountId, occurredAt: `${day}T15:00:00Z`, amount, description, descriptionRaw: description, status: 'posted', installment: null, category, state: 'confirmed', sourceIds: ['pluggy', 'pluggy'], excluded: false, ...extra });
   };
 
   const cards = ['cardA', 'cardA2', 'cardB', 'cardC'];
@@ -92,11 +93,11 @@ export function buildFixtures(now = new Date()): Fixtures {
   for (let k = 0; k < 4; k++) add('cardA', addDays(today, -35 * k - 3), -28305, 'EXTRAFARMA C*pagu', 'Pharmacy', { installment: { number: 3 - k >= 1 ? 3 - k : 1, total: 3 } });
   for (let k = 0; k < 3; k++) add('cardC', addDays(today, -31 * k - 5), -16982, 'Shopping do Nu', 'Shopping', { installment: { number: 9 - k, total: 10 } });
   add('cardC', addDays(today, -3), -99900, 'Jim.Com* Instituto Au 5/6', 'Healthcare', { installment: { number: 5, total: 6 } });
-  add('chk1', addDays(today, -2), -9000, 'PIX ENVIADO', 'Transfers', { sourceIds: ['pierre'], state: 'single_source' });
+  add('chk1', addDays(today, -2), -9000, 'PIX ENVIADO', 'Transfers', { sourceIds: ['pluggy'], state: 'single_source' });
   add('chk1', addDays(today, -1), -9000, 'Transferência enviada pelo Pix', 'Transfers', { sourceIds: ['pluggy'], state: 'single_source' });
-  add('cardB', addDays(today, -14), -7200, 'LOJA SEM ROTULO', null, { status: 'pending', sourceIds: ['pierre'], state: 'stale_pending', excluded: true });
-  store.registerSource({ id: 'pierre', kind: 'test', capabilities: {} }, at);
-  store.replaceCanonicalTransactions(list, list.map((t) => ({ sourceId: 'pierre', externalId: `e-${t.id}`, transactionId: t.id, matchPass: 0 })), at);
+  add('cardB', addDays(today, -14), -7200, 'LOJA SEM ROTULO', null, { status: 'pending', sourceIds: ['pluggy'], state: 'stale_pending', excluded: true });
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, at);
+  store.replaceCanonicalTransactions(list, list.map((t) => ({ sourceId: 'pluggy', externalId: `e-${t.id}`, transactionId: t.id, matchPass: 0 })), at);
 
   // Bills: six per card, closing on the 8th and due on the 15th, each one paid.
   const bills: Array<{ externalId: string; accountExternalId: string; dueDate: string; closingDate: string; total: number; minimumPayment: null }> = [];
@@ -106,17 +107,18 @@ export function buildFixtures(now = new Date()): Fixtures {
       bills.push({ externalId: `bill-${i}-${m}`, accountExternalId: `ext-${card}`, dueDate: due, closingDate: addDays(due, -7), total: Math.round(60000 + rand() * 140000), minimumPayment: null });
     }
   }
-  store.upsertSourceBills('pierre', bills, at);
+  store.upsertSourceBills('pluggy', bills, at);
 
   for (const [institution, minutes] of [['Banco Alfa', 40], ['Banco Beta', 1500], ['Carteira Pay', 95]] as const) {
-    store.upsertFreshness({ sourceId: 'pierre', institution, lastUpdatedAt: new Date(now.getTime() - minutes * 60_000).toISOString(), observedAt: at });
     store.upsertFreshness({ sourceId: 'pluggy', institution, lastUpdatedAt: new Date(now.getTime() - (minutes + 25) * 60_000).toISOString(), observedAt: at });
   }
   store.syncFindings(
-    [{ id: 'fd1', kind: 'possible_match', severity: 'info', accountId: 'chk1', transactionId: list[list.length - 3]!.id, summary: 'Banco Alfa / Conta corrente: R$ 90,00 "PIX ENVIADO" in pierre on 2026-10-26 may be the same as "Transferência enviada pelo Pix" in pluggy on 2026-10-27', details: { otherTransactionId: list[list.length - 2]!.id, sources: ['pierre', 'pluggy'] } }],
+    [{ id: 'fd1', kind: 'possible_match', severity: 'info', accountId: 'chk1', transactionId: list[list.length - 3]!.id, summary: 'Banco Alfa / Conta corrente: R$ 90,00 "PIX ENVIADO" in pierre on 2026-10-26 may be the same as "Transferência enviada pelo Pix" in pluggy on 2026-10-27', details: { otherTransactionId: list[list.length - 2]!.id, sources: ['pluggy', 'pluggy'] } }],
     at,
   );
   store.addCustomCategory('Viagem 2027', at);
+  createRule(store, { name: 'Uber', conditions: { match: 'all', items: [{ field: 'merchant', operator: 'equals', value: 'Uber' }] }, actions: { category: 'Transporte por aplicativo' } }, now);
+  createRule(store, { name: 'Compras grandes no cartão', conditions: { match: 'all', items: [{ field: 'direction', operator: 'equals', value: 'out' }, { match: 'any', leaves: [{ field: 'description', operator: 'contains', value: 'amazon' }, { field: 'description', operator: 'contains', value: 'shopee' }] }, { field: 'amount', operator: 'lt', value: -10000 }] }, actions: { category: 'Compras online' } }, now);
   store.setCategoryRule('padaria bom pao', 'Supermercado', at);
   for (const [key, category, status, confidence] of [
     ['loja sem rotulo', 'Casa e utilidades', 'suggested', 'medium'],
@@ -142,6 +144,7 @@ export function buildFixtures(now = new Date()): Fixtures {
     '/api/spending': call('/api/spending', `from=${range.from}&to=${range.to}`),
     '/api/transactions': call('/api/transactions', 'limit=50'),
     '/api/freshness': call('/api/freshness'),
+    '/api/rules': call('/api/rules'),
     '/api/refresh': { available: true, running: false, result: null, timedOut: [] },
     '/api/findings': call('/api/findings'),
     '/api/categories': call('/api/categories'),

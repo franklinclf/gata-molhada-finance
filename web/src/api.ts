@@ -6,9 +6,11 @@ import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
 import type { InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
+import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts';
+import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -137,6 +139,17 @@ export const api = {
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
   setHidden: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),
+  rules: () => request<{ items: RuleRow[] }>('/api/rules'),
+  saveRule: (rule: { id?: number; name: string; active: boolean; conditions: RuleConditions; actions: { category: string } }) =>
+    request<Rule>(rule.id === undefined ? '/api/rules' : `/api/rules/${rule.id}`, { method: rule.id === undefined ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rule) }),
+  setRuleActive: (id: number, active: boolean) => request<Rule>(`/api/rules/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active }) }),
+  deleteRuleById: (id: number) => request<Record<string, never>>(`/api/rules/${id}`, { method: 'DELETE' }),
+  reorderRules: (ids: number[]) => request<Record<string, never>>('/api/rules/reorder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) }),
+  previewRule: (conditions: RuleConditions, category: string) =>
+    request<RulePreview>('/api/rules/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ conditions, actions: { category } }) }),
+  exportRules: () => request<unknown>('/api/rules/export'),
+  importRules: (file: unknown, overwrite: boolean) =>
+    request<ImportReport>('/api/rules/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...(file as object), overwrite }) }),
   categories: () => request<CategoriesResponse>('/api/categories'),
   addCategory: (name: string) => request<{ ok: true }>('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
   setCategoryParent: (name: string, parent: string | null) =>

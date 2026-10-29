@@ -103,6 +103,20 @@ O que isso muda, sem IA:
 - A IA não escolhe "Transferência entre minhas contas", "Pagamento de fatura" nem "Investimentos": isso é decidido por fatos. Uma resposta antiga da IA com uma dessas categorias é ignorada.
 - A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
 
+## Regras de categorização
+
+Ajustes > Regras define a categoria por condições (`src/api/rules-engine.ts`, tabela `rules`, migração 018). Uma regra tem condições e uma categoria. As condições combinam "todas" ou "qualquer", e podem ter grupos de um nível ("A e (B ou C)").
+
+- **Campos:** descrição, estabelecimento (nome limpo), pessoa ou empresa do Pix, categoria da fonte, instituição, operação, MCC, valor (em centavos, com sinal: saída é negativa), data, direção, status e papel.
+- **Operadores de texto:** contém, não contém, igual, diferente, começa com, termina com e expressão regular. Texto compara sem acento e sem diferença de maiúsculas, nos dois lados. A expressão regular tem até 120 caracteres, precisa compilar, não pode casar texto vazio (`a*` casaria tudo) e não pode repetir um grupo repetido.
+- **Valor em branco** nunca casa e não é aceito ao salvar. Zero é um valor de verdade.
+- **Prioridade:** o número menor vale primeiro e a primeira regra ativa que casa dá a categoria. Dá para reordenar com Subir e Descer, ligar e desligar.
+- **Precedência:** a categoria escolhida na transação e a regra "aplicar a todas com a mesma descrição" valem mais; depois vêm estas regras, a tabela das fontes, o MCC e a IA. Descrições cobertas por uma regra não vão à IA.
+- **Papéis não mudam por texto:** uma regra de condições não transforma pagamento de fatura ou transferência entre contas suas em gasto. Só uma regra cuja categoria seja uma dessas (Pagamento de fatura, Transferência entre minhas contas, Investimentos) muda o papel.
+- **Prévia:** "Ver o que mudaria" usa o mesmo código da regra salva e mostra quantas transações casam, quantas mudariam e as 15 mais recentes.
+- **Exportar e importar:** arquivo JSON com a categoria pelo nome. Importar sobre regras existentes pede confirmação e substitui tudo; regras inválidas ou repetidas são ignoradas e listadas; se nada do arquivo serve, as regras atuais ficam.
+- **Categoria apagada:** a regra que apontava para ela é desligada, não apagada.
+
 ## Grupos de categorias
 
 Cada categoria pode ficar dentro de um grupo (Aluguel dentro de Casa, por exemplo). As categorias padrão já vêm agrupadas (`src/api/category-groups.ts`: Alimentação, Transporte, Saúde e bem-estar, Casa, Compras, Lazer, Finanças); as que não estão na lista ficam sozinhas. Em Ajustes > Categorias, cada linha tem um seletor de grupo, com a opção de criar um grupo novo, e sua escolha vale mais que o padrão (migração 015, tabela `category_parents`). Grupos têm um nível só: um grupo não entra em outro grupo. A aba Grupos de Gastos é a padrão; ao abrir um grupo aparecem as categorias dele, e cada uma abre as transações. A IA continua usando a lista plana de categorias, então agrupar não gera nova chamada nem nova consulta ao modelo.
