@@ -13,7 +13,7 @@ Para testar o build que vai para produção: `npm run build:web` e `npm start`, 
 
 ## Widgets
 
-Saldo em contas, cartões e limite, fluxo de caixa, gastos, parcelas, orçamento, patrimônio, metas, transações recentes, atualização das fontes e divergências abertas. Cada widget mostra a idade do dado mais antigo que usa, e passa a avisar quando passa de 6 horas.
+Saldo em contas, cartões e limite, fluxo de caixa, gastos, parcelas, orçamento, patrimônio, metas, resumo do mês, próximos 14 dias, calendário, maiores altas, itens para revisar, transações recentes, atualização das fontes e divergências abertas. Quem já tem um painel salvo não ganha os novos sozinho: eles aparecem em "Personalizar painel > Adicionar widget". Cada widget mostra a idade do dado mais antigo que usa, e passa a avisar quando passa de 6 horas.
 
 A ordem e a visibilidade dos widgets ficam no banco (`/api/layout`), então valem em todos os aparelhos. A ocultação de valores fica em cada aparelho (localStorage) e começa ligada.
 
@@ -24,6 +24,7 @@ A ordem e a visibilidade dos widgets ficam no banco (`/api/layout`), então vale
 - **Detalhe de transação:** painel lateral com o que cada fonte reporta, parcelas da mesma compra, histórico do estabelecimento, fatura em que cai e divergências. Permite recategorizar com uma categoria existente ou nova e, opcionalmente, criar uma regra para todas as transações com a mesma descrição.
 - **Gastos:** categorias ou estabelecimentos; cada linha abre as transações que a compõem.
 - **Cartões:** o ciclo em aberto é o padrão. Dá para escolher faturas fechadas por mês de vencimento. Mostra situação (paga, a pagar, vencida), o que foi lançado, o que foi pago e o histórico de faturas, além das abas Parcelas e Limites.
+- **Calendário:** toque num dia para ver as transações dele (a lista completa, com valores, abrindo o painel de cada uma), o que se espera e o saldo projetado; toque em outro dia para selecionar o período entre os dois. "Abrir em Transações" leva a mesma seleção para o explorador.
 - **Contas, Fluxo e Fontes:** saldo por instituição, fluxo de caixa com lista de entradas e saídas, e a atualização das fontes com as divergências.
 - **Orçamento, Patrimônio, Metas, Calendário e Analista:** ver as seções com o mesmo nome abaixo.
 - **Ajustes:** ocultar contas e cartões (saem de todos os totais), categorias e seus grupos, regras por condições, IA, dados (versão, backup) e segurança.

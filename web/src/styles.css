@@ -489,3 +489,10 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
   .select-option { padding: 12px 12px; }
 }
 @media (max-width: 760px) { .rows li.cat-row { flex-wrap: wrap; } .rows li.cat-row > .grow { flex-basis: 100%; } }
+.mini-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.mini-head { text-align: center; font-size: 10px; color: var(--muted); }
+.mini-day { position: relative; aspect-ratio: 1; border: 0; border-radius: 8px; background: var(--card-2); color: var(--text); font-size: 11px; padding: 0; cursor: pointer; }
+.mini-day.past { opacity: 0.7; }
+.mini-day.today { outline: 1.5px solid var(--accent); }
+.mini-day .dot { position: absolute; left: 50%; bottom: 3px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--accent); }
+.mini-day .dot.soft { opacity: 0.45; }
