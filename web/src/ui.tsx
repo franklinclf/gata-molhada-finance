@@ -1,6 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
-import { brl, dayMonth, localDay } from './format.ts';
+import { brl, dayMonth, foreignMoney, localDay } from './format.ts';
 import { hrefFor } from './router.ts';
 
 export function Loading({ error }: { error?: string | null }) {
@@ -107,7 +107,7 @@ export const STATE_LABEL: Record<string, string> = {
   ignored: 'Ignorada por você (fora dos totais)',
 };
 
-export function TxRow({ t, hidden, onOpen }: { t: { id: string; sourceIds?: string[]; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void }) {
+export function TxRow({ t, hidden, onOpen }: { t: { id: string; sourceIds?: string[]; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void }) {
   return (
     <li class="tx" data-no-nav onClick={() => onOpen(t.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onOpen(t.id)}>
       <div class="grow">
@@ -119,7 +119,9 @@ export function TxRow({ t, hidden, onOpen }: { t: { id: string; sourceIds?: stri
           {t.state === 'ignored' ? ' · ignorada' : t.state === 'stale_pending' ? ' · fora dos totais' : ''}
         </div>
       </div>
-      {t.state === 'single_source' && t.sourceIds && t.sourceIds.length === 1 && <span class="badge muted" data-tip={`Só o ${t.sourceIds[0]} tem esta transação`}>só {t.sourceIds[0]}</span>}
+      {t.foreign && <span class="badge info" data-tip={hidden ? 'Compra em outra moeda' : `Compra em ${foreignMoney(t.foreign.amount, t.foreign.currency)}, cobrada em reais pelo cartão`}>{t.foreign.currency}</span>}
+      {/* With one live source, "only one source has it" says nothing, so only a retired source's leftovers are marked. */}
+      {t.state === 'single_source' && t.sourceIds && t.sourceIds.length === 1 && t.sourceIds[0] !== 'pluggy' && <span class="badge muted" data-tip={`Só o ${t.sourceIds[0]} tem esta transação`}>só {t.sourceIds[0]}</span>}
       <strong class={t.amount >= 0 ? 'good-text' : ''}>{brl(t.amount, hidden)}</strong>
     </li>
   );

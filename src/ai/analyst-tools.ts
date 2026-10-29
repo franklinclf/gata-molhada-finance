@@ -116,7 +116,7 @@ export const TOOLS: Tool[] = [
         de: r.from, ate: r.to,
         quantidadeTotal: result.total,
         somaEntradas: reais(result.sums.income), somaSaidas: reais(result.sums.expense),
-        transacoes: result.items.map((t) => ({ data: localDay(t.occurredAt), descricao: clip(t.description), valor: reais(t.amount), categoria: t.category, conta: `${t.account.institution}${t.account.last4 ? ` ${t.account.last4}` : ''}`, status: t.status, parcela: t.installment ? `${t.installment.number}/${t.installment.total}` : null })),
+        transacoes: result.items.map((t) => ({ data: localDay(t.occurredAt), descricao: clip(t.description), valor: reais(t.amount), categoria: t.category, conta: `${t.account.institution}${t.account.last4 ? ` ${t.account.last4}` : ''}`, status: t.status, parcela: t.installment ? `${t.installment.number}/${t.installment.total}` : null, moedaOriginal: t.foreign ? `${t.foreign.currency} ${(t.foreign.amount / 100).toFixed(2)}` : undefined })),
         observacao: result.total > result.items.length ? `mostrando as ${result.items.length} de maior valor; as somas valem para todas as ${result.total}` : undefined,
       };
     },
