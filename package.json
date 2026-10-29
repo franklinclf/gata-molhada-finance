@@ -23,6 +23,7 @@
     "eval:analyst": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning eval/ai/run-analyst.ts",
     "categorize": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning src/ai/cli.ts",
     "eval:pairs": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning eval/ai/run-pairs.ts",
+    "restore:backup": "node --disable-warning=ExperimentalWarning src/backup/restore-cli.ts",
     "shots": "node --disable-warning=ExperimentalWarning scripts/shots/run.ts"
   },
   "devDependencies": {

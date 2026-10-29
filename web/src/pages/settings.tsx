@@ -444,6 +444,57 @@ function AiTab({ hidden }: { hidden: boolean }) {
   );
 }
 
+function DataTab() {
+  const [passphrase, setPassphrase] = useState('');
+  const [again, setAgain] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const valid = passphrase.length >= 12 && passphrase === again;
+  const download = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const blob = await api.backup(passphrase);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gmf-backup-${new Date().toISOString().slice(0, 10)}.gmfbak`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setPassphrase('');
+      setAgain('');
+      setMessage('Backup baixado. Guarde a frase-senha: sem ela o arquivo não abre.');
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Não foi possível gerar o backup.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <section class="panel">
+        <h2>Backup</h2>
+        <p class="muted">
+          Baixa uma cópia de todo o banco (transações, regras, orçamentos, escolhas suas, login), cifrada com uma frase-senha que só você sabe (AES-256, chave derivada com scrypt). Peça o backup logo depois de entrar: ele exige um login recente. Para abrir um backup, pare o app e rode <code>GMF_BACKUP_PASSPHRASE=… npm run restore:backup -- arquivo.gmfbak novo.sqlite</code>; o comando cria um arquivo novo e nunca sobrescreve o banco.
+        </p>
+        <input class="search" type="password" autocomplete="new-password" aria-label="Frase-senha do backup" placeholder="Frase-senha (12 caracteres ou mais)" value={passphrase} onInput={(e) => setPassphrase((e.currentTarget as HTMLInputElement).value)} />
+        <input class="search" type="password" autocomplete="new-password" aria-label="Repita a frase-senha" placeholder="Repita a frase-senha" value={again} onInput={(e) => setAgain((e.currentTarget as HTMLInputElement).value)} />
+        {passphrase !== '' && again !== '' && passphrase !== again && <div class="error">As duas frases são diferentes.</div>}
+        {message && <div class="note">{message}</div>}
+        <div class="links">
+          <button class="primary small" disabled={!valid || busy} onClick={() => void download()}>
+            {busy ? 'Gerando…' : 'Baixar backup'}
+          </button>
+        </div>
+      </section>
+      <section class="panel">
+        <h2>Exportar transações</h2>
+        <p class="muted">Em Transações, o botão “Exportar CSV” baixa o que está filtrado na tela, num arquivo que o Excel abre com acentos (separador “;” e vírgula decimal).</p>
+      </section>
+    </>
+  );
+}
+
 export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boolean; now: Date }) {
   const tab = route.params.get('tab') ?? 'accounts';
   return (
@@ -462,11 +513,14 @@ export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boo
         <button class={tab === 'ai' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'ai' })}>
           IA
         </button>
+        <button class={tab === 'data' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'data' })}>
+          Dados
+        </button>
         <button class={tab === 'security' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'security' })}>
           Segurança
         </button>
       </div>
-      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : <AccountsTab hidden={hidden} />}
+      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'data' ? <DataTab /> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : <AccountsTab hidden={hidden} />}
     </div>
   );
 }

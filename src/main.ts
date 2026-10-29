@@ -1,4 +1,8 @@
+import { randomBytes } from 'node:crypto';
+import { readFileSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { encryptBackup } from './backup/backup.ts';
 import { loadAiConfig, startAiLoop } from './ai/job.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
 import { relyingPartyFor } from './auth/webauthn.ts';
@@ -35,7 +39,17 @@ const retired = store.retireSourcesExcept(adapters.map((a) => a.id));
 if (retired.length > 0) console.log(`retired sources, kept as saved history: ${retired.join(', ')}`);
 const refreshAdapter = adapters.find((a) => a.capabilities.refreshOnDemand);
 const refresher = refreshAdapter ? createRefresher({ store, adapter: refreshAdapter }) : undefined;
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher }, config.webDir);
+const backup = (passphrase: string): Buffer => {
+  // A consistent copy next to the database (same disk), read once and removed.
+  const copy = join(dirname(config.dbPath), `.backup-${randomBytes(6).toString('hex')}.sqlite`);
+  try {
+    store.copyTo(copy);
+    return encryptBackup(readFileSync(copy), passphrase);
+  } finally {
+    rmSync(copy, { force: true });
+  }
+};
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, backup }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {

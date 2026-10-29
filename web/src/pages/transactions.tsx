@@ -47,6 +47,9 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   p.forEach((v, k) => k !== 'tx' && query.append(k, v));
   query.set('limit', String(limit));
   if (p.getAll('state').some((s) => s === 'stale_pending' || s === 'ignored')) query.set('includeExcluded', 'true');
+  const exportQuery = new URLSearchParams(query);
+  exportQuery.delete('limit');
+  exportQuery.delete('offset');
   const { data, error, loading } = useLoad(() => api.explore(query), [query.toString(), version]);
   const cards = useLoad(() => api.cards(), []);
 

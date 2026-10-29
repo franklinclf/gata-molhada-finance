@@ -12,6 +12,8 @@ export interface RouteResult {
   /** More cookies to set, besides the one in headers['Set-Cookie']. */
   cookies?: string[];
   body: string | null;
+  /** Binary body, used instead of `body` for file downloads. */
+  bytes?: Buffer;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
