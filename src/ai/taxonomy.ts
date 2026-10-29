@@ -4,6 +4,7 @@ export const TAXONOMY: Array<[name: string, meaning: string]> = [
   ['Restaurantes e bares', 'eating out: restaurants, bars, cafes, snack bars, fast food in person'],
   ['Delivery de comida', 'food delivery apps and orders (iFood, Rappi, delivery marketplaces)'],
   ['Transporte por aplicativo', 'taxi and ride-hailing: Uber, 99, Cabify'],
+  ['Transporte público', 'bus, metro, train, bike sharing, transit cards'],
   ['Combustível e carro', 'fuel, parking, tolls, car services, car insurance, vehicle taxes'],
   ['Saúde', 'doctors, dentists, labs, hospitals, health plans, therapy, gyms count as Lazer'],
   ['Farmácia', 'pharmacies and drugstores'],
@@ -11,7 +12,9 @@ export const TAXONOMY: Array<[name: string, meaning: string]> = [
   ['Telecomunicação', 'mobile and internet providers, prepaid top-ups'],
   ['Compras online', 'online marketplaces and general web shopping (Amazon, Shopee, Mercado Livre)'],
   ['Vestuário e acessórios', 'clothes, shoes, accessories'],
-  ['Casa e utilidades', 'home goods, furniture, hardware stores, appliances, electronics for the house'],
+  ['Casa e utilidades', 'home goods, furniture, hardware stores, appliances, office supplies and stationery'],
+  ['Eletrônicos', 'electronics and gadgets: phones, computers, accessories, consoles bought as goods'],
+  ['Crianças e brinquedos', 'toys, baby and kids items'],
   ['Moradia', 'rent, condo fees, electricity, water, gas, property tax'],
   ['Lazer e esportes', 'cinema, shows, games, gyms, sports, hobbies, parks'],
   ['Educação', 'schools, courses, books, tuition, certification exams'],
@@ -20,6 +23,9 @@ export const TAXONOMY: Array<[name: string, meaning: string]> = [
   ['Cuidados pessoais', 'barbers, salons, cosmetics, perfume, spa'],
   ['Seguros', 'insurance that is not car or health'],
   ['Impostos e taxas', 'government taxes, fees, bank fees, card annuity, fines, interest, late payment charges'],
+  ['Empréstimos e financiamentos', 'loan and financing installments, interest charged on loans, overdraft'],
+  ['Jogos e apostas', 'lotteries, online betting, casinos'],
+  ['Pensão e obrigações legais', 'alimony and court-ordered payments'],
   ['Transferências', 'money sent to or received from another person or company by Pix, TED or boleto'],
   ['Transferência entre minhas contas', 'moves between accounts of the same owner'],
   ['Pagamento de fatura', 'payment of a credit card bill (on the card side or the bank side)'],
@@ -35,7 +41,7 @@ export const CATEGORY_NAMES = TAXONOMY.map(([name]) => name);
 /** Changes whenever the category list changes, so descriptions are asked again with the new list. */
 export function taxonomyId(extra: string[] = []): string {
   // The first word changes when the prompt or its context changes, so earlier answers that were not confirmed are asked again.
-  const text = ['prompt-v4', ...CATEGORY_NAMES, ...[...extra].sort()].join('|');
+  const text = ['prompt-v5', ...CATEGORY_NAMES, ...[...extra].sort()].join('|');
   let hash = 0;
   for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash.toString(16);

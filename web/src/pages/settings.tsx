@@ -6,6 +6,7 @@ import { brl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
 import { Go, Loading } from '../ui.tsx';
+import type { CategoryRow } from '../api.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { Select } from '../Select.tsx';
 import { RulesTab } from './rules.tsx';
@@ -67,9 +68,43 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
       setMessage(e instanceof Error ? e.message : 'Não foi possível concluir.');
     }
   };
+  const orphans = data.items.filter((c) => c.fromSource);
+  const placed = data.items.filter((c) => !c.fromSource);
+  const used = placed.filter((c) => c.count > 0);
+  const unused = placed.filter((c) => c.count === 0);
+  const byGroup = new Map<string, CategoryRow[]>();
+  for (const c of used) byGroup.set(c.parent ?? '', [...(byGroup.get(c.parent ?? '') ?? []), c]);
+  const order = [...byGroup.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
+  const total = (list: CategoryRow[]) => list.reduce((sum, c) => sum + c.amount, 0);
+  const row = (c: CategoryRow) => (
+    <li key={c.name} class="cat-row">
+      <Go class="grow clip" page="transactions" params={{ category: c.name }}>
+        {c.name}
+      </Go>
+      <Select
+        ariaLabel={`Grupo de ${c.name}`}
+        value={c.parent ?? ''}
+        emptyLabel="Sem grupo"
+        creatable
+        placeholder="Sem grupo"
+        options={groups.map((g) => ({ value: g, label: g }))}
+        onChange={(value) => void run(() => api.setCategoryParent(c.name, value === '' ? null : value))}
+      />
+      {c.custom && <span class="badge info">sua</span>}
+      <span class="muted">{c.count} transações</span>
+      <span>{brl(c.amount, hidden)}</span>
+      {c.custom && (
+        <button class="link" onClick={() => void run(() => api.deleteCategory(c.name))}>
+          Excluir
+        </button>
+      )}
+    </li>
+  );
   return (
     <>
-      <p class="muted">As categorias vêm do Meu Pluggy (e, nos dados antigos, do Pierre) e podem ter nomes diferentes para o mesmo assunto. Crie as suas e mova transações para elas pelo painel de detalhes da transação. Cada categoria pode ficar dentro de um grupo (por exemplo, Aluguel dentro de Casa), e a aba Grupos de Gastos soma as categorias de cada grupo.</p>
+      <p class="muted">
+        A categoria de uma transação vem, nesta ordem, de: sua escolha na transação, uma regra (aba Regras), o que a fonte diz (traduzido para as categorias abaixo) e a IA. Os grupos só servem para somar nos gráficos e no orçamento.
+      </p>
       <form
         class="recat"
         onSubmit={(e) => {
@@ -86,54 +121,46 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
         </button>
       </form>
       {message && <div class="error">{message}</div>}
-      <section class="panel">
-        <h2>Categorias ({data.items.length})</h2>
-        <ul class="rows">
-          {data.items.map((c) => (
-            <li key={c.name} class="cat-row">
-              <Go class="grow clip" page="transactions" params={{ category: c.name }}>
-                {c.name}
-              </Go>
-              <Select
-                ariaLabel={`Grupo de ${c.name}`}
-                value={c.parent ?? ''}
-                emptyLabel="Sem grupo"
-                creatable
-                placeholder="Sem grupo"
-                options={groups.map((g) => ({ value: g, label: g }))}
-                onChange={(value) => void run(() => api.setCategoryParent(c.name, value === '' ? null : value))}
-              />
-              {c.custom && <span class="badge info">sua</span>}
-              {c.builtin && c.count === 0 && <span class="badge muted">padrão</span>}
-              <span class="muted">{c.count} transações</span>
-              <span>{brl(c.amount, hidden)}</span>
-              {c.custom && (
-                <button class="link" onClick={() => void run(() => api.deleteCategory(c.name))}>
-                  Excluir
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-        <div class="note">Excluir uma categoria sua devolve as transações dela à categoria da fonte.</div>
-      </section>
-      <section class="panel">
-        <h2>Regras ({data.rules.length})</h2>
-        {data.rules.length === 0 ? (
-          <div class="empty">Nenhuma regra. Ao recategorizar uma transação, marque “Aplicar a todas com a mesma descrição” para criar uma.</div>
-        ) : (
+      {orphans.length > 0 && (
+        <section class="panel">
+          <h2>Sem equivalente ({orphans.length})</h2>
+          <div class="muted">Nomes que o banco ou o Meu Pluggy mandou e que não são uma categoria nossa nem sua. Escolha para onde cada um vai: o app cria uma regra “categoria da fonte é X” e todas as transações com esse nome mudam de uma vez.</div>
           <ul class="rows">
-            {data.rules.map((r) => (
-              <li key={r.match}>
-                <span class="grow clip">“{r.match}” vai para {r.category}</span>
-                <button class="link" onClick={() => void run(() => api.deleteRule(r.match))}>
-                  Remover
-                </button>
+            {orphans.map((c) => (
+              <li key={c.name} class="cat-row">
+                <Go class="grow clip" page="transactions" params={{ category: c.name }}>
+                  {c.name}
+                </Go>
+                <span class="muted">{c.count} transações</span>
+                <span>{brl(c.amount, hidden)}</span>
+                <CategorySelect
+                  ariaLabel={`Mapear ${c.name} para`}
+                  placeholder="Mapear para..."
+                  value=""
+                  categories={placed}
+                  onChange={(category) => category !== '' && void run(() => api.saveRule({ name: `Fonte: ${c.name}`, active: true, conditions: { match: 'all', items: [{ field: 'sourceLabel', operator: 'equals', value: c.name }] }, actions: { category } }))}
+                />
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      )}
+      {order.map((group) => (
+        <section class="panel" key={group || 'none'}>
+          <div class="panel-head">
+            <h2>{group === '' ? 'Sem grupo' : group}</h2>
+            <span class="muted">{brl(total(byGroup.get(group)!), hidden)}</span>
+          </div>
+          <ul class="rows">{[...byGroup.get(group)!].sort((a, b) => b.amount - a.amount).map(row)}</ul>
+        </section>
+      ))}
+      {unused.length > 0 && (
+        <details class="panel">
+          <summary>Sem transações ({unused.length})</summary>
+          <ul class="rows">{unused.map(row)}</ul>
+          <div class="note">Excluir uma categoria sua devolve as transações dela à categoria da fonte.</div>
+        </details>
+      )}
     </>
   );
 }

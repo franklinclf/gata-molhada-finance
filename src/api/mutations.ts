@@ -53,6 +53,8 @@ export interface CategoryRow {
   custom: boolean;
   /** Part of the standard list the AI and the screens share. */
   builtin: boolean;
+  /** A label a source sent that is neither ours nor yours. It has no equivalent yet; mapping it with a rule gives it one. */
+  fromSource: boolean;
   /** Spending in the category (money out minus money in), over all time. */
   amount: number;
   /** The group it sits in, or null when it stands alone. */
@@ -65,13 +67,13 @@ export function listCategories(store: Store): CategoryRow[] {
   const parents = categoryParents(store);
   for (const t of effectiveTransactions(store, { includeHidden: true })) {
     if (t.category === null) continue;
-    const row = rows.get(t.category) ?? { name: t.category, count: 0, custom: custom.has(t.category), builtin: CATEGORY_NAMES.includes(t.category), amount: 0, parent: parents.get(t.category) ?? null };
+    const row = rows.get(t.category) ?? { name: t.category, count: 0, custom: custom.has(t.category), builtin: CATEGORY_NAMES.includes(t.category), fromSource: !custom.has(t.category) && !CATEGORY_NAMES.includes(t.category), amount: 0, parent: parents.get(t.category) ?? null };
     row.count += 1;
     row.amount += -t.amount;
     rows.set(t.category, row);
   }
-  for (const name of custom) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: true, builtin: false, amount: 0, parent: parents.get(name) ?? null });
-  for (const name of CATEGORY_NAMES) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: false, builtin: true, amount: 0, parent: parents.get(name) ?? null });
+  for (const name of custom) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: true, builtin: false, fromSource: false, amount: 0, parent: parents.get(name) ?? null });
+  for (const name of CATEGORY_NAMES) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: false, builtin: true, fromSource: false, amount: 0, parent: parents.get(name) ?? null });
   return [...rows.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 

@@ -98,6 +98,16 @@ test('explorer: hidden accounts are left out unless asked for', () => {
   assert.equal(views.balances(store, NOW).accounts.length, 1);
 });
 
+test('a category only a source sent is flagged as having no equivalent, until you map it or create it', () => {
+  const store = seeded();
+  const flagged = () => listCategories(store).filter((c) => c.fromSource).map((c) => c.name).sort();
+  // "Salário" is translated to Renda by the source table, so only the labels nobody translates are flagged.
+  assert.deepEqual(flagged(), ['Aluguel do mês', 'Compras']);
+  assert.equal(listCategories(store).find((c) => c.name === 'Supermercado')?.fromSource, false);
+  addCategory(store, 'Aluguel do mês', NOW);
+  assert.deepEqual(flagged(), ['Compras']);
+});
+
 test('recategorizing one transaction changes the totals, and clearing it goes back to the source category', () => {
   const store = seeded();
   assert.deepEqual(setTransactionCategory(store, 'rent', 'Moradia', false, NOW), { ok: true });
