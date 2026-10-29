@@ -13,6 +13,7 @@ import { createManual, deleteManual, updateManual, type ManualResult } from './m
 import { categoryTrend } from './trends.ts';
 import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type AssetResult } from './networth.ts';
 import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type BudgetResult } from './budgets.ts';
+import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rule-suggestions.ts';
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
@@ -256,6 +257,13 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         if (method !== 'POST') return methodNotAllowed();
         const input = parseBody(body);
         return input ? asResult(createRule(store, input, now)) : badRequest('body must be a rule');
+      }
+      if (parts.length === 3 && method === 'GET' && id === 'suggestions') return { status: 200, body: { items: suggestRules(store) } };
+      if (parts.length === 4 && id === 'suggestions' && (sub === 'accept' || sub === 'dismiss')) {
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { merchant, category? }');
+        return sub === 'accept' ? asResult(acceptRuleSuggestion(store, input.merchant, input.category, now)) : asResult(dismissRuleSuggestion(store, input.merchant, now));
       }
       if (parts.length === 3 && method === 'GET' && id === 'export') return { status: 200, body: exportRules(store) };
       if (parts.length === 3 && (id === 'preview' || id === 'reorder' || id === 'import')) {
