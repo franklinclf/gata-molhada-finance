@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BudgetRow, BudgetScope } from './store.ts';
+import type { BudgetRow, BudgetScope, ManualAsset } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -711,6 +711,36 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setCategoryParent(category: string, parent: string | null, now: string): void {
       if (parent === null) db.prepare('DELETE FROM category_parents WHERE category = ?').run(category);
       else db.prepare('INSERT INTO category_parents (category, parent, updated_at) VALUES (?, ?, ?) ON CONFLICT(category) DO UPDATE SET parent = excluded.parent, updated_at = excluded.updated_at').run(category, parent, now);
+    },
+
+    listAssets(): ManualAsset[] {
+      const assets = db.prepare('SELECT id, name, kind, archived FROM assets ORDER BY name').all() as Array<{ id: number; name: string; kind: 'asset' | 'liability'; archived: number }>;
+      const values = db.prepare('SELECT asset_id, day, value FROM asset_values ORDER BY day').all() as Array<{ asset_id: number; day: string; value: number }>;
+      return assets.map((a) => ({ id: a.id, name: a.name, kind: a.kind, archived: a.archived === 1, values: values.filter((v) => v.asset_id === a.id).map((v) => ({ day: v.day, value: v.value })) }));
+    },
+
+    addAsset(name: string, kind: 'asset' | 'liability', now: string): number {
+      return Number(db.prepare('INSERT INTO assets (name, kind, created_at) VALUES (?, ?, ?)').run(name, kind, now).lastInsertRowid);
+    },
+
+    renameAsset(id: number, name: string): void {
+      db.prepare('UPDATE assets SET name = ? WHERE id = ?').run(name, id);
+    },
+
+    setAssetArchived(id: number, archived: boolean): void {
+      db.prepare('UPDATE assets SET archived = ? WHERE id = ?').run(archived ? 1 : 0, id);
+    },
+
+    deleteAsset(id: number): void {
+      inTransaction(() => {
+        db.prepare('DELETE FROM asset_values WHERE asset_id = ?').run(id);
+        db.prepare('DELETE FROM assets WHERE id = ?').run(id);
+      });
+    },
+
+    setAssetValue(id: number, day: string, value: number | null): void {
+      if (value === null) db.prepare('DELETE FROM asset_values WHERE asset_id = ? AND day = ?').run(id, day);
+      else db.prepare('INSERT INTO asset_values (asset_id, day, value) VALUES (?, ?, ?) ON CONFLICT(asset_id, day) DO UPDATE SET value = excluded.value').run(id, day, value);
     },
 
     listBudgets(): BudgetRow[] {
