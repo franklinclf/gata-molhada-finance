@@ -30,7 +30,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const [limit, setLimit] = useState(PAGE);
   const [text, setText] = useState(p.get('q') ?? '');
   const [sheet, setSheet] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(p.get('new') === '1');
   const [version, setVersion] = useState(0);
   const key = [...p.entries()].filter(([k]) => k !== 'tx').map(([k, v]) => `${k}=${v}`).sort().join('&');
 
@@ -133,11 +133,14 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
       {adding && (
         <ManualForm
           now={now}
-          onCancel={() => setAdding(false)}
+          onCancel={() => {
+            setAdding(false);
+            patchParams({ new: null });
+          }}
           onSaved={(id) => {
             setAdding(false);
             setVersion((n) => n + 1);
-            patchParams({ tx: id });
+            patchParams({ tx: id, new: null });
           }}
         />
       )}

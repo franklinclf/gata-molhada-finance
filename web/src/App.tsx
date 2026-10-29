@@ -6,6 +6,7 @@ import { useStoredFlag } from './hooks.ts';
 import { Login } from './Login.tsx';
 import { AccountsPage } from './pages/accounts.tsx';
 import { CardsPage } from './pages/cards.tsx';
+import { Palette } from './Palette.tsx';
 import { ChatPage } from './pages/chat.tsx';
 import { GoalsPage } from './pages/goals.tsx';
 import { CalendarPage } from './pages/calendar.tsx';
@@ -178,6 +179,7 @@ export function App() {
         </div>
       </header>
       <main class="main">{page}</main>
+      <Palette hidden={hidden} />
       <nav class="tabbar" aria-label="Seções">
         {TABS.map(([id, label, icon]) => (
           <a key={id} class={route.page === id && !more ? 'tab-item on' : 'tab-item'} href={hrefFor(id)} onClick={() => setMore(false)}>

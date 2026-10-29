@@ -463,3 +463,8 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .nav-more > button { background: none; border: 0; font: inherit; cursor: pointer; }
 .nav-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; display: flex; flex-direction: column; min-width: 200px; padding: 6px; border-radius: 14px; background: var(--card); border: 1px solid var(--track); box-shadow: 0 12px 32px rgb(0 0 0 / 0.5); }
 .nav-menu .navlink { white-space: nowrap; }
+.palette { width: min(640px, 94vw); margin: 12vh auto 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 18px; background: var(--card); border: 1px solid var(--track); box-shadow: 0 24px 60px rgb(0 0 0 / 0.6); }
+.palette-list { max-height: 50vh; overflow-y: auto; }
+.palette-list .row-btn { width: 100%; }
+.palette-list .row-btn.on { background: var(--card-2); }
+.overlay.center { justify-content: center; align-items: flex-start; }
