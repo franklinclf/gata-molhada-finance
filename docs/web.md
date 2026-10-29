@@ -79,6 +79,10 @@ Cada fatura publicada pelas fontes (fechamento, vencimento, total) define um cic
 - **Limites:** erros de passkey não travam o login por senha (uma assinatura não se adivinha); só há um limite de 30 por 15 minutos para frear inundação. Erros de senha continuam travando em 5 por 15 minutos.
 - **Endereço:** a passkey fica presa ao endereço `PUBLIC_ORIGIN` (no servidor é `https://` mais o nome da VM). Abrir o app por outro nome (IP, outro domínio) desliga as passkeys, e a senha continua funcionando. Se o domínio mudar um dia, é preciso criar as passkeys de novo.
 
+## Leitura do Meu Pluggy
+
+A cada leitura o adaptador pede as transações duas vezes por conta e junta pelo id: pela data da transação (`dateFrom`, vê a mudança de pendente para lançada de lançamentos recentes) e pela data em que o Pluggy criou o registro (`createdAtFrom`, pega o que o Pluggy ingere tarde mas data para trás, como pagamento de fatura datado no fechamento ou compra que liquida semanas depois). Só a primeira janela perdia esses lançamentos. Limite, disponível, pagamento mínimo, vencimento e final do cartão que a fonte deixa de informar numa leitura não apagam o valor que ela deu antes.
+
 ## Quem pagou e quem recebeu
 
 Pix, TED e boleto trazem o documento (CPF ou CNPJ) de quem paga e de quem recebe nas duas fontes, e compras no cartão trazem o código de categoria do estabelecimento (MCC). Os adaptadores guardam isso em `source_transactions` (migração 016): o documento vira um hash, para comparar pessoas, mais os 4 últimos dígitos, para mostrar; o número inteiro não é guardado nessa tabela (as respostas brutas em `raw_snapshots` continuam com ele). Os registros antigos são preenchidos uma vez, na subida do servidor, a partir dessas respostas brutas (`src/sync/backfill-parties.ts`).

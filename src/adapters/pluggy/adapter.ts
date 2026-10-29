@@ -125,16 +125,25 @@ export class PluggyAdapter implements SourceAdapter {
     const out: SourceTransaction[] = [];
 
     for (const [accountId, kind] of this.kinds) {
-      let path = `/v2/transactions?accountId=${accountId}&dateFrom=${from}&dateTo=${to}`;
-      for (let page = 1; ; page++) {
-        if (page > MAX_PAGES) throw new SourceFormatError(`pluggy.transactions: more than ${MAX_PAGES} pages for one account`);
-        const body = asRecord(await this.get(path), 'pluggy.transactions');
-        for (const raw of asArray(body.results, 'pluggy.transactions.results')) {
-          out.push(normalizeTransaction(raw, kind));
+      // Two reads, merged by id. The date window sees status changes of recent rows (pending to posted). The ingestion
+      // window sees rows Pluggy adds late but backdates, such as card bill payments dated to the bill close or merchants
+      // that settle weeks later, which the date window silently misses.
+      const seen = new Set<string>();
+      for (const query of [`dateFrom=${from}&dateTo=${to}`, `createdAtFrom=${encodeURIComponent(since.toISOString())}`]) {
+        let path = `/v2/transactions?accountId=${accountId}&${query}`;
+        for (let page = 1; ; page++) {
+          if (page > MAX_PAGES) throw new SourceFormatError(`pluggy.transactions: more than ${MAX_PAGES} pages for one account`);
+          const body = asRecord(await this.get(path), 'pluggy.transactions');
+          for (const raw of asArray(body.results, 'pluggy.transactions.results')) {
+            const transaction = normalizeTransaction(raw, kind);
+            if (seen.has(transaction.externalId)) continue;
+            seen.add(transaction.externalId);
+            out.push(transaction);
+          }
+          const next = optString(body, 'next');
+          if (next === null) break;
+          path = `/v2/transactions${next}`;
         }
-        const next = optString(body, 'next');
-        if (next === null) break;
-        path = `/v2/transactions${next}`;
       }
     }
     return out;

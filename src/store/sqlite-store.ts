@@ -293,9 +293,11 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (source_id, external_id) DO UPDATE SET
            external_item_id = excluded.external_item_id, institution = excluded.institution, kind = excluded.kind,
-           name = excluded.name, last4 = excluded.last4, balance = excluded.balance, credit_limit = excluded.credit_limit,
-           available_limit = excluded.available_limit, minimum_payment = excluded.minimum_payment,
-           due_date = excluded.due_date, last_seen_at = excluded.last_seen_at`,
+           name = excluded.name, last4 = COALESCE(excluded.last4, last4), balance = excluded.balance,
+           credit_limit = COALESCE(excluded.credit_limit, credit_limit),
+           available_limit = COALESCE(excluded.available_limit, available_limit),
+           minimum_payment = COALESCE(excluded.minimum_payment, minimum_payment),
+           due_date = COALESCE(excluded.due_date, due_date), last_seen_at = excluded.last_seen_at`,
       );
       inTransaction(() => {
         for (const a of accounts) {
