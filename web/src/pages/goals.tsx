@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import type { GoalView } from '../api.ts';
 import { Meter } from '../charts.tsx';
+import { Select } from '../Select.tsx';
 import { brl, dayMonth, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
@@ -127,22 +128,8 @@ export function GoalsPage({ now, hidden }: { now: Date; hidden: boolean }) {
           <input inputMode="decimal" aria-label="Valor da meta em reais" placeholder="Quanto quer juntar" value={target} onInput={(e) => setTarget((e.currentTarget as HTMLInputElement).value)} />
           <input type="date" aria-label="Data limite" min={tomorrow} value={day} onInput={(e) => setDay((e.currentTarget as HTMLInputElement).value)} />
         </div>
-        <select class="select" aria-label="O que acompanha" value={track} onChange={(e) => { setTrack((e.currentTarget as HTMLSelectElement).value as typeof track); setRef(''); }}>
-          <option value="manual">Um valor que eu atualizo</option>
-          <option value="account">O saldo de uma conta</option>
-          <option value="asset">Um bem lançado em Patrimônio</option>
-          <option value="networth">O patrimônio total</option>
-        </select>
-        {(track === 'account' || track === 'asset') && (
-          <select class="select" aria-label="Qual" value={ref} onChange={(e) => setRef((e.currentTarget as HTMLSelectElement).value)}>
-            <option value="">Escolha</option>
-            {options.map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
-        )}
+        <Select ariaLabel="O que acompanha" value={track} onChange={(next) => { setTrack(next as typeof track); setRef(''); }} options={[{ value: 'manual', label: 'Um valor que eu atualizo' }, { value: 'account', label: 'O saldo de uma conta' }, { value: 'asset', label: 'Um bem lançado em Patrimônio' }, { value: 'networth', label: 'O patrimônio total' }]} />
+        {(track === 'account' || track === 'asset') && <Select ariaLabel="Qual" value={ref} onChange={setRef} placeholder="Escolher" options={options.map(([id, label]) => ({ value: id, label }))} />}
         {track === 'manual' && <input inputMode="decimal" aria-label="Quanto já tem guardado" placeholder="Quanto já tem guardado (opcional)" value={saved} onInput={(e) => setSaved((e.currentTarget as HTMLInputElement).value)} />}
         <div class="note">O progresso é quanto do valor da meta já está guardado. Com data limite, o ritmo esperado é uma reta entre hoje e a data, e quem começou com dinheiro guardado só está adiantado se andou mais que essa reta a partir do ponto de partida.</div>
         <div class="links">

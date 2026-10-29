@@ -3,6 +3,7 @@ import { api } from '../api.ts';
 import { brl, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { ManualForm } from '../ManualForm.tsx';
+import { Select } from '../Select.tsx';
 import { PeriodPicker } from '../period.tsx';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { CheckList, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
@@ -97,15 +98,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         <CheckList options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: f.name, count: f.count }))} selected={accountIds} onChange={(v) => set({ accountId: v })} />
       </Section>
       <Section title="Fatura do cartão" active={p.get('cycle') ? 1 : 0}>
-        <select class="select" value={p.get('cycle') ?? ''} onChange={(e) => set({ cycle: (e.currentTarget as HTMLSelectElement).value || null })} aria-label="Ciclo da fatura">
-          <option value="">Qualquer ciclo</option>
-          <option value="open">Ciclo em aberto</option>
-          {(cards.data?.cycles ?? []).map((c) => (
-            <option key={c} value={c}>
-              Fatura com venc. {monthName(c)}
-            </option>
-          ))}
-        </select>
+        <Select ariaLabel="Ciclo da fatura" value={p.get('cycle') ?? ''} onChange={(value) => set({ cycle: value || null })} options={[{ value: '', label: 'Qualquer ciclo' }, { value: 'open', label: 'Ciclo em aberto' }, ...(cards.data?.cycles ?? []).map((c) => ({ value: c, label: `Fatura com venc. ${monthName(c)}` }))]} />
       </Section>
       <Section title="Valor" active={p.get('min') || p.get('max') ? 1 : 0}>
         <label class="amount">
@@ -116,11 +109,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         </label>
       </Section>
       <Section title="Status e fontes" active={states.length + (p.get('status') ? 1 : 0)}>
-        <select class="select" value={p.get('status') ?? ''} onChange={(e) => set({ status: (e.currentTarget as HTMLSelectElement).value || null })} aria-label="Status">
-          <option value="">Pendentes e lançadas</option>
-          <option value="posted">Só lançadas</option>
-          <option value="pending">Só pendentes</option>
-        </select>
+        <Select ariaLabel="Status" value={p.get('status') ?? ''} onChange={(value) => set({ status: value || null })} options={[{ value: '', label: 'Pendentes e lançadas' }, { value: 'posted', label: 'Só lançadas' }, { value: 'pending', label: 'Só pendentes' }]} />
         <CheckList options={STATES} selected={states} onChange={(v) => set({ state: v })} searchable={false} />
         <div class="note">“Fora dos totais” e “ignorada” só aparecem aqui quando você marca a situação.</div>
       </Section>
@@ -147,13 +136,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
       <PeriodPicker from={p.get('from') ?? undefined} to={p.get('to') ?? undefined} now={now} onChange={(r) => set({ from: r.from ?? null, to: r.to ?? null })} />
       <div class="searchbar">
         <input class="search grow" placeholder="Buscar por descrição ou categoria" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
-        <select class="select" value={p.get('sort') ?? 'date_desc'} onChange={(e) => set({ sort: (e.currentTarget as HTMLSelectElement).value === 'date_desc' ? null : (e.currentTarget as HTMLSelectElement).value })} aria-label="Ordem">
-          {SORTS.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
+        <Select ariaLabel="Ordem" value={p.get('sort') ?? 'date_desc'} onChange={(value) => set({ sort: value === 'date_desc' ? null : value })} options={SORTS.map((s) => ({ value: s.value, label: s.label }))} />
         <button class={active.length > 0 ? 'chip on filter-toggle' : 'chip filter-toggle'} onClick={() => setSheet(true)}>
           Filtros{active.length > 0 ? ` (${active.length})` : ''}
         </button>

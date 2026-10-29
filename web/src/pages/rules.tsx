@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
 import { api, ApiError } from '../api.ts';
-import type { RuleConditions, RulePreview, RuleRow } from '../api.ts';
+import type { CategoryRow, RuleConditions, RulePreview, RuleRow } from '../api.ts';
+import { CategorySelect } from '../CategorySelect.tsx';
+import { Select } from '../Select.tsx';
 import { brl, dayMonth } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
@@ -60,38 +62,19 @@ function LeafEditor({ leaf, onChange, onRemove, accounts }: { leaf: Leaf; onChan
   const [amountText, setAmountText] = useState(leaf.field === 'amount' && leaf.value !== '' ? String(Number(leaf.value) / 100).replace('.', ',') : '');
   return (
     <div class="rule-leaf">
-      <select
-        class="select"
-        aria-label="Campo"
+      <Select
+        ariaLabel="Campo"
         value={leaf.field}
-        onChange={(e) => {
-          const next = (e.currentTarget as HTMLSelectElement).value;
+        options={FIELDS.map((f) => ({ value: f.id, label: f.label }))}
+        onChange={(next) => {
           const kind = fieldOf(next).kind;
           onChange({ field: next, operator: kind === 'text' ? 'contains' : 'equals', value: kind === 'enum' ? (fieldOf(next).options?.[0]?.[0] ?? '') : '' });
           setAmountText('');
         }}
-      >
-        {FIELDS.map((f) => (
-          <option key={f.id} value={f.id}>
-            {f.label}
-          </option>
-        ))}
-      </select>
-      <select class="select" aria-label="Condição" value={leaf.operator} onChange={(e) => onChange({ ...leaf, operator: (e.currentTarget as HTMLSelectElement).value })}>
-        {opsFor(leaf.field).map(([id, label]) => (
-          <option key={id} value={id}>
-            {label}
-          </option>
-        ))}
-      </select>
+      />
+      <Select ariaLabel="Condição" value={leaf.operator} options={opsFor(leaf.field).map(([id, label]) => ({ value: id, label }))} onChange={(operator) => onChange({ ...leaf, operator })} />
       {field.kind === 'enum' ? (
-        <select class="select" aria-label="Valor" value={String(leaf.value)} onChange={(e) => onChange({ ...leaf, value: (e.currentTarget as HTMLSelectElement).value })}>
-          {field.options!.map(([id, label]) => (
-            <option key={id} value={id}>
-              {label}
-            </option>
-          ))}
-        </select>
+        <Select ariaLabel="Valor" value={String(leaf.value)} options={field.options!.map(([id, label]) => ({ value: id, label }))} onChange={(value) => onChange({ ...leaf, value })} />
       ) : field.kind === 'date' ? (
         <input type="date" aria-label="Valor" value={String(leaf.value)} onInput={(e) => onChange({ ...leaf, value: (e.currentTarget as HTMLInputElement).value })} />
       ) : field.kind === 'number' ? (
@@ -128,7 +111,7 @@ interface Draft {
 
 const newDraft = (): Draft => ({ name: '', active: true, match: 'all', items: [emptyLeaf()], category: '' });
 
-function RuleEditor({ draft, setDraft, categories, onSaved, onCancel, hidden }: { draft: Draft; setDraft: (d: Draft) => void; categories: string[]; onSaved: () => void; onCancel: () => void; hidden: boolean }) {
+function RuleEditor({ draft, setDraft, categories, onSaved, onCancel, hidden }: { draft: Draft; setDraft: (d: Draft) => void; categories: CategoryRow[]; onSaved: () => void; onCancel: () => void; hidden: boolean }) {
   const [preview, setPreview] = useState<RulePreview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -151,20 +134,14 @@ function RuleEditor({ draft, setDraft, categories, onSaved, onCancel, hidden }: 
       <input class="search" aria-label="Nome da regra" placeholder="Nome da regra" maxLength={80} value={draft.name} onInput={(e) => setDraft({ ...draft, name: (e.currentTarget as HTMLInputElement).value })} />
       <div class="rule-match">
         Quando
-        <select class="select" aria-label="Combinar" value={draft.match} onChange={(e) => setDraft({ ...draft, match: (e.currentTarget as HTMLSelectElement).value as 'all' | 'any' })}>
-          <option value="all">todas as condições</option>
-          <option value="any">qualquer condição</option>
-        </select>
+        <Select ariaLabel="Combinar" value={draft.match} options={[{ value: 'all', label: 'todas as condições' }, { value: 'any', label: 'qualquer condição' }]} onChange={(match) => setDraft({ ...draft, match: match as 'all' | 'any' })} />
         for verdadeira:
       </div>
       {draft.items.map((item, i) =>
         isGroup(item) ? (
           <div class="rule-group" key={i}>
             <div class="rule-match">
-              Grupo: <select class="select" aria-label="Combinar grupo" value={item.match} onChange={(e) => setItem(i, { ...item, match: (e.currentTarget as HTMLSelectElement).value as 'all' | 'any' })}>
-                <option value="any">qualquer uma destas</option>
-                <option value="all">todas estas</option>
-              </select>
+              Grupo: <Select ariaLabel="Combinar grupo" value={item.match} options={[{ value: 'any', label: 'qualquer uma destas' }, { value: 'all', label: 'todas estas' }]} onChange={(match) => setItem(i, { ...item, match: match as 'all' | 'any' })} />
               <button class="link" type="button" onClick={() => setDraft({ ...draft, items: draft.items.filter((_, at) => at !== i) })}>
                 Remover grupo
               </button>
@@ -190,8 +167,7 @@ function RuleEditor({ draft, setDraft, categories, onSaved, onCancel, hidden }: 
       </div>
       <div class="rule-match">
         Então a categoria é
-        <input class="search" aria-label="Categoria" list="rule-categories" placeholder="Categoria" maxLength={60} value={draft.category} onInput={(e) => setDraft({ ...draft, category: (e.currentTarget as HTMLInputElement).value })} />
-        <datalist id="rule-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
+        <CategorySelect value={draft.category} categories={categories} onChange={(category) => setDraft({ ...draft, category })} placeholder="Escolher categoria" />
       </div>
       <label class="switch">
         <input type="checkbox" checked={draft.active} onChange={(e) => setDraft({ ...draft, active: (e.currentTarget as HTMLInputElement).checked })} /> Regra ativa
@@ -299,7 +275,7 @@ export function RulesTab({ hidden }: { hidden: boolean }) {
         </label>
       </div>
       {message && <div class="note">{message}</div>}
-      {draft && <RuleEditor draft={draft} setDraft={setDraft} categories={categories.data?.items.map((c) => c.name) ?? []} hidden={hidden} onCancel={() => setDraft(null)} onSaved={() => { setDraft(null); rules.reload(); }} />}
+      {draft && <RuleEditor draft={draft} setDraft={setDraft} categories={categories.data?.items ?? []} hidden={hidden} onCancel={() => setDraft(null)} onSaved={() => { setDraft(null); rules.reload(); }} />}
       <section class="panel">
         <h2>Regras ({items.length})</h2>
         {items.length === 0 ? (

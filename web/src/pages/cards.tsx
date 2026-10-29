@@ -6,6 +6,7 @@ import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
 import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
+import { Select } from '../Select.tsx';
 
 const fullDay = (day: string) => `${dayMonth(day)}/${day.slice(0, 4)}`;
 
@@ -290,14 +291,7 @@ function InstallmentsTab({ installments, hidden, route }: { installments: Return
         </div>
       </div>
       <div class="filters">
-        <select class="select" value={card} onChange={(e) => patchParams({ card: (e.currentTarget as HTMLSelectElement).value || null })} aria-label="Cartão">
-          <option value="">Todos os cartões</option>
-          {cards.map(([id, label]) => (
-            <option key={id} value={id}>
-              {label}
-            </option>
-          ))}
-        </select>
+        <Select ariaLabel="Cartão" value={card} onChange={(value) => patchParams({ card: value || null })} options={[{ value: '', label: 'Todos os cartões' }, ...cards.map(([id, label]) => ({ value: id, label }))]} />
         <label class="check">
           <input type="checkbox" checked={finished} onChange={(e) => patchParams({ finished: (e.currentTarget as HTMLInputElement).checked ? 'true' : null })} />
           Mostrar compras já quitadas
@@ -367,14 +361,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
       {tab === 'cards' && (
         <label class="inline-field">
           Ciclo
-          <select class="select" value={cycle} onChange={(e) => patchParams({ cycle: (e.currentTarget as HTMLSelectElement).value === 'open' ? null : (e.currentTarget as HTMLSelectElement).value })}>
-            <option value="open">Em aberto (atual)</option>
-            {(data?.cycles ?? []).map((c) => (
-              <option key={c} value={c}>
-                Faturas com vencimento em {monthName(c)}
-              </option>
-            ))}
-          </select>
+          <Select ariaLabel="Ciclo" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...(data?.cycles ?? []).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
         </label>
       )}
       {error || (loading && !data) ? (

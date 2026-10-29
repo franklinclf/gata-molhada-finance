@@ -468,3 +468,23 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .palette-list .row-btn { width: 100%; }
 .palette-list .row-btn.on { background: var(--card-2); }
 .overlay.center { justify-content: center; align-items: flex-start; }
+.select-btn { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; cursor: pointer; min-width: 0; max-width: 100%; }
+.select-value { flex: 1; min-width: 0; }
+.select-chevron { color: var(--muted); font-size: 11px; }
+.select-backdrop { position: fixed; inset: 0; z-index: 80; }
+.select-panel { position: fixed; z-index: 81; display: flex; flex-direction: column; max-height: 340px; background: var(--card); border: 1px solid var(--track); border-radius: 14px; box-shadow: 0 16px 40px rgb(0 0 0 / 0.55); overflow: hidden; }
+.select-search { margin: 8px; padding: 8px 10px; border-radius: 10px; background: var(--card-2); border: 1px solid var(--track); color: var(--text); font: inherit; }
+.select-list { list-style: none; margin: 0; padding: 4px; overflow-y: auto; outline: none; user-select: none; -webkit-user-select: none; }
+.select-group { position: sticky; top: 0; z-index: 1; padding: 8px 10px 4px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: var(--card); }
+.select-option { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; cursor: pointer; }
+.select-option.nested { padding-left: 18px; }
+.select-option.active { background: var(--card-2); }
+.select-option.create { color: var(--accent); }
+.select-check { width: 14px; color: var(--accent); flex: none; text-align: center; }
+.select-empty { padding: 12px; color: var(--muted); text-align: center; }
+@media (max-width: 760px) {
+  .select-backdrop { background: rgb(0 0 0 / 0.55); }
+  .select-panel { left: 0 !important; right: 0; top: auto !important; bottom: 0 !important; width: auto !important; max-height: 70vh; border-radius: 20px 20px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  .select-option { padding: 12px 12px; }
+}
+@media (max-width: 760px) { .rows li.cat-row { flex-wrap: wrap; } .rows li.cat-row > .grow { flex-basis: 100%; } }

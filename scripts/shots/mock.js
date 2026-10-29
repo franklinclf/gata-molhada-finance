@@ -12,3 +12,12 @@
     return json({ error: 'not_found' }, 404);
   };
 })();
+
+// A route can ask for a click after the page has drawn (`__click=<selector>` in the hash), to photograph an open dropdown.
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const m = /__click=([^&]+)/.exec(location.hash);
+    if (m) document.querySelector(decodeURIComponent(m[1]))?.click();
+  }, 1800);
+});
+

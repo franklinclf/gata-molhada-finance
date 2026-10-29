@@ -1,5 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api } from './api.ts';
+import { CategorySelect } from './CategorySelect.tsx';
+import { Select } from './Select.tsx';
 import { localDay } from './format.ts';
 import { useLoad } from './hooks.ts';
 
@@ -58,14 +60,7 @@ export function ManualForm({ initial, now, onSaved, onCancel }: { initial?: Manu
     <section class="panel manual-form">
       <h2>{initial?.id ? 'Editar transação' : 'Nova transação'}</h2>
       <div class="muted">Para o que nenhuma fonte traz: uma cobrança que o banco não manda, um pagamento em dinheiro. Ela entra nos totais e nas faturas como as outras e a sincronização não mexe nela.</div>
-      <select class="select" aria-label="Conta ou cartão" value={chosen} onChange={(e) => setAccountId((e.currentTarget as HTMLSelectElement).value)}>
-        {items.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.institution} · {a.name}
-            {a.last4 ? ` •••• ${a.last4}` : ''}
-          </option>
-        ))}
-      </select>
+      <Select ariaLabel="Conta ou cartão" value={chosen} onChange={setAccountId} options={items.map((a) => ({ value: a.id, label: `${a.name}${a.last4 ? ` •••• ${a.last4}` : ''}`, group: a.institution }))} />
       <div class="tabs">
         <button type="button" class={!income ? 'tab on' : 'tab'} onClick={() => setIncome(false)}>
           Gasto
@@ -79,8 +74,7 @@ export function ManualForm({ initial, now, onSaved, onCancel }: { initial?: Manu
         <input inputMode="decimal" aria-label="Valor em reais" placeholder="Valor" value={amount} onInput={(e) => setAmount((e.currentTarget as HTMLInputElement).value)} />
       </div>
       <input class="search" aria-label="Descrição" placeholder="Descrição" maxLength={200} value={description} onInput={(e) => setDescription((e.currentTarget as HTMLInputElement).value)} />
-      <input class="search" aria-label="Categoria" list="manual-categories" placeholder="Categoria (opcional)" maxLength={60} value={category} onInput={(e) => setCategory((e.currentTarget as HTMLInputElement).value)} />
-      <datalist id="manual-categories">{(categories.data?.items ?? []).map((c) => <option key={c.name} value={c.name} />)}</datalist>
+      <CategorySelect value={category} onChange={setCategory} categories={categories.data?.items} placeholder="Categoria (opcional)" emptyLabel="Sem categoria" />
       {!initial?.id && <input class="search" aria-label="Observação" placeholder="Observação (opcional)" maxLength={1000} value={notes} onInput={(e) => setNotes((e.currentTarget as HTMLInputElement).value)} />}
       {message && <div class="error">{message}</div>}
       <div class="links">
