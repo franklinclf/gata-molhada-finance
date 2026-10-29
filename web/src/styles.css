@@ -158,7 +158,8 @@ summary.chip::-webkit-details-marker { display: none; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
 .facts dt { color: var(--muted); font-size: 13px; }
 .facts dd { margin: 0; }
-.facts.inline { grid-template-columns: max-content max-content max-content max-content; }
+.facts.inline { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; }
+.facts.inline dd { text-align: right; white-space: nowrap; }
 .recat { display: flex; gap: 8px; }
 .recat { align-items: center; }
 .recat input { flex: 1; min-width: 0; }
@@ -179,7 +180,7 @@ summary.chip::-webkit-details-marker { display: none; }
 @media (max-width: 760px) {
   .topbar nav { order: 3; flex-basis: 100%; overflow-x: auto; flex-wrap: nowrap; }
   .cards-grid { grid-template-columns: 1fr; }
-  .facts.inline { grid-template-columns: max-content 1fr; }
+  .facts.inline { grid-template-columns: minmax(0, 1fr) auto; }
   .split { flex-wrap: wrap; }
   .panel.split { flex-direction: column; align-items: stretch; }
   .recat { flex-wrap: wrap; }
@@ -247,7 +248,7 @@ button, .chip, .tab, .navlink, .tab-item, .sheet-item, .grip { user-select: none
   .stack-cell .widget { overflow: visible; }
   .stack-cell .widget-body { overflow: visible; }
   .split { gap: 12px; }
-  .facts.inline { grid-template-columns: max-content 1fr; }
+  .facts.inline { grid-template-columns: minmax(0, 1fr) auto; }
   .amount { flex: none; }
 }
 
