@@ -433,3 +433,5 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .rows li .budget-note { white-space: normal; flex: initial; }
 .trend-row .spark { flex: none; }
 .trend-row > span, .trend-row > strong { white-space: nowrap; }
+.manual-form { gap: 10px; }
+.manual-form .search, .manual-form .select { width: 100%; }

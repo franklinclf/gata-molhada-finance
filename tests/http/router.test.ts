@@ -22,7 +22,7 @@ test('GET /healthz reports ok with version and schema version', () => {
   assert.deepEqual(JSON.parse(res.body ?? ''), {
     status: 'ok',
     version: '1.2.3',
-    schemaVersion: 20,
+    schemaVersion: 21,
     time: '2026-10-26T15:00:00.000Z',
   });
 });

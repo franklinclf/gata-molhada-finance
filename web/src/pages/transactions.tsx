@@ -2,6 +2,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { brl, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
+import { ManualForm } from '../ManualForm.tsx';
 import { PeriodPicker } from '../period.tsx';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { CheckList, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
@@ -29,6 +30,8 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const [limit, setLimit] = useState(PAGE);
   const [text, setText] = useState(p.get('q') ?? '');
   const [sheet, setSheet] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [version, setVersion] = useState(0);
   const key = [...p.entries()].filter(([k]) => k !== 'tx').map(([k, v]) => `${k}=${v}`).sort().join('&');
 
   // Changing a filter starts again from the first page.
@@ -44,7 +47,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   p.forEach((v, k) => k !== 'tx' && query.append(k, v));
   query.set('limit', String(limit));
   if (p.getAll('state').some((s) => s === 'stale_pending' || s === 'ignored')) query.set('includeExcluded', 'true');
-  const { data, error, loading } = useLoad(() => api.explore(query), [query.toString()]);
+  const { data, error, loading } = useLoad(() => api.explore(query), [query.toString(), version]);
   const cards = useLoad(() => api.cards(), []);
 
   const set = (updates: Record<string, string | string[] | null | undefined>) => patchParams(updates);
@@ -124,6 +127,17 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   return (
     <div class="page-body">
       <h1 class="page-title">Transações</h1>
+      {adding && (
+        <ManualForm
+          now={now}
+          onCancel={() => setAdding(false)}
+          onSaved={(id) => {
+            setAdding(false);
+            setVersion((n) => n + 1);
+            patchParams({ tx: id });
+          }}
+        />
+      )}
       <PeriodPicker from={p.get('from') ?? undefined} to={p.get('to') ?? undefined} now={now} onChange={(r) => set({ from: r.from ?? null, to: r.to ?? null })} />
       <div class="searchbar">
         <input class="search grow" placeholder="Buscar por descrição ou categoria" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
@@ -136,6 +150,9 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         </select>
         <button class={active.length > 0 ? 'chip on filter-toggle' : 'chip filter-toggle'} onClick={() => setSheet(true)}>
           Filtros{active.length > 0 ? ` (${active.length})` : ''}
+        </button>
+        <button class="chip" onClick={() => setAdding(!adding)}>
+          + Nova
         </button>
       </div>
 

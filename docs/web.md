@@ -103,6 +103,10 @@ O que isso muda, sem IA:
 - A IA não escolhe "Transferência entre minhas contas", "Pagamento de fatura" nem "Investimentos": isso é decidido por fatos. Uma resposta antiga da IA com uma dessas categorias é ignorada.
 - A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
 
+## Transações digitadas
+
+"+ Nova" em Transações cria uma transação que nenhuma fonte traz (a cobrança em dólar do cartão Gol que o banco não manda, um pagamento em dinheiro). Ela fica na tabela `manual_transactions` (migração 021) e é somada às transações canônicas no fim de cada reconciliação (`src/reconcile/run.ts`), sem ligação com registro de fonte: a sincronização nunca mexe nela e uma reconciliação nova não a perde. Entra nos gastos, no fluxo, nas faturas do cartão e nas regras como as outras. Valor com sinal de fluxo (gasto negativo), data entre 01/01/2026 e hoje, conta existente. No painel da transação dá para editar e excluir; categoria escolhida ali fica na própria transação. "Ignorar" não vale para ela: exclua. Se a mesma cobrança chegar depois por uma fonte, as duas ficam e é preciso excluir a digitada.
+
 ## Tendência e navegação por período
 
 - Em Gastos, a aba Tendência (`src/api/trends.ts`) mostra cada categoria nos últimos 6 meses, com uma linha pequena, a média dos meses fechados, o gasto do mês em andamento e a diferença entre os dois. Estorno, Renda e Sem categoria ficam de fora.
