@@ -63,3 +63,13 @@ test('upsertFreshness keeps one row per source and institution', () => {
   assert.equal(rows[0]?.institution, 'Bank A');
   assert.equal(rows[0]?.lastUpdatedAt, '2026-10-26T15:38:00.000Z');
 });
+
+test('a source that leaves out a card limit or due date for one read does not erase the one it gave before', () => {
+  const store = openSqliteStore(':memory:', fileURLToPath(new URL('../../migrations', import.meta.url)));
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, '2026-10-01T00:00:00Z');
+  const card = { externalId: 'c1', externalItemId: null, institution: 'Bank', kind: 'credit_card' as const, name: 'Card', last4: '1234', balance: 1000, creditLimit: 500000, availableLimit: 400000, minimumPayment: 5000, dueDate: '2026-11-10' };
+  store.upsertSourceAccounts('pluggy', [card], '2026-10-01T00:00:00Z');
+  store.upsertSourceAccounts('pluggy', [{ ...card, balance: 2000, creditLimit: null, availableLimit: null, minimumPayment: null, dueDate: null, last4: null }], '2026-10-02T00:00:00Z');
+  const saved = store.listSourceAccounts('pluggy')[0]!;
+  assert.deepEqual([saved.balance, saved.creditLimit, saved.availableLimit, saved.minimumPayment, saved.dueDate, saved.last4], [2000, 500000, 400000, 5000, '2026-11-10', '1234']);
+});

@@ -77,10 +77,12 @@ test('never passes credentials or the api key to the snapshot sink', async () =>
   assert.ok(snapshots.some((s) => s.endpoint === '/items/item-1'));
 });
 
-test('fetchTransactions uses the date window and the account kind for the sign', async () => {
+test('fetchTransactions reads the date window and the ingestion window, and uses the account kind for the sign', async () => {
   const { http, adapter } = build();
   const txs = await adapter.fetchTransactions(new Date('2026-08-01T10:00:00.000Z'));
   assert.ok(http.callsTo('GET', 'dateFrom=2026-08-01&dateTo=2026-10-26').length === 2);
+  assert.ok(http.callsTo('GET', 'createdAtFrom=2026-08-01T10%3A00%3A00.000Z').length === 2);
+  assert.equal(new Set(txs.map((t) => t.externalId)).size, txs.length, 'a row in both windows is returned once');
   const byId = Object.fromEntries(txs.map((t) => [t.externalId, t]));
   assert.equal(byId['tx-1']?.amount, 15000);
   assert.equal(byId['tx-2']?.amount, -9990);
