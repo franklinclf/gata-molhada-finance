@@ -34,6 +34,10 @@ interface SourceState {
   nextDueAt: number;
   /** A change was seen but the sync that should follow it did not finish. */
   needsSync: boolean;
+  /** The provider said transactions changed, so the next check reads them even if the sync time did not move. */
+  forceSync: boolean;
+  /** A wake arrived while a check was running, so another check is due right after it. */
+  rewake: boolean;
 }
 
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -54,11 +58,12 @@ export class Observer {
   private readonly deps: ObserverDeps;
   private readonly now: () => Date;
   private readonly states = new Map<SourceId, SourceState>();
+  private wakeUp: (() => void) | null = null;
 
   constructor(deps: ObserverDeps) {
     this.deps = deps;
     this.now = deps.now ?? (() => new Date());
-    for (const s of deps.sources) this.states.set(s.adapter.id, { failures: 0, nextDueAt: 0, needsSync: false });
+    for (const s of deps.sources) this.states.set(s.adapter.id, { failures: 0, nextDueAt: 0, needsSync: false, forceSync: false, rewake: false });
   }
 
   private emit(event: ObserverEvent): void {
@@ -70,14 +75,16 @@ export class Observer {
     const { adapter, intervalMs } = source;
     const state = this.states.get(adapter.id) as SourceState;
     if (!adapter.fetchFreshness) return;
+    state.rewake = false;
     try {
       const freshness = await adapter.fetchFreshness();
       const changed = freshness.filter((f) => this.deps.store.upsertFreshness(f).changed);
-      if (changed.length === 0 && !state.needsSync) {
+      if (changed.length === 0 && !state.needsSync && !state.forceSync) {
         this.emit({ type: 'checked', sourceId: adapter.id });
       } else {
         if (changed.length > 0) this.emit({ type: 'changed', sourceId: adapter.id, institutions: changed.map((c) => c.institution) });
         state.needsSync = true;
+        state.forceSync = false;
         const since = new Date(this.now().getTime() - (this.deps.lookbackDays ?? 14) * 86_400_000);
         const result = await syncSource(adapter, { store: this.deps.store, now: this.now }, since);
         this.deps.reconcile();
@@ -85,13 +92,23 @@ export class Observer {
         state.needsSync = result.errors.length > 0;
       }
       state.failures = 0;
-      state.nextDueAt = this.now().getTime() + intervalMs;
+      state.nextDueAt = state.rewake ? 0 : this.now().getTime() + intervalMs;
     } catch (error) {
       state.failures++;
       const retryInMs = Math.min(intervalMs * 2 ** state.failures, this.deps.maxBackoffMs ?? 30 * 60_000);
       state.nextDueAt = this.now().getTime() + retryInMs;
       this.emit({ type: 'error', sourceId: adapter.id, message: error instanceof Error ? error.message : String(error), retryInMs });
     }
+  }
+
+  /** Makes a source due now, for example because its provider said something changed. `sync` also forces a read when no newer sync time shows. */
+  wake(sourceId: SourceId, sync = false): void {
+    const state = this.states.get(sourceId);
+    if (!state) return;
+    state.nextDueAt = 0;
+    state.rewake = true;
+    if (sync) state.forceSync = true;
+    this.wakeUp?.();
   }
 
   /** Checks every source when it is due, until the signal aborts. */
@@ -103,7 +120,14 @@ export class Observer {
         if (!signal.aborted && state.nextDueAt <= this.now().getTime()) await this.tick(source);
       }
       const next = Math.min(...[...this.states.values()].map((s) => s.nextDueAt));
-      await sleep(Math.max(0, next - this.now().getTime()), signal);
+      // A wake during the pause ends it early. The pause itself is the injected sleep, so tests keep their clock.
+      const pause = new AbortController();
+      this.wakeUp = () => pause.abort();
+      const stop = () => pause.abort();
+      signal.addEventListener('abort', stop, { once: true });
+      await sleep(Math.max(0, next - this.now().getTime()), pause.signal);
+      signal.removeEventListener('abort', stop);
+      this.wakeUp = null;
     }
   }
 }

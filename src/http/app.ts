@@ -6,6 +6,7 @@ import { apiRoute, parseExplorer } from '../api/routes.ts';
 import { localDay } from '../core/time.ts';
 import type { AnalystReply } from '../ai/analyst.ts';
 import { decide, validSignature, type DeployHook } from './deploy-hook.ts';
+import { parsePluggyEvent, tokenMatches, type PluggyHook } from './pluggy-hook.ts';
 import type { Refresher } from '../scheduler/web-refresh.ts';
 import { route, type RouteResult, type RouterDeps } from './router.ts';
 
@@ -28,6 +29,8 @@ export interface AppDeps extends RouterDeps {
   backup?: (passphrase: string) => Buffer;
   /** Lets GitHub tell the app that a new image was published. Absent (and the route answers 404) when no secret is set. */
   deployHook?: DeployHook;
+  /** Lets Pluggy tell the app that an item changed. Absent (and the route answers 404) when no secret is set. */
+  pluggyHook?: PluggyHook;
   /** Answers a question to the analyst. Absent when the AI is off. */
   analyst?: (input: { conversationId?: number; question: string }) => Promise<AnalystReply>;
   /** Asks the host to look for a newer image now. Returns false when asked too recently. Absent when the app does not run under the deploy service. */
@@ -143,6 +146,23 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
     const decision = decide(request.headers['x-github-event'], payload);
     if (decision === 'deploy') deps.deployHook.trigger();
     return json(202, { decision });
+  }
+
+  // Pluggy's webhook cannot hold a session or set headers from its dashboard, so the secret is the last path segment.
+  // A wrong or missing token gets the same 404 as a route that does not exist.
+  if (pathname.startsWith('/api/hooks/pluggy/')) {
+    if (!deps.pluggyHook || !tokenMatches(pathname.slice('/api/hooks/pluggy/'.length), deps.pluggyHook.secret)) return json(404, { error: 'not_found' });
+    if (method !== 'POST') return notAllowed('POST');
+    let payload: unknown = null;
+    try {
+      payload = JSON.parse(request.body);
+    } catch {
+      return json(400, { error: 'bad_request' });
+    }
+    // Pluggy stops retrying after a 4xx, so everything that parsed is acknowledged, even events this app does not use.
+    const event = parsePluggyEvent(payload);
+    if (event) deps.pluggyHook.onEvent(event);
+    return json(202, { received: event !== null });
   }
 
   // ---------- everything else needs a session; a trusted device can start one ----------

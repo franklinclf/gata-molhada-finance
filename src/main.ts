@@ -3,6 +3,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Debounce } from './http/deploy-hook.ts';
+import { effectOf, recordAlert, type PluggyEvent } from './http/pluggy-hook.ts';
 import { encryptBackup } from './backup/backup.ts';
 import { ask } from './ai/analyst.ts';
 import { loadAiConfig, startAiLoop } from './ai/job.ts';
@@ -65,15 +66,41 @@ const deployHook = deploySecret ? { secret: deploySecret, trigger: () => hookDeb
 const deployFile = join(dirname(config.dbPath), '.deploy-requested');
 const deployDebounce = new Debounce(30_000);
 const deployNow = () => deployDebounce.allow() && (writeFileSync(deployFile, `${new Date().toISOString()}\n`), true);
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, backup, deployHook, analyst, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
+// Pluggy tells the app when an item changed. Its dashboard sends no headers, so the secret is the last part of the URL.
+const pluggySecret = process.env.PLUGGY_WEBHOOK_SECRET?.trim();
+const pluggyLabels = new Map((loadAdapterEnv(process.env).pluggy?.items ?? []).map((item) => [item.itemId, item.label]));
+let observer: Observer | undefined;
+let wakeTimer: NodeJS.Timeout | undefined;
+// Pluggy sends a burst per item (item/updated plus one transactions event per account), so the read waits a moment and runs once.
+const wakeObserver = (sync: boolean): void => {
+  if (!observer) return;
+  clearTimeout(wakeTimer);
+  wakeTimer = setTimeout(() => observer?.wake('pluggy', sync), 3_000);
+};
+const pluggyHook = pluggySecret
+  ? {
+      secret: pluggySecret,
+      onEvent: (event: PluggyEvent): void => {
+        const label = pluggyLabels.get(event.itemId);
+        if (label === undefined) return;
+        const effect = effectOf(event.event);
+        const now = new Date();
+        if (effect.alert === 'raise') recordAlert(store, event.itemId, { institution: label, event: event.event, code: event.errorCode, message: event.errorMessage, at: now.toISOString() }, now);
+        if (effect.alert === 'clear') recordAlert(store, event.itemId, null, now);
+        if (effect.wake) wakeObserver(effect.wake === 'sync');
+        console.log(`pluggy webhook: ${event.event} for ${label}${event.errorCode ? ` (${event.errorCode})` : ''}`);
+      },
+    }
+  : undefined;
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, backup, deployHook, pluggyHook, analyst, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {
-  const sources = observedSources(adapters);
+  const sources = observedSources(adapters, new Set(pluggyHook ? ['pluggy'] : []));
   if (sources.length === 0) {
     console.warn('OBSERVER is on but no source is configured, so nothing will be watched');
   } else {
-    const observer = new Observer({
+    observer = new Observer({
       store,
       sources,
       reconcile: () => reconcileAfterSync(store),
@@ -83,7 +110,7 @@ if (config.observer) {
       },
     });
     void observer.run(observerStop.signal);
-    console.log(`observer on: ${sources.map((s) => s.adapter.id).join(', ')}`);
+    console.log(`observer on: ${sources.map((s) => `${s.adapter.id} every ${Math.round(s.intervalMs / 60_000)} min`).join(', ')}${pluggyHook ? ' (Pluggy webhook on)' : ''}`);
   }
 }
 
@@ -106,6 +133,7 @@ server.listen(config.port, () => {
 function shutdown(signal: string): void {
   console.log(`${signal} received, shutting down`);
   observerStop.abort();
+  clearTimeout(wakeTimer);
   server.close(() => {
     store.close();
     process.exit(0);
