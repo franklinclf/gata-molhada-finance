@@ -30,6 +30,9 @@ const ENTRIES: Array<[string[], string]> = [
   [['Utensílios para casa', 'Houseware'], 'Casa e utilidades'],
   [['Hospedagem', 'Accomodation', 'Accommodation'], 'Viagens'],
   [['Salário', 'Salary', 'Cashback'], 'Renda'],
+  [['Serviços digitais', 'Digital services', 'Streaming de vídeo', 'Video streaming', 'Streaming de música', 'Music streaming'], 'Assinaturas e streaming'],
+  [['Livraria', 'Bookstore'], 'Educação'],
+  [['Bem-estar e fitness', 'Wellness and fitness', 'Ingressos', 'Tickets'], 'Lazer e esportes'],
 ];
 
 const TABLE = new Map<string, string>();
