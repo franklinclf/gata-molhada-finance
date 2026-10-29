@@ -142,6 +142,11 @@ export const api = {
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),
   setHidden: (id: string, hidden: boolean) =>
     request<{ ok: true }>(`/api/accounts/${encodeURIComponent(id)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden }) }),
+  createManual: (input: { accountId: string; day: string; amount: number; description: string; category?: string; notes?: string }) =>
+    request<{ id: string }>('/api/manual-transactions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
+  updateManual: (id: string, patch: { accountId?: string; day?: string; amount?: number; description?: string; category?: string }) =>
+    request<Record<string, never>>(`/api/manual-transactions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }),
+  deleteManual: (id: string) => request<Record<string, never>>(`/api/manual-transactions/${id}`, { method: 'DELETE' }),
   spendingTrend: (months: number) => request<TrendView>(`/api/spending/trend${query({ months })}`),
   netWorth: () => request<NetWorthView>('/api/networth'),
   addAsset: (name: string, kind: 'asset' | 'liability', value: number | null) =>

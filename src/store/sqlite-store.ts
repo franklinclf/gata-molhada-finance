@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BudgetRow, BudgetScope, ManualAsset } from './store.ts';
+import type { BudgetRow, BudgetScope, ManualAsset, ManualTransaction } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -711,6 +711,24 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setCategoryParent(category: string, parent: string | null, now: string): void {
       if (parent === null) db.prepare('DELETE FROM category_parents WHERE category = ?').run(category);
       else db.prepare('INSERT INTO category_parents (category, parent, updated_at) VALUES (?, ?, ?) ON CONFLICT(category) DO UPDATE SET parent = excluded.parent, updated_at = excluded.updated_at').run(category, parent, now);
+    },
+
+    listManualTransactions(): ManualTransaction[] {
+      const rows = db.prepare('SELECT id, account_id, day, amount, description, category, notes FROM manual_transactions ORDER BY day, id').all() as Array<{ id: number; account_id: string; day: string; amount: number; description: string; category: string | null; notes: string | null }>;
+      return rows.map((r) => ({ id: r.id, accountId: r.account_id, day: r.day, amount: r.amount, description: r.description, category: r.category, notes: r.notes }));
+    },
+
+    saveManualTransaction(t: Omit<ManualTransaction, 'id'> & { id?: number }, now: string): ManualTransaction {
+      if (t.id === undefined) {
+        const info = db.prepare('INSERT INTO manual_transactions (account_id, day, amount, description, category, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(t.accountId, t.day, t.amount, t.description, t.category, t.notes, now, now);
+        return { ...t, id: Number(info.lastInsertRowid) };
+      }
+      db.prepare('UPDATE manual_transactions SET account_id = ?, day = ?, amount = ?, description = ?, category = ?, notes = ?, updated_at = ? WHERE id = ?').run(t.accountId, t.day, t.amount, t.description, t.category, t.notes, now, t.id);
+      return { ...t, id: t.id };
+    },
+
+    deleteManualTransaction(id: number): void {
+      db.prepare('DELETE FROM manual_transactions WHERE id = ?').run(id);
     },
 
     listAssets(): ManualAsset[] {
