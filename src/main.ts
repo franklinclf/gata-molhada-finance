@@ -29,13 +29,17 @@ if (!authConfig) console.warn('AUTH_PASSWORD_HASH or AUTH_TOTP_SECRET is not set
 const relyingParty = relyingPartyFor(process.env.PUBLIC_ORIGIN);
 if (authConfig && !relyingParty) console.warn('PUBLIC_ORIGIN is not set to an https address, so passkeys are off (password and code still work)');
 const auth = new AuthService(store, authConfig, () => new Date(), {}, relyingParty);
-const refreshAdapter = buildAdapters(loadAdapterEnv(process.env), { store, http: retryingClient(fetchHttpClient()) }).find((a) => a.capabilities.refreshOnDemand);
+const adapters = buildAdapters(loadAdapterEnv(process.env), { store, http: retryingClient(fetchHttpClient()) });
+// A source with no adapter any more (the Pierre integration was removed) keeps its saved records but stops reporting freshness.
+const retired = store.retireSourcesExcept(adapters.map((a) => a.id));
+if (retired.length > 0) console.log(`retired sources, kept as saved history: ${retired.join(', ')}`);
+const refreshAdapter = adapters.find((a) => a.capabilities.refreshOnDemand);
 const refresher = refreshAdapter ? createRefresher({ store, adapter: refreshAdapter }) : undefined;
 const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {
-  const sources = observedSources(buildAdapters(loadAdapterEnv(process.env), { store, http: retryingClient(fetchHttpClient()) }));
+  const sources = observedSources(adapters);
   if (sources.length === 0) {
     console.warn('OBSERVER is on but no source is configured, so nothing will be watched');
   } else {

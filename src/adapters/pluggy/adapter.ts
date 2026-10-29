@@ -1,4 +1,4 @@
-import type { AdapterCapabilities, SourceAdapter } from '../../core/adapter.ts';
+import type { AdapterCapabilities, RefreshHandle, SourceAdapter } from '../../core/adapter.ts';
 import {
   SourceFormatError,
   SourceHttpError,
@@ -45,7 +45,7 @@ function hasQuotaWarning(item: Record<string, unknown>): boolean {
 export class PluggyAdapter implements SourceAdapter {
   readonly id = 'pluggy';
   readonly capabilities: AdapterCapabilities = {
-    refreshOnDemand: false,
+    refreshOnDemand: true,
     pendingTransactions: true,
     creditLimits: true,
     rawDescription: true,
@@ -180,21 +180,42 @@ export class PluggyAdapter implements SourceAdapter {
     return key;
   }
 
+  /** Asks Pluggy to sync every item with its bank. Sent once per item and never retried, because each sync uses bank read quota. */
+  async requestRefresh(): Promise<RefreshHandle> {
+    let accepted = 0;
+    const refused: string[] = [];
+    for (const item of this.config.items) {
+      const response = await this.call('PATCH', `/items/${item.itemId}`, {}, false);
+      if (response.status >= 200 && response.status < 300) accepted++;
+      // Meu Pluggy items cannot always be updated through the API: the user refreshes them in the Meu Pluggy app, and the next read picks it up.
+      else refused.push(item.label);
+    }
+    if (accepted === 0) throw new Error(`Pluggy did not accept the refresh for ${refused.join(', ')}. Refresh these connections in the Meu Pluggy app; the next read will pick it up.`);
+    return { requestedAt: this.now().toISOString() };
+  }
+
   private async get(path: string, record = true): Promise<unknown> {
+    const url = `${this.baseUrl}${path}`;
+    const response = await this.call('GET', path, undefined, record);
+    if (response.status < 200 || response.status >= 300) throw new SourceHttpError(response.status, url);
+    return response.body;
+  }
+
+  /** One authenticated call. A rejected cached key is renewed once. The caller decides what a non-2xx status means. */
+  private async call(method: string, path: string, body: unknown, record: boolean): Promise<{ status: number; body: unknown }> {
     const url = `${this.baseUrl}${path}`;
     let usedCachedKey = this.apiKey !== null;
     let key = this.apiKey ?? (await this.authenticate());
     for (let attempt = 0; attempt < 2; attempt++) {
-      const response = await this.http.request('GET', url, { headers: { 'X-API-KEY': key } });
+      const response = await this.http.request(method, url, { headers: { 'X-API-KEY': key }, ...(body !== undefined ? { body } : {}) });
       if ((response.status === 401 || response.status === 403) && usedCachedKey) {
         usedCachedKey = false;
         key = await this.authenticate();
         continue;
       }
       if (record) this.sink({ endpoint: path, httpStatus: response.status, body: response.body });
-      if (response.status < 200 || response.status >= 300) throw new SourceHttpError(response.status, url);
-      return response.body;
+      return response;
     }
-    throw new SourceHttpError(403, url);
+    return { status: 403, body: null };
   }
 }

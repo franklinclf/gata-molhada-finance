@@ -190,3 +190,16 @@ test('a partial success without the 423 warning is not a quota problem', async (
   const [entry] = await adapter.fetchFreshness();
   assert.equal('quotaExhausted' in (entry ?? {}), false);
 });
+
+test('requestRefresh asks Pluggy to update each item once', async () => {
+  const { http, adapter } = build(baseRoutes([{ method: 'PATCH', match: '/items/item-1', respond: () => ok(pluggyItem) }]));
+  assert.equal(adapter.capabilities.refreshOnDemand, true);
+  const handle = await adapter.requestRefresh();
+  assert.equal(handle.requestedAt, '2026-10-26T15:00:00.000Z');
+  assert.equal(http.callsTo('PATCH', '/items/item-1').length, 1);
+});
+
+test('requestRefresh explains when Pluggy refuses every item', async () => {
+  const { adapter } = build(baseRoutes([{ method: 'PATCH', match: '/items/item-1', respond: () => ({ status: 400, body: { code: 400 } }) }]));
+  await assert.rejects(() => adapter.requestRefresh(), /Refresh these connections in the Meu Pluggy app/);
+});

@@ -125,6 +125,8 @@ export interface Store {
   startRefresh(sourceId: SourceId, requestedAt: string): number;
   finishRefresh(id: number, finishedAt: string, status: RefreshStatus, detail: Record<string, unknown>): void;
   lastRefresh(sourceId: SourceId): RefreshLogEntry | null;
+  /** Marks every source that is not in the list as retired: its saved records stay, but it no longer reports freshness. Returns the ones retired now. */
+  retireSourcesExcept(activeIds: SourceId[]): SourceId[];
   listFreshness(): Freshness[];
   /** Inserts new records and refreshes existing ones; first_seen_at is kept, last_seen_at becomes seenAt. */
   upsertSourceAccounts(sourceId: SourceId, accounts: SourceAccount[], seenAt: string): void;

@@ -1,9 +1,8 @@
 import type { SourceAdapter } from '../core/adapter.ts';
 import type { ObservedSource } from './observer.ts';
 
-/** How often each source is checked. The Pluggy items are a cheap read, and Pierre's account list is a little heavier. */
+/** How often each source is checked. The Pluggy items are a cheap read. */
 export const POLL_INTERVAL_MS: Record<string, number> = {
-  pierre: 5 * 60_000,
   pluggy: 2 * 60_000,
 };
 

@@ -24,7 +24,7 @@ try {
   const adapters = buildAdapters(loadAdapterEnv(process.env), { store, http: retryingClient(fetchHttpClient()) });
   const sources = observedSources(adapters);
   if (sources.length === 0) {
-    console.error('No source to watch. Set PIERRE_API_KEY and/or the PLUGGY_* variables.');
+    console.error('No source to watch. Set the PLUGGY_* variables.');
     exitCode = 1;
   } else {
     const observer = new Observer({

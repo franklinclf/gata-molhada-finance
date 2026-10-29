@@ -14,7 +14,7 @@ Troque `rg-gmf` e `vm-gmf` se usou outros nomes.
 
 ## Segredos
 
-Cada nome em `deploy/secrets.list` precisa existir no Key Vault. Hífens viram sublinhados no ambiente (`PIERRE-API-KEY` vira `PIERRE_API_KEY`). Para gravar ou trocar um valor, no seu terminal: `GMF_KEYVAULT=<cofre> bash infra/azure/set-secret.sh NOME`. A troca é aplicada no próximo ciclo (até 2 minutos), recriando o contêiner. Só valores de uma linha são aceitos.
+Cada nome em `deploy/secrets.list` precisa existir no Key Vault. Hífens viram sublinhados no ambiente (`PLUGGY-CLIENT-ID` vira `PLUGGY_CLIENT_ID`). Para gravar ou trocar um valor, no seu terminal: `GMF_KEYVAULT=<cofre> bash infra/azure/set-secret.sh NOME`. A troca é aplicada no próximo ciclo (até 2 minutos), recriando o contêiner. Só valores de uma linha são aceitos.
 
 ## Limitação conhecida
 

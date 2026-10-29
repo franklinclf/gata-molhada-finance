@@ -66,7 +66,7 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
   };
   return (
     <>
-      <p class="muted">As categorias vêm das fontes (Pierre e Meu Pluggy) e podem ter nomes diferentes para o mesmo assunto. Crie as suas e mova transações para elas pelo painel de detalhes da transação. Cada categoria pode ficar dentro de um grupo (por exemplo, Aluguel dentro de Casa), e a aba Grupos de Gastos soma as categorias de cada grupo.</p>
+      <p class="muted">As categorias vêm do Meu Pluggy (e, nos dados antigos, do Pierre) e podem ter nomes diferentes para o mesmo assunto. Crie as suas e mova transações para elas pelo painel de detalhes da transação. Cada categoria pode ficar dentro de um grupo (por exemplo, Aluguel dentro de Casa), e a aba Grupos de Gastos soma as categorias de cada grupo.</p>
       <form
         class="recat"
         onSubmit={(e) => {

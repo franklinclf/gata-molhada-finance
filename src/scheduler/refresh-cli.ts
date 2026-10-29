@@ -24,7 +24,7 @@ try {
   const adapters = buildAdapters(loadAdapterEnv(process.env), { store, http: retryingClient(fetchHttpClient()) });
   const adapter = adapters.find((a) => a.capabilities.refreshOnDemand);
   if (!adapter) {
-    console.error('No source can refresh on demand. Set PIERRE_API_KEY.');
+    console.error('No source can refresh on demand. Set the PLUGGY_* variables.');
     process.exitCode = 1;
   } else {
     try {

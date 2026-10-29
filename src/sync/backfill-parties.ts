@@ -1,4 +1,3 @@
-import { partiesOf as pierreParties } from '../adapters/pierre/normalize.ts';
 import { partiesOf as pluggyParties } from '../adapters/pluggy/normalize.ts';
 import type { Store } from '../store/store.ts';
 
@@ -16,8 +15,7 @@ function recordsOf(body: unknown, key: 'data' | 'results'): Array<Record<string,
 export function backfillParties(store: Store, now: Date): number {
   if (store.getSetting(SETTING) !== null) return 0;
   let filled = 0;
-  const sources: Array<[string, string, 'data' | 'results', (r: Record<string, unknown>) => ReturnType<typeof pierreParties>]> = [
-    ['pierre', 'get-transactions', 'data', pierreParties],
+  const sources: Array<[string, string, 'data' | 'results', (r: Record<string, unknown>) => ReturnType<typeof pluggyParties>]> = [
     ['pluggy', '/v2/transactions', 'results', pluggyParties],
   ];
   for (const [sourceId, prefix, key, partiesOf] of sources) {

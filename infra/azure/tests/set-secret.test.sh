@@ -34,11 +34,11 @@ EOF
 chmod +x "$tmp/bin/az"
 export PATH="$tmp/bin:$PATH" AZ_LOG="$tmp/az.log" AZ_CAPTURE="$tmp/captured" GMF_KEYVAULT=kv-test
 
-printf 'sk-secret-value\n' | bash "$script" PIERRE-API-KEY > /dev/null 2>&1
+printf 'sk-secret-value\n' | bash "$script" PLUGGY-CLIENT-ID > /dev/null 2>&1
 check "passes the value through a file" "sk-secret-value" "$(cat "$tmp/captured")"
 check "the temporary file is private" "-rw-------" "$(cat "$tmp/captured.perms")"
 check "the value never appears in the az arguments" "0" "$(grep -c 'sk-secret-value' "$tmp/az.log" || true)"
-check "targets the right vault and name" "1" "$(grep -c -- '--vault-name kv-test --name PIERRE-API-KEY' "$tmp/az.log")"
+check "targets the right vault and name" "1" "$(grep -c -- '--vault-name kv-test --name PLUGGY-CLIENT-ID' "$tmp/az.log")"
 
 if printf 'x\n' | bash "$script" bad_name > /dev/null 2>&1; then rc=0; else rc=$?; fi
 check "rejects invalid names" "nonzero" "$([[ $rc -ne 0 ]] && echo nonzero || echo zero)"

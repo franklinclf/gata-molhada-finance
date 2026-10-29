@@ -21,7 +21,7 @@ export function parseSyncArgs(argv: string[], now: Date): SyncArgs {
       since = new Date(`${value}T00:00:00.000Z`);
     } else if (arg === '--source') {
       const value = argv[++i];
-      if (value === undefined || value.startsWith('--')) throw new Error('--source expects a source id such as pierre or pluggy');
+      if (value === undefined || value.startsWith('--')) throw new Error('--source expects a source id such as pluggy');
       source = value;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
