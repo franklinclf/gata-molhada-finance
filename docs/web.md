@@ -13,7 +13,7 @@ Para testar o build que vai para produção: `npm run build:web` e `npm start`, 
 
 ## Widgets
 
-Saldo em contas, cartões e limite, fluxo de caixa, gastos, parcelas, transações recentes, atualização das fontes e divergências abertas. Cada widget mostra a idade do dado mais antigo que usa, e passa a avisar quando passa de 6 horas.
+Saldo em contas, cartões e limite, fluxo de caixa, gastos, parcelas, orçamento, patrimônio, metas, transações recentes, atualização das fontes e divergências abertas. Cada widget mostra a idade do dado mais antigo que usa, e passa a avisar quando passa de 6 horas.
 
 A ordem e a visibilidade dos widgets ficam no banco (`/api/layout`), então valem em todos os aparelhos. A ocultação de valores fica em cada aparelho (localStorage) e começa ligada.
 
@@ -25,7 +25,9 @@ A ordem e a visibilidade dos widgets ficam no banco (`/api/layout`), então vale
 - **Gastos:** categorias ou estabelecimentos; cada linha abre as transações que a compõem.
 - **Cartões:** o ciclo em aberto é o padrão. Dá para escolher faturas fechadas por mês de vencimento. Mostra situação (paga, a pagar, vencida), o que foi lançado, o que foi pago e o histórico de faturas, além das abas Parcelas e Limites.
 - **Contas, Fluxo e Fontes:** saldo por instituição, fluxo de caixa com lista de entradas e saídas, e a atualização das fontes com as divergências.
-- **Ajustes:** ocultar contas e cartões (saem de todos os totais), criar e excluir categorias e remover regras de categoria.
+- **Orçamento, Patrimônio, Metas, Calendário e Analista:** ver as seções com o mesmo nome abaixo.
+- **Ajustes:** ocultar contas e cartões (saem de todos os totais), categorias e seus grupos, regras por condições, IA, dados (versão, backup) e segurança.
+- **Menu:** em tela larga o menu de cima mostra sete seções e guarda o resto em "Mais"; no celular a barra de baixo tem quatro e "Mais" abre o resto.
 
 ## Como o ciclo da fatura é calculado
 
@@ -108,6 +110,43 @@ O que isso muda, sem IA:
 - **Um mesmo texto enviado a pagadores diferentes** (como "Pix key transfer" do 99Pay) não vai à IA: uma resposta seria copiada para todos. Respostas antigas desse tipo são descartadas.
 - A IA não escolhe "Transferência entre minhas contas", "Pagamento de fatura" nem "Investimentos": isso é decidido por fatos. Uma resposta antiga da IA com uma dessas categorias é ignorada.
 - A transação mostra "Para" ou "De", com o nome e os 4 últimos dígitos do documento.
+
+## Exportar e fazer backup
+
+- **CSV:** em Transações, "Exportar CSV" baixa o que o filtro atual mostra (`GET /api/export/transactions.csv`, aceita os mesmos filtros da lista, `style=intl` para vírgula e ponto, e `id=` repetido para exportar só linhas escolhidas). O arquivo começa com a marca de ordem de bytes para o Excel ler os acentos, usa ";" e vírgula decimal, e um texto que começa com `=`, `+`, `-` ou `@` ganha um apóstrofo na frente para a planilha não executá-lo como fórmula.
+- **Backup:** Ajustes > Dados > "Baixar backup" gera uma cópia consistente do banco inteiro (`VACUUM INTO`), compacta e cifra com AES-256-GCM, com chave derivada da frase-senha por scrypt (N 2^15). A frase-senha tem pelo menos 12 caracteres e vai no corpo do POST, não na URL. Exige login com senha ou passkey nos últimos 15 minutos, como mudar a forma de entrar. O formato está em `src/backup/backup.ts`. A senha perdida é o arquivo perdido.
+- **Restaurar:** `GMF_BACKUP_PASSPHRASE=… npm run restore:backup -- backup.gmfbak novo.sqlite` abre o backup num arquivo NOVO (nunca sobrescreve), confere a integridade e diz o que fazer: parar o app, tirar o banco atual do caminho e colocar o novo no lugar. Não há restauração pela web de propósito, porque trocar o banco com o app no ar é fácil de errar.
+
+## Calendário e contas que se repetem
+
+- **Detecção** (`src/api/recurring.ts`, sem IA): uma cobrança ou entrada é recorrente quando aparece pelo menos 3 vezes, em 3 meses diferentes, com intervalo típico de 24 a 38 dias em pelo menos 70% dos casos, valor dentro de 10% da mediana em 70% dos casos (fixa) ou dentro de 45% em 80% (variável, como conta de luz) e a última dentro de 2,2 intervalos de hoje (senão foi cancelada). Parcelas, pendentes e movimentos que não são gasto nem receita ficam de fora. O nome é o do estabelecimento limpo ou da pessoa. O próximo dia é o dia típico do mês depois da última; se esse dia passou há mais de 5 dias sem aparecer, o item aparece "atrasado". "Não é recorrente" esconde um item (tabela `recurring_ignored`, migração 022).
+- **Calendário** (`src/api/calendar.ts`): grade do mês com o que passou pelas contas em cada dia e, de hoje em diante, o que se espera: itens recorrentes pagos da conta (os do cartão já estão na fatura) e as faturas de cartão no vencimento (fechadas e não pagas pelo que falta; a aberta pela estimativa da tela Cartões). O saldo projetado das contas parte do saldo de hoje e anda dia a dia, até 100 dias à frente. Um item cujo dia passou continua esperado e cai em hoje.
+
+## Metas
+
+A tela Metas (`src/api/goals.ts`, tabela `goals`, migração 023) acompanha quanto falta para um valor, com ou sem data.
+
+- **O que acompanha:** um valor que você atualiza, o saldo de uma conta, um bem lançado em Patrimônio ou o patrimônio total. Se o item acompanhado some, a meta cai no valor digitado e avisa.
+- **Progresso** é quanto do valor da meta já está guardado. O **ritmo**, quando há data, é julgado pelo caminho andado desde o ponto de partida (o valor no dia em que a meta foi criada): a linha reta entre esse dia e a data é o esperado. Adiantada passa de 10% à frente da linha, atrás do ritmo é mais de 5% atrás, no ritmo no meio; atingida vale também se chegou tarde; atrasada é a data vencida sem atingir. Assim uma meta que já começou com dinheiro não nasce "adiantada".
+- **Por mês:** o que falta dividido pelos meses inteiros restantes (pelo menos um).
+
+## Analista (chat)
+
+A tela Analista responde perguntas sobre as suas finanças (`src/ai/analyst.ts`, `analyst-tools.ts`, tabelas `chat_conversations` e `chat_messages`, migração 024).
+
+- **Como funciona:** o modelo devolve, a cada passo, um JSON pedindo uma ferramenta ou dando a resposta. O código roda a ferramenta e devolve o resultado. Há até 6 passos por pergunta; se estourar, o analista diz isso e pede uma pergunta mais específica.
+- **Ferramentas (só leem):** visão geral do mês, gastos por categoria ou estabelecimento, fluxo de caixa, lista de transações com a soma de todas as que combinam, cartões, faturas futuras, orçamento, recorrentes, patrimônio, metas e tendência. Todo número já vem calculado em reais pelo código; a regra do prompt é citar o total da ferramenta e nunca somar linhas de cabeça.
+- **O que o modelo vê:** descrições (cortadas em 80 caracteres), datas, valores, categorias, nome da instituição e final do cartão. Nunca o documento (CPF ou CNPJ), número de conta nem hash. O texto das transações vem sempre dentro de "observações" e o prompt manda tratá-lo como dado, nunca como instrução. O analista não altera nada.
+- **Custo e limites:** modelo barato (claude-haiku-5.5) para o dia a dia e o mais forte (claude-sonnet-5.5) para perguntas abertas (por que, o que mudou, compare, devo...), com reserva se um falhar (`AI_ANALYST_MODEL`, `AI_ANALYST_DEEP_MODEL`). Cada chamada entra no gasto do mês e o limite mensal (`AI_MONTHLY_BUDGET_USD`) vale antes de cada passo. Uma pergunta de cada vez. A pergunta é salva antes da chamada, e as últimas 12 mensagens da conversa entram no contexto de uma pergunta seguinte. Numa medição com dados reais, três perguntas custaram US$ 0,015.
+- Fica desligado, e a tela avisa, se a IA não estiver ligada no servidor.
+
+## Busca rápida
+
+Ctrl+K (Cmd+K no Mac) abre a busca rápida em qualquer tela: ir para uma tela (pelo nome ou por palavras como "extrato", "faturas", "backup"), atalhos (Nova transação, Perguntar ao analista, Fazer backup, atualizar as fontes) e, com 3 letras ou mais, as transações cujo texto combina. Setas escolhem, Enter abre, Esc fecha. No celular não há atalho de teclado; use a aba Mais.
+
+## Seletores
+
+Nenhuma tela usa o `<select>` do navegador ou do sistema. `web/src/Select.tsx` é o seletor próprio: lista igual em qualquer aparelho, títulos de grupo, busca (aparece sozinha com mais de 8 opções), teclado (setas, Home, End, Enter, Esc; sem busca, digitar pula para a opção que começa com a letra), marca da opção atual e, quando pedido, "Criar “texto”" para uma opção nova. Abre abaixo do botão (ou acima, se faltar espaço) e, no celular, como uma folha que sobe da base da tela. `CategorySelect` o usa para categorias, agrupadas pelo grupo a que pertencem (ordenados pelo uso, com a contagem à direita, "sua" nas que você criou e "Sem grupo" por último), e é o que aparece no painel da transação, na regra, na transação digitada, nas sugestões da IA e no orçamento. Em Ajustes > Categorias, o grupo de cada categoria se escolhe ou cria no mesmo seletor. A lógica de busca e de agrupamento é pura e testada (`select-model.ts`, `category-options.ts`).
 
 ## Versão e atualização
 
