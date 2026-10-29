@@ -22,6 +22,22 @@ export interface ManualTransaction {
   notes: string | null;
 }
 
+export interface Goal {
+  id: number;
+  name: string;
+  /** Cents. */
+  target: number;
+  targetDay: string | null;
+  track: 'manual' | 'account' | 'asset' | 'networth';
+  /** Account id or manual asset id, depending on `track`. */
+  trackRef: string | null;
+  /** The amount typed by hand, used when `track` is manual or when the linked item is gone. */
+  saved: number;
+  initial: number;
+  createdDay: string;
+  archived: boolean;
+}
+
 export type BudgetScope = 'category' | 'group';
 export interface BudgetRow {
   scope: BudgetScope;
@@ -219,6 +235,9 @@ export interface Store {
   listCategoryParents(): Map<string, string>;
   /** Sets the group of a category; null forgets the choice and goes back to the default. */
   setCategoryParent(category: string, parent: string | null, now: string): void;
+  listGoals(): Goal[];
+  saveGoal(goal: Omit<Goal, 'id'> & { id?: number }): Goal;
+  deleteGoal(id: number): void;
   listRecurringIgnored(): Set<string>;
   setRecurringIgnored(key: string, ignored: boolean, now: string): void;
   listManualTransactions(): ManualTransaction[];

@@ -1,6 +1,6 @@
 import type { Store } from '../store/store.ts';
 
-export const WIDGET_IDS = ['balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'recent', 'freshness', 'findings'] as const;
+export const WIDGET_IDS = ['balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'recent', 'freshness', 'findings'] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 
 export const GRID_COLUMNS = 12;
@@ -17,6 +17,7 @@ export const DEFAULT_SIZES: Record<WidgetId, { w: number; h: number }> = {
   installments: { w: 4, h: 5 },
   budget: { w: 4, h: 5 },
   networth: { w: 4, h: 5 },
+  goals: { w: 4, h: 5 },
   recent: { w: 4, h: 6 },
   freshness: { w: 4, h: 5 },
   findings: { w: 4, h: 5 },

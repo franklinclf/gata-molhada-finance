@@ -6,6 +6,7 @@ import { useStoredFlag } from './hooks.ts';
 import { Login } from './Login.tsx';
 import { AccountsPage } from './pages/accounts.tsx';
 import { CardsPage } from './pages/cards.tsx';
+import { GoalsPage } from './pages/goals.tsx';
 import { CalendarPage } from './pages/calendar.tsx';
 import { BudgetsPage } from './pages/budgets.tsx';
 import { NetWorthPage } from './pages/networth.tsx';
@@ -28,6 +29,7 @@ const TABS: Array<[string, string, string]> = [
 const MORE: Array<[string, string]> = [
   ['budgets', 'Orçamento'],
   ['networth', 'Patrimônio'],
+  ['goals', 'Metas'],
   ['calendar', 'Calendário'],
   ['accounts', 'Contas'],
   ['cashflow', 'Fluxo de caixa'],
@@ -42,6 +44,7 @@ const NAV: Array<[string, string]> = [
   ['cards', 'Cartões'],
   ['budgets', 'Orçamento'],
   ['networth', 'Patrimônio'],
+  ['goals', 'Metas'],
   ['calendar', 'Calendário'],
   ['accounts', 'Contas'],
   ['cashflow', 'Fluxo'],
@@ -86,6 +89,9 @@ export function App() {
       break;
     case 'budgets':
       page = <BudgetsPage route={route} now={now} hidden={hidden} />;
+      break;
+    case 'goals':
+      page = <GoalsPage now={now} hidden={hidden} />;
       break;
     case 'calendar':
       page = <CalendarPage route={route} now={now} hidden={hidden} />;
