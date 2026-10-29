@@ -6,6 +6,7 @@ import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
+import { createGoal, deleteGoal, listGoals, updateGoal, type GoalResult } from './goals.ts';
 import { calendar } from './calendar.ts';
 import { detectRecurring, ignoreRecurring } from './recurring.ts';
 import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
@@ -135,6 +136,21 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
       saveLayout(store, layout, now);
       return { status: 200, body: layout };
+    }
+    case 'goals': {
+      const asResult = <T,>(r: GoalResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
+      if (parts.length === 2) {
+        if (method === 'GET') return { status: 200, body: { items: listGoals(store, now) } };
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(createGoal(store, input, now)) : badRequest('body must be { name, target, track }');
+      }
+      const goalId = Number(id);
+      if (parts.length !== 3 || !Number.isInteger(goalId)) return null;
+      if (method === 'DELETE') return asResult(deleteGoal(store, goalId));
+      if (method !== 'PUT') return methodNotAllowed();
+      const input = parseBody(body);
+      return input ? asResult(updateGoal(store, goalId, input, now)) : badRequest('body must be an object');
     }
     case 'recurring': {
       if (parts.length === 2) return method === 'GET' ? { status: 200, body: { items: detectRecurring(store, now, opts) } } : methodNotAllowed();

@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BudgetRow, BudgetScope, ManualAsset, ManualTransaction } from './store.ts';
+import type { BudgetRow, BudgetScope, Goal, ManualAsset, ManualTransaction } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -711,6 +711,24 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setCategoryParent(category: string, parent: string | null, now: string): void {
       if (parent === null) db.prepare('DELETE FROM category_parents WHERE category = ?').run(category);
       else db.prepare('INSERT INTO category_parents (category, parent, updated_at) VALUES (?, ?, ?) ON CONFLICT(category) DO UPDATE SET parent = excluded.parent, updated_at = excluded.updated_at').run(category, parent, now);
+    },
+
+    listGoals(): Goal[] {
+      const rows = db.prepare('SELECT * FROM goals ORDER BY archived, target_day IS NULL, target_day, id').all() as Array<{ id: number; name: string; target: number; target_day: string | null; track: Goal['track']; track_ref: string | null; saved: number; initial: number; created_day: string; archived: number }>;
+      return rows.map((r) => ({ id: r.id, name: r.name, target: r.target, targetDay: r.target_day, track: r.track, trackRef: r.track_ref, saved: r.saved, initial: r.initial, createdDay: r.created_day, archived: r.archived === 1 }));
+    },
+
+    saveGoal(goal: Omit<Goal, 'id'> & { id?: number }): Goal {
+      if (goal.id === undefined) {
+        const info = db.prepare('INSERT INTO goals (name, target, target_day, track, track_ref, saved, initial, created_day, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(goal.name, goal.target, goal.targetDay, goal.track, goal.trackRef, goal.saved, goal.initial, goal.createdDay, goal.archived ? 1 : 0);
+        return { ...goal, id: Number(info.lastInsertRowid) };
+      }
+      db.prepare('UPDATE goals SET name = ?, target = ?, target_day = ?, track = ?, track_ref = ?, saved = ?, initial = ?, archived = ? WHERE id = ?').run(goal.name, goal.target, goal.targetDay, goal.track, goal.trackRef, goal.saved, goal.initial, goal.archived ? 1 : 0, goal.id);
+      return { ...goal, id: goal.id };
+    },
+
+    deleteGoal(id: number): void {
+      db.prepare('DELETE FROM goals WHERE id = ?').run(id);
     },
 
     listRecurringIgnored(): Set<string> {
