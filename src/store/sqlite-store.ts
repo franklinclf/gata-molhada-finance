@@ -713,6 +713,15 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       else db.prepare('INSERT INTO category_parents (category, parent, updated_at) VALUES (?, ?, ?) ON CONFLICT(category) DO UPDATE SET parent = excluded.parent, updated_at = excluded.updated_at').run(category, parent, now);
     },
 
+    listRecurringIgnored(): Set<string> {
+      return new Set((db.prepare('SELECT key FROM recurring_ignored').all() as Array<{ key: string }>).map((r) => r.key));
+    },
+
+    setRecurringIgnored(key: string, ignored: boolean, now: string): void {
+      if (ignored) db.prepare('INSERT OR IGNORE INTO recurring_ignored (key, created_at) VALUES (?, ?)').run(key, now);
+      else db.prepare('DELETE FROM recurring_ignored WHERE key = ?').run(key);
+    },
+
     listManualTransactions(): ManualTransaction[] {
       const rows = db.prepare('SELECT id, account_id, day, amount, description, category, notes FROM manual_transactions ORDER BY day, id').all() as Array<{ id: number; account_id: string; day: string; amount: number; description: string; category: string | null; notes: string | null }>;
       return rows.map((r) => ({ id: r.id, accountId: r.account_id, day: r.day, amount: r.amount, description: r.description, category: r.category, notes: r.notes }));

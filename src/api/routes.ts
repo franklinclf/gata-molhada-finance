@@ -6,6 +6,8 @@ import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
+import { calendar } from './calendar.ts';
+import { detectRecurring, ignoreRecurring } from './recurring.ts';
 import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
 import { categoryTrend } from './trends.ts';
 import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type AssetResult } from './networth.ts';
@@ -133,6 +135,23 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
       saveLayout(store, layout, now);
       return { status: 200, body: layout };
+    }
+    case 'recurring': {
+      if (parts.length === 2) return method === 'GET' ? { status: 200, body: { items: detectRecurring(store, now, opts) } } : methodNotAllowed();
+      if (parts.length === 3 && id === 'ignore') {
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { key, ignored }');
+        return fromMutation(ignoreRecurring(store, input.key, input.ignored, now));
+      }
+      return null;
+    }
+    case 'calendar': {
+      if (parts.length !== 2) return null;
+      if (method !== 'GET') return methodNotAllowed();
+      const month = params.get('month') ?? localDay(now.toISOString()).slice(0, 7);
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return badRequest('month must look like 2026-10');
+      return { status: 200, body: calendar(store, month, now, opts) };
     }
     case 'manual-transactions': {
       const asResult = <T,>(r: ManualResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
