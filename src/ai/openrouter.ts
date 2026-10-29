@@ -8,6 +8,36 @@ export interface ChatResult {
 
 export class BudgetExceeded extends Error {}
 
+/** A call that was paid for but gave nothing usable (empty answer, for example). The cost still counts against the budget. */
+export class ChatError extends Error {
+  readonly costUsd: number;
+  constructor(message: string, costUsd: number) {
+    super(message);
+    this.name = 'ChatError';
+    this.costUsd = costUsd;
+  }
+}
+
+/** What a failed call cost, so the caller can record it. Zero for errors that were never billed. */
+export function costOfFailure(error: unknown): number {
+  return error instanceof ChatError ? error.costUsd : 0;
+}
+
+export interface KeyUsage {
+  /** Spent this UTC month by every request made with the key, whoever made it. */
+  monthlyUsd: number;
+  dailyUsd: number;
+}
+
+/** Asks OpenRouter what the key spent. This is the number its dashboard shows, including calls made outside this app. */
+export async function fetchKeyUsage(apiKey: string, http: typeof fetch = fetch): Promise<KeyUsage> {
+  const response = await http('https://openrouter.ai/api/v1/key', { headers: { Authorization: `Bearer ${apiKey}` } });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = ((await response.json()) as { data?: { usage_monthly?: unknown; usage_daily?: unknown } }).data;
+  if (typeof data?.usage_monthly !== 'number') throw new Error('no usage_monthly in the answer');
+  return { monthlyUsd: data.usage_monthly, dailyUsd: typeof data.usage_daily === 'number' ? data.usage_daily : 0 };
+}
+
 /** Keeps a running total of what the calls cost and stops when the cap is reached. */
 export class Budget {
   spent = 0;
@@ -68,7 +98,8 @@ export async function chat(apiKey: string, options: ChatOptions): Promise<ChatRe
   if (!response.ok) throw new Error(`HTTP ${response.status} ${text.slice(0, 200)}`);
   const data = JSON.parse(text) as { choices?: Array<{ message?: { content?: string } }>; usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number } };
   const content = data.choices?.[0]?.message?.content ?? '';
-  if (!content) throw new Error('empty answer');
+  // A model that spends its whole allowance thinking returns nothing, and OpenRouter still bills the thinking.
+  if (!content) throw new ChatError('empty answer', data.usage?.cost ?? 0);
   return {
     content,
     promptTokens: data.usage?.prompt_tokens ?? 0,

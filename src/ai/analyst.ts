@@ -2,6 +2,7 @@ import { localDay, localMonth } from '../core/time.ts';
 import type { ChatMessage, Store } from '../store/store.ts';
 import { parseJson, type AiClient } from './openrouter.ts';
 import { TOOLS, toolByName, ToolError } from './analyst-tools.ts';
+import { monthSpend, recordFailedCost } from './spend.ts';
 
 export interface AnalystOptions {
   client: AiClient;
@@ -105,7 +106,7 @@ export async function ask(store: Store, options: AnalystOptions, input: { conver
   };
 
   for (let step = 0; step < (options.maxSteps ?? DEFAULT_MAX_STEPS); step++) {
-    if (store.aiSpent(month) >= options.monthlyBudgetUsd) return finish('O limite de gasto com IA deste mês foi atingido, então não posso consultar o modelo agora. Ele volta a valer no próximo mês, ou você pode aumentar AI_MONTHLY_BUDGET_USD.', 'budget');
+    if (monthSpend(store, month).spent >= options.monthlyBudgetUsd) return finish('O limite de gasto com IA deste mês foi atingido, então não posso consultar o modelo agora. Ele volta a valer no próximo mês, ou você pode aumentar AI_MONTHLY_BUDGET_USD.', 'budget');
     let parsed: { action?: unknown; tool?: unknown; args_json?: unknown; text?: unknown } | null = null;
     for (const model of models) {
       try {
@@ -115,7 +116,8 @@ export async function ask(store: Store, options: AnalystOptions, input: { conver
         usedModel = model;
         parsed = parseJson(reply.content);
         break;
-      } catch {
+      } catch (error) {
+        recordFailedCost(store, { kind: 'analyst', model, items: 1, at: options.now().toISOString() }, error);
         // Try the next model.
       }
     }

@@ -5,6 +5,7 @@ import { mapSourceCategory } from './source-map.ts';
 import type { AiCategory, Store } from '../store/store.ts';
 import { CATEGORY_NAMES, taxonomyId, TAXONOMY } from './taxonomy.ts';
 import { parseJson, type AiClient } from './openrouter.ts';
+import { monthSpend, recordFailedCost } from './spend.ts';
 
 export interface CategorizerOptions {
   client: AiClient;
@@ -148,7 +149,7 @@ export async function categorizePending(store: Store, options: CategorizerOption
   const month = localMonth(options.now().toISOString());
   const size = options.batchSize ?? 25;
   for (let start = 0; start < todo.length; start += size) {
-    if (store.aiSpent(month) >= options.monthlyBudgetUsd) {
+    if (monthSpend(store, month).spent >= options.monthlyBudgetUsd) {
       result.stoppedBy = 'budget';
       break;
     }
@@ -185,7 +186,8 @@ export async function categorizePending(store: Store, options: CategorizerOption
         result.asked += batch.length;
         answered = true;
         break;
-      } catch {
+      } catch (error) {
+        recordFailedCost(store, { kind: 'categorize', model, items: batch.length, at: options.now().toISOString() }, error);
         // Try the next model for this batch.
       }
     }
