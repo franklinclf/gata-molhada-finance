@@ -51,6 +51,8 @@ export function startOfLocalDay(day: string): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + 3 * 3_600_000).toISOString();
 }
 
+export const manualId = (id: number): string => `man_${id}`;
+
 /** Rebuilds canonical accounts, then canonical transactions and findings, and saves all of them. */
 export function runReconciliation(store: Store, options: RunOptions & { staleDays?: number; dataStart?: string } = {}): FullReconciliation {
   const now = options.now ?? (() => new Date());
@@ -66,6 +68,12 @@ export function runReconciliation(store: Store, options: RunOptions & { staleDay
     dataStart,
     manual: store.listManualMapping(),
   });
+  // What the owner typed in is added after the sources are matched. It has no source record, so no link.
+  const known = new Set(accounts.accounts.map((a) => a.id));
+  for (const m of store.listManualTransactions()) {
+    if (!known.has(m.accountId)) continue;
+    transactions.transactions.push({ id: manualId(m.id), accountId: m.accountId, occurredAt: `${m.day}T15:00:00.000Z`, amount: m.amount, description: m.description, descriptionRaw: null, status: 'posted', installment: null, category: m.category, state: 'confirmed', sourceIds: ['manual'], excluded: false });
+  }
   const dismissed = store.listDismissedFindingIds();
   const stamp = now().toISOString();
   store.replaceCanonicalTransactions(transactions.transactions, transactions.links, stamp);

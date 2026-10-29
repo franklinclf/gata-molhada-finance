@@ -4,6 +4,7 @@ import { brl, dayMonth, localDay, monthName } from './format.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { CopyButton } from './copy.tsx';
+import { ManualForm } from './ManualForm.tsx';
 import { Loading, STATE_LABEL, StatusBadge } from './ui.tsx';
 
 function InstallmentEditor({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
@@ -129,6 +130,8 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
 
   const close = () => patchParams({ tx: null });
   const d = detail.data;
+  const manual = /^man_\d+$/.test(id);
+  const [editing, setEditing] = useState(false);
 
   async function save(category: string | null) {
     setSaving(true);
@@ -187,7 +190,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
               <dt>Status</dt>
               <dd>{d.transaction.status === 'pending' ? 'Pendente' : 'Lançada'}</dd>
               <dt>Fontes</dt>
-              <dd>{STATE_LABEL[d.transaction.state] ?? d.transaction.state}</dd>
+              <dd>{manual ? 'Digitada por você' : (STATE_LABEL[d.transaction.state] ?? d.transaction.state)}</dd>
               {d.transaction.installment && (
                 <>
                   <dt>Parcela</dt>
@@ -291,11 +294,34 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
               Ver todas deste estabelecimento
             </button>
 
-            {d.account.kind === 'credit_card' && d.transaction.amount < 0 && <InstallmentEditor id={id} d={d} onSaved={() => detail.reload()} />}
+            {manual && (
+              <>
+                <h3>Digitada por você</h3>
+                {editing ? (
+                  <ManualForm
+                    now={new Date()}
+                    initial={{ id, accountId: d.account.id, day: localDay(d.transaction.occurredAt), amount: d.transaction.amount, description: d.transaction.description, category: d.transaction.category ?? '' }}
+                    onSaved={() => { setEditing(false); detail.reload(); }}
+                    onCancel={() => setEditing(false)}
+                  />
+                ) : (
+                  <div class="links">
+                    <button class="link" onClick={() => setEditing(true)}>
+                      Editar
+                    </button>
+                    <button class="link" onClick={() => window.confirm('Excluir esta transação?') && void api.deleteManual(id).then(() => patchParams({ tx: null })).catch((e: unknown) => setMessage(e instanceof Error ? e.message : 'Não foi possível excluir.'))}>
+                      Excluir
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
 
-            <Mapping id={id} hidden={hidden} d={d} onChange={(closes) => (closes ? patchParams({ tx: null }) : detail.reload())} />
+            {!manual && d.account.kind === 'credit_card' && d.transaction.amount < 0 && <InstallmentEditor id={id} d={d} onSaved={() => detail.reload()} />}
 
-            <h3>O que cada fonte reporta</h3>
+            {!manual && <Mapping id={id} hidden={hidden} d={d} onChange={(closes) => (closes ? patchParams({ tx: null }) : detail.reload())} />}
+
+            {!manual && <h3>O que cada fonte reporta</h3>}
             {d.sources.map((s) => (
               <div class="source" key={`${s.sourceId}${s.externalId}`}>
                 <strong>{s.sourceId}</strong>

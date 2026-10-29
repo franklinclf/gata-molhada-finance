@@ -1,6 +1,7 @@
 import { CATEGORY_NAMES } from '../ai/taxonomy.ts';
 import { runReconciliation } from '../reconcile/run.ts';
 import type { Store } from '../store/store.ts';
+import { isManualId, manualNumber } from './manual.ts';
 import { categoryParents } from './category-groups.ts';
 import { effectiveTransactions, ruleKey } from './scope.ts';
 
@@ -20,6 +21,18 @@ export function setTransactionCategory(store: Store, transactionId: string, cate
   const transaction = effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).find((t) => t.id === transactionId);
   if (!transaction) return { ok: false, status: 404, error: 'not_found' };
   const at = now.toISOString();
+  // A transaction typed in by hand has no source record to hang an override on: its category is part of the transaction.
+  if (isManualId(transactionId)) {
+    const manual = store.listManualTransactions().find((m) => m.id === manualNumber(transactionId));
+    if (!manual) return { ok: false, status: 404, error: 'not_found' };
+    const name = category === null ? null : cleanCategoryName(category);
+    if (category !== null && name === null) return { ok: false, status: 400, error: `category must be text of 1 to ${MAX_NAME} characters` };
+    if (name !== null && !store.listCustomCategories().includes(name)) store.addCustomCategory(name, at);
+    store.saveManualTransaction({ ...manual, category: name }, at);
+    if (applyToSimilar) store.setCategoryRule(ruleKey(transaction.description), name, at);
+    rebuild(store, now);
+    return { ok: true };
+  }
   if (category === null) {
     store.setCategoryOverride(transactionId, null, at);
     if (applyToSimilar) store.setCategoryRule(ruleKey(transaction.description), null, at);
@@ -137,6 +150,7 @@ export function separateTransaction(store: Store, id: string, now: Date): Mutati
 export function setIgnored(store: Store, id: string, ignored: unknown, now: Date): MutationResult {
   if (typeof ignored !== 'boolean') return { ok: false, status: 400, error: 'ignored must be true or false' };
   if (!knownTransaction(store, id)) return { ok: false, status: 404, error: 'not_found' };
+  if (isManualId(id)) return { ok: false, status: 400, error: 'a transaction you typed in is removed by deleting it' };
   store.setTransactionIgnored(id, ignored, now.toISOString());
   rebuild(store, now);
   return { ok: true };

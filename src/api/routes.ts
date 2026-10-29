@@ -6,6 +6,7 @@ import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
+import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
 import { categoryTrend } from './trends.ts';
 import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type AssetResult } from './networth.ts';
 import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type BudgetResult } from './budgets.ts';
@@ -132,6 +133,19 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
       saveLayout(store, layout, now);
       return { status: 200, body: layout };
+    }
+    case 'manual-transactions': {
+      const asResult = <T,>(r: ManualResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
+      if (parts.length === 2) {
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(createManual(store, input, now)) : badRequest('body must be { accountId, day, amount, description }');
+      }
+      if (parts.length !== 3 || id === undefined) return null;
+      if (method === 'DELETE') return asResult(deleteManual(store, id, now));
+      if (method !== 'PUT') return methodNotAllowed();
+      const input = parseBody(body);
+      return input ? asResult(updateManual(store, id, input, now)) : badRequest('body must be an object');
     }
     case 'networth': {
       if (parts.length !== 2) return null;

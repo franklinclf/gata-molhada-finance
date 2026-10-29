@@ -10,6 +10,18 @@ export interface ManualAsset {
   values: Array<{ day: string; value: number }>;
 }
 
+export interface ManualTransaction {
+  id: number;
+  accountId: string;
+  /** Local day, YYYY-MM-DD. */
+  day: string;
+  /** Cents, with the sign of cash flow: money out (or a card purchase) is negative. */
+  amount: number;
+  description: string;
+  category: string | null;
+  notes: string | null;
+}
+
 export type BudgetScope = 'category' | 'group';
 export interface BudgetRow {
   scope: BudgetScope;
@@ -207,6 +219,10 @@ export interface Store {
   listCategoryParents(): Map<string, string>;
   /** Sets the group of a category; null forgets the choice and goes back to the default. */
   setCategoryParent(category: string, parent: string | null, now: string): void;
+  listManualTransactions(): ManualTransaction[];
+  /** Saves a manual transaction: without an id it is created. Returns the saved one. */
+  saveManualTransaction(t: Omit<ManualTransaction, 'id'> & { id?: number }, now: string): ManualTransaction;
+  deleteManualTransaction(id: number): void;
   listAssets(): ManualAsset[];
   /** Creates the asset (throws when the name is taken) and returns its id. */
   addAsset(name: string, kind: 'asset' | 'liability', now: string): number;
