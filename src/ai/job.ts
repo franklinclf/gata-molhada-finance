@@ -11,6 +11,8 @@ export interface AiConfig {
   models: string[];
   /** Models for judging pairs of records. A cheaper, more careful pair than the categorizer's. */
   matchModels: string[];
+  /** The analyst chat: a cheap model for everyday questions and a stronger one for open questions. */
+  analystModels: { routine: string[]; deep: string[] };
   monthlyBudgetUsd: number;
 }
 
@@ -21,6 +23,10 @@ export function loadAiConfig(env: Record<string, string | undefined>): AiConfig 
     apiKey: (env.OPENROUTER_API_KEY ?? '').trim() || null,
     models: [env.AI_MODEL?.trim() || 'anthropic/claude-haiku-5.5', env.AI_FALLBACK_MODEL?.trim() || 'openai/gpt-6-luna'],
     matchModels: [env.AI_MATCH_MODEL?.trim() || 'openai/gpt-6-luna', 'google/gemini-3.1-flash-lite'],
+    analystModels: {
+      routine: [env.AI_ANALYST_MODEL?.trim() || 'anthropic/claude-haiku-5.5', 'openai/gpt-5.6-luna'],
+      deep: [env.AI_ANALYST_DEEP_MODEL?.trim() || 'anthropic/claude-sonnet-5.5', 'anthropic/claude-haiku-5.5'],
+    },
     monthlyBudgetUsd: Number.isFinite(budget) && budget >= 0 ? budget : 2,
   };
 }

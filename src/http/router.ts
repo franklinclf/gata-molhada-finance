@@ -14,6 +14,8 @@ export interface RouteResult {
   body: string | null;
   /** Binary body, used instead of `body` for file downloads. */
   bytes?: Buffer;
+  /** The real answer, for routes that need to wait (the analyst calls a model). The server awaits it and sends it in place of this one. */
+  deferred?: () => Promise<RouteResult>;
 }
 
 const JSON_HEADERS = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };

@@ -6,6 +6,8 @@ import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
 import type { InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
+import type { AnalystReply } from '../../src/ai/analyst.ts';
+import type { ChatConversation, ChatMessage } from '../../src/store/store.ts';
 import type { GoalView } from '../../src/api/goals.ts';
 import type { CalendarView, CalendarDay } from '../../src/api/calendar.ts';
 import type { RecurringItem } from '../../src/api/recurring.ts';
@@ -16,7 +18,7 @@ import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts'
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -159,6 +161,12 @@ export const api = {
   updateManual: (id: string, patch: { accountId?: string; day?: string; amount?: number; description?: string; category?: string }) =>
     request<Record<string, never>>(`/api/manual-transactions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }),
   deleteManual: (id: string) => request<Record<string, never>>(`/api/manual-transactions/${id}`, { method: 'DELETE' }),
+  chatStatus: () => request<{ available: boolean }>('/api/chat/status'),
+  chatConversations: () => request<{ items: ChatConversation[] }>('/api/chat/conversations'),
+  chatMessages: (id: number) => request<{ items: ChatMessage[] }>(`/api/chat/conversations/${id}`),
+  deleteChat: (id: number) => request<unknown>(`/api/chat/conversations/${id}`, { method: 'DELETE' }),
+  ask: (question: string, conversationId?: number) =>
+    request<AnalystReply>('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question, ...(conversationId !== undefined ? { conversationId } : {}) }) }),
   goals: () => request<{ items: GoalView[] }>('/api/goals'),
   saveGoal: (goal: { id?: number; name: string; target: number; targetDay: string | null; track: 'manual' | 'account' | 'asset' | 'networth'; trackRef?: string | null; saved?: number; archived?: boolean }) =>
     request<unknown>(goal.id === undefined ? '/api/goals' : `/api/goals/${goal.id}`, { method: goal.id === undefined ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(goal) }),

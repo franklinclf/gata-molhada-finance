@@ -44,7 +44,13 @@ export function createHttpServer(deps: Partial<AppDeps> & Pick<AppDeps, 'store' 
         req.destroy();
         return;
       }
-      const result = handle({ method, pathname: url.pathname, search: url.search.slice(1), headers: req.headers as Record<string, string | undefined>, body }, full);
+      const first = handle({ method, pathname: url.pathname, search: url.search.slice(1), headers: req.headers as Record<string, string | undefined>, body }, full);
+      let result = first;
+      if (first.deferred) {
+        const real = await first.deferred();
+        // Cookies the first answer set (a renewed session) are kept next to the real answer.
+        result = { ...real, headers: { ...first.headers, ...real.headers }, cookies: [...(first.cookies ?? []), ...(real.cookies ?? [])] };
+      }
       const setCookie = [result.headers['Set-Cookie'], ...(result.cookies ?? [])].filter((c): c is string => c !== undefined);
       res.writeHead(result.status, setCookie.length > 0 ? { ...result.headers, 'Set-Cookie': setCookie } : result.headers);
       res.end(result.bytes ?? result.body ?? undefined);

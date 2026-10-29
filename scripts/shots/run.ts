@@ -40,6 +40,7 @@ const ROUTES: Array<[string, string, number]> = [
   ['orcamento', 'budgets', 1300],
   ['patrimonio', 'networth', 1200],
   ['metas', 'goals', 1200],
+  ['analista', 'chat?c=1', 1100],
   ['calendario', 'calendar', 1500],
   ['contas', 'accounts', 1200],
   ['fluxo', 'cashflow', 1500],

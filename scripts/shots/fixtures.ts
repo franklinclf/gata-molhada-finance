@@ -128,6 +128,9 @@ export function buildFixtures(now = new Date()): Fixtures {
   addAsset(store, { name: 'Financiamento do carro', kind: 'liability', value: 2400000, day: addDays(today, -40) }, now);
   createGoal(store, { name: 'Reserva de emergência', target: 3000000, track: 'manual', saved: 1200000, targetDay: addDays(today, 240) }, now);
   createGoal(store, { name: 'Viagem de fim de ano', target: 800000, track: 'manual', saved: 150000, targetDay: addDays(today, 60) }, now);
+  const chat = store.createChatConversation('O que mudou nos meus gastos?', at);
+  store.addChatMessage({ conversationId: chat, role: 'user', content: 'O que mudou nos meus gastos em relação ao mês passado?', steps: null, model: null, costUsd: null, createdAt: at });
+  store.addChatMessage({ conversationId: chat, role: 'assistant', content: 'Os gastos de outubro estão 12% acima de setembro. A maior alta foi em Restaurantes e bares (R$ 480 a mais), seguida de Supermercado (R$ 210 a mais). Moradia e assinaturas ficaram iguais.', steps: [{ tool: 'trend', args: { months: 3 }, summary: 'categorias: 14' }, { tool: 'spending', args: { by: 'category' }, summary: 'grupos: 12' }], model: 'anthropic/claude-sonnet-5.5', costUsd: 0.004, createdAt: at });
   createRule(store, { name: 'Uber', conditions: { match: 'all', items: [{ field: 'merchant', operator: 'equals', value: 'Uber' }] }, actions: { category: 'Transporte por aplicativo' } }, now);
   createRule(store, { name: 'Compras grandes no cartão', conditions: { match: 'all', items: [{ field: 'direction', operator: 'equals', value: 'out' }, { match: 'any', leaves: [{ field: 'description', operator: 'contains', value: 'amazon' }, { field: 'description', operator: 'contains', value: 'shopee' }] }, { field: 'amount', operator: 'lt', value: -10000 }] }, actions: { category: 'Compras online' } }, now);
   store.setCategoryRule('padaria bom pao', 'Supermercado', at);
@@ -159,6 +162,9 @@ export function buildFixtures(now = new Date()): Fixtures {
     '/api/budgets': call('/api/budgets'),
     '/api/networth': call('/api/networth'),
     '/api/goals': call('/api/goals'),
+    '/api/chat/status': { available: true },
+    '/api/chat/conversations': call('/api/chat/conversations'),
+    '/api/chat/conversations/1': call('/api/chat/conversations/1'),
     '/api/calendar': call('/api/calendar'),
     '/api/spending/trend': call('/api/spending/trend', 'months=6'),
     '/api/refresh': { available: true, running: false, result: null, timedOut: [] },

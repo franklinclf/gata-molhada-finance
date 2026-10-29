@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BudgetRow, BudgetScope, Goal, ManualAsset, ManualTransaction } from './store.ts';
+import type { BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -711,6 +711,33 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setCategoryParent(category: string, parent: string | null, now: string): void {
       if (parent === null) db.prepare('DELETE FROM category_parents WHERE category = ?').run(category);
       else db.prepare('INSERT INTO category_parents (category, parent, updated_at) VALUES (?, ?, ?) ON CONFLICT(category) DO UPDATE SET parent = excluded.parent, updated_at = excluded.updated_at').run(category, parent, now);
+    },
+
+    listChatConversations(): ChatConversation[] {
+      const rows = db.prepare('SELECT id, title, created_at, updated_at FROM chat_conversations ORDER BY updated_at DESC, id DESC').all() as Array<{ id: number; title: string; created_at: string; updated_at: string }>;
+      return rows.map((r) => ({ id: r.id, title: r.title, createdAt: r.created_at, updatedAt: r.updated_at }));
+    },
+
+    createChatConversation(title: string, now: string): number {
+      return Number(db.prepare('INSERT INTO chat_conversations (title, created_at, updated_at) VALUES (?, ?, ?)').run(title, now, now).lastInsertRowid);
+    },
+
+    deleteChatConversation(id: number): void {
+      inTransaction(() => {
+        db.prepare('DELETE FROM chat_messages WHERE conversation_id = ?').run(id);
+        db.prepare('DELETE FROM chat_conversations WHERE id = ?').run(id);
+      });
+    },
+
+    listChatMessages(conversationId: number): ChatMessage[] {
+      const rows = db.prepare('SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY id').all(conversationId) as Array<{ id: number; conversation_id: number; role: 'user' | 'assistant'; content: string; steps: string | null; model: string | null; cost_usd: number | null; created_at: string }>;
+      return rows.map((r) => ({ id: r.id, conversationId: r.conversation_id, role: r.role, content: r.content, steps: r.steps ? (JSON.parse(r.steps) as ChatMessage['steps']) : null, model: r.model, costUsd: r.cost_usd, createdAt: r.created_at }));
+    },
+
+    addChatMessage(m: Omit<ChatMessage, 'id'>): number {
+      const info = db.prepare('INSERT INTO chat_messages (conversation_id, role, content, steps, model, cost_usd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(m.conversationId, m.role, m.content, m.steps ? JSON.stringify(m.steps) : null, m.model, m.costUsd, m.createdAt);
+      db.prepare('UPDATE chat_conversations SET updated_at = ? WHERE id = ?').run(m.createdAt, m.conversationId);
+      return Number(info.lastInsertRowid);
     },
 
     listGoals(): Goal[] {

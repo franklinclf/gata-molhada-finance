@@ -155,3 +155,32 @@ test('signature and decision helpers, and the debounce', () => {
   clock += 10_001;
   assert.equal(gate.allow(), true);
 });
+
+test('the chat needs a session, answers through a deferred result, and takes one question at a time', async () => {
+  const { deps, code } = setup();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const analyst: NonNullable<AppDeps['analyst']> = async (input) => {
+    await gate;
+    return { conversationId: 1, answer: `eco: ${input.question}`, steps: [], model: 'm', costUsd: 0, stoppedBy: null };
+  };
+  const armed: AppDeps = { ...deps, analyst };
+  assert.equal(handle(post('/api/chat', { question: 'oi' }), armed).status, 401);
+  const login = handle(post('/api/auth/login', { password: PASSWORD, code: code() }), armed);
+  const cookie = cookieOf(login.headers['Set-Cookie']);
+  const send = (payload: unknown) => handle(post('/api/chat', payload, { cookie }), armed);
+
+  assert.equal(handle(post('/api/chat', { question: 'oi' }, { cookie }), deps).status, 503, 'no analyst, no chat');
+  assert.equal(send({ question: '   ' }).status, 400);
+
+  const first = send({ question: 'quanto gastei?' });
+  assert.ok(first.deferred);
+  const running = first.deferred();
+  assert.equal(send({ question: 'outra' }).status, 429, 'a second question waits for the first');
+  release();
+  const done = await running;
+  assert.equal(done.status, 200);
+  assert.equal(JSON.parse(done.body ?? '').answer, 'eco: quanto gastei?');
+  assert.ok(send({ question: 'agora pode' }).deferred, 'free again once the first is done');
+  assert.deepEqual(JSON.parse(handle(get('/api/chat/status', { cookie }), armed).body ?? ''), { available: true });
+});
