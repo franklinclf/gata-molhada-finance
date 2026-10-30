@@ -74,3 +74,31 @@ test('pending entries set aside as stale are listed so the owner can look at the
   const { setAside } = billCheck(store, NOW);
   assert.deepEqual(setAside.map((t) => [t.description, t.amount]), [['old', -2000]]);
 });
+
+test('among several groups of the same size that add up, the one nearest the closing day is offered', () => {
+  const store = setup(BILLS, [
+    tx('start', '2026-07-01', -100),
+    tx('aug', '2026-07-20', -50000),
+    tx('sep', '2026-09-02', -79204),
+    // Two charges of 796: one three days before the closing, one on the closing day itself.
+    tx('early', '2026-09-05', -796),
+    tx('late', '2026-09-08', -796),
+    tx('oct', '2026-10-02', -67204),
+  ]);
+  const item = billCheck(store, NOW).items[0]!;
+  assert.equal(item.suggestion.kind, 'move');
+  if (item.suggestion.kind === 'move') assert.deepEqual(item.suggestion.moves.map((m) => m.description), ['late']);
+});
+
+test('a charge is never pulled out of a neighbour bill that is itself short', () => {
+  // October's bill is 1500 larger than its charges, and September's is also short: September has nothing to give.
+  const store = setup(BILLS, [
+    tx('start', '2026-07-01', -100),
+    tx('aug', '2026-07-20', -50000),
+    tx('sep', '2026-09-02', -79000),
+    tx('edge', '2026-09-08', -1000),
+    tx('oct', '2026-10-02', -66500),
+  ]);
+  const octItem = billCheck(store, NOW).items.find((i) => i.cycleKey === '2026-10')!;
+  assert.deepEqual(octItem.suggestion, { kind: 'missing', amount: 1500 });
+});
