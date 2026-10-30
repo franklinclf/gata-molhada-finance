@@ -208,7 +208,9 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
       let state: TransactionState;
       if (records.some((r) => ignored.has(refKey(r.sourceId, r.tx.externalId)))) state = 'ignored';
       // When both sources say pending, the bank itself does (card purchases stay pending until the statement closes).
-      else if (status === 'pending' && records.length === 1 && input.now.getTime() - time(primary) > staleDays * DAY_MS) state = 'stale_pending';
+      // A card is the exception for a lone source: Meu Pluggy keeps every purchase of the open statement pending until it
+      // closes, so a pending card charge is real however old it looks. Only bank accounts set old pending entries aside.
+      else if (status === 'pending' && records.length === 1 && account.kind !== 'credit_card' && input.now.getTime() - time(primary) > staleDays * DAY_MS) state = 'stale_pending';
       else state = records.length > 1 ? 'confirmed' : 'single_source';
 
       transactions.push({
