@@ -240,6 +240,10 @@ Também dá para informar à mão a parcela de uma compra no painel da transaç�
 
 A aba Cartões → Futuras mostra as próximas seis faturas por mês de vencimento, em três camadas, da mais certa à menos certa: **parcelas já compradas** (vêm do plano de parcelas), **cobranças que se repetem** (mesmo texto em pelo menos 3 meses das últimas 6 faturas, com valor estável, que entram todo mês pelo último valor) e o **gasto de costume**, uma média do que as últimas 3 faturas fechadas tiveram além das duas primeiras camadas (um chute). A fatura em aberto mostra também o que já tem e nunca é estimada abaixo disso. Um clique no mês mostra a divisão por cartão.
 
+## Pendentes antigas
+
+Uma transação pendente vista por uma única fonte há mais de 7 dias é posta de lado ("stale") só em conta bancária. Em cartão ela continua valendo, porque o Meu Pluggy deixa toda compra da fatura aberta como pendente até a fatura fechar. A regra antiga valia para cartões porque o Pierre também marcava as compras e a coincidência das duas fontes as confirmava; com uma fonte só, ela derrubava compras reais do ciclo aberto dos totais (73 transações em 30/10/2026, logo depois de remover o Pierre).
+
 ## Limpar uma fonte aposentada
 
 `node src/maintenance/purge-source-cli.ts <fonte>` remove do banco tudo o que uma fonte aposentada (sem adaptador, `sources.active = 0`) guardou: transações, contas, faturas, respostas brutas, horas de leitura e as escolhas ligadas aos registros dela. Recusa uma fonte ainda ativa. Sem `--apply` só conta; com `--apply` grava antes um backup em `backups/before-purge-<fonte>-<hora>.sqlite` e reconcilia depois. Escolhas suas (categoria e parcelas) em transações que outra fonte também viu passam para o registro dessa outra fonte antes da remoção. Em produção: `docker exec gmf-app node --disable-warning=ExperimentalWarning src/maintenance/purge-source-cli.ts pierre --apply`. Para reler a fonte ativa por inteiro, `node src/sync/cli.ts --since AAAA-MM-DD` no mesmo contêiner.

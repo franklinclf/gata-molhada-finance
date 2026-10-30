@@ -94,7 +94,7 @@ test('a transaction one source does not have is normal: single source, no findin
   assert.equal(r.findings.length, 0);
 });
 
-test('pending entries older than 7 days are set aside, on bank accounts and cards alike', () => {
+test('a lone pending entry older than 7 days is set aside on a bank account, but kept on a card (the open statement is pending)', () => {
   const bank = run([tx({ externalId: 'a', status: 'pending', occurredAt: '2026-10-10T12:00:00.000Z' })], []);
   assert.equal(bank.transactions[0]?.state, 'stale_pending');
   assert.equal(bank.transactions[0]?.excluded, true);
@@ -111,7 +111,8 @@ test('pending entries older than 7 days are set aside, on bank accounts and card
       now: NOW,
     }).transactions[0]?.state;
   assert.equal(card(5), 'single_source');
-  assert.equal(card(9), 'stale_pending');
+  assert.equal(card(9), 'single_source');
+  assert.equal(card(60), 'single_source');
 });
 
 test('a pending entry that both sources report is real, however old: the bank itself says pending', () => {
