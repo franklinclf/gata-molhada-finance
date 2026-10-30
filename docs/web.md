@@ -240,6 +240,10 @@ Também dá para informar à mão a parcela de uma compra no painel da transaç�
 
 A aba Cartões → Futuras mostra as próximas seis faturas por mês de vencimento, em três camadas, da mais certa à menos certa: **parcelas já compradas** (vêm do plano de parcelas), **cobranças que se repetem** (mesmo texto em pelo menos 3 meses das últimas 6 faturas, com valor estável, que entram todo mês pelo último valor) e o **gasto de costume**, uma média do que as últimas 3 faturas fechadas tiveram além das duas primeiras camadas (um chute). A fatura em aberto mostra também o que já tem e nunca é estimada abaixo disso. Um clique no mês mostra a divisão por cartão.
 
+## Limpar uma fonte aposentada
+
+`node src/maintenance/purge-source-cli.ts <fonte>` remove do banco tudo o que uma fonte aposentada (sem adaptador, `sources.active = 0`) guardou: transações, contas, faturas, respostas brutas, horas de leitura e as escolhas ligadas aos registros dela. Recusa uma fonte ainda ativa. Sem `--apply` só conta; com `--apply` grava antes um backup em `backups/before-purge-<fonte>-<hora>.sqlite` e reconcilia depois. Escolhas suas (categoria e parcelas) em transações que outra fonte também viu passam para o registro dessa outra fonte antes da remoção. Em produção: `docker exec gmf-app node --disable-warning=ExperimentalWarning src/maintenance/purge-source-cli.ts pierre --apply`. Para reler a fonte ativa por inteiro, `node src/sync/cli.ts --since AAAA-MM-DD` no mesmo contêiner.
+
 ## Categorias: o que a tabela traduz e o que a IA decide
 
 - As categorias das fontes são uma lista fixa (Pierre em português, Meu Pluggy em inglês). As que dizem uma coisa só são **traduzidas por tabela** (`src/ai/source-map.ts`) para a nossa lista, sem chamar o modelo. As genéricas (Compras, Serviços, Alimentos e bebidas...) e as transações sem rótulo vão ao modelo.

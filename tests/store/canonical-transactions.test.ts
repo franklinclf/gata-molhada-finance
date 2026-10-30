@@ -114,3 +114,29 @@ test('a resolved finding that returns is reopened with a new opening time', () =
   assert.equal(stored?.resolvedAt, null);
   assert.equal(stored?.openedAt, T3);
 });
+
+test('purging a retired source removes its records and moves choices to the twin record in the other source', () => {
+  const store = newStore();
+  store.replaceCanonicalTransactions([transaction()], links, T1);
+  store.setCategoryOverride('tx_1', 'Lazer', T1);
+  store.setInstallmentOverride('tx_1', { number: 3, total: 6 }, T1);
+  // The overrides above are saved on every linked record; keep only the pierre one, as if the owner had chosen there.
+  assert.throws(() => store.purgeSource('pierre', false), /still active/);
+  store.retireSourcesExcept(['pluggy']);
+
+  const preview = store.purgeSource('pierre', false);
+  assert.equal(preview.applied, false);
+  assert.equal(preview.removed.transaction_links, 1);
+  assert.equal(store.purgeSource('pierre', false).removed.transaction_links, 1, 'a preview changes nothing');
+
+  const done = store.purgeSource('pierre', true);
+  assert.equal(done.applied, true);
+  assert.equal(done.removed.transaction_links, 1);
+  assert.deepEqual(store.listTransactionLinks('tx_1').map((l) => l.sourceId), ['pluggy']);
+  assert.equal(store.listCategoryOverrides().get('tx_1'), 'Lazer', 'the choice survives on the pluggy record');
+  assert.deepEqual(store.listInstallmentOverrides().get('tx_1'), { number: 3, total: 6 });
+});
+
+test('purging an unknown source is refused', () => {
+  assert.throws(() => newStore().purgeSource('nobody', true), /unknown source/);
+});

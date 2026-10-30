@@ -173,6 +173,15 @@ export interface AiMatch {
   decidedAt: string;
 }
 
+export interface PurgeReport {
+  sourceId: SourceId;
+  applied: boolean;
+  /** Rows removed (or that would be), by table. */
+  removed: Record<string, number>;
+  /** Choices moved to another source's record of the same transaction before the removal. */
+  moved: { categoryOverrides: number; installmentOverrides: number };
+}
+
 export interface Store {
   schemaVersion(): number;
   registerSource(source: SourceRegistration, now: string): void;
@@ -192,6 +201,12 @@ export interface Store {
   lastRefresh(sourceId: SourceId): RefreshLogEntry | null;
   /** Marks every source that is not in the list as retired: its saved records stay, but it no longer reports freshness. Returns the ones retired now. */
   retireSourcesExcept(activeIds: SourceId[]): SourceId[];
+  /**
+   * Removes the saved records of a retired source: its transactions, accounts, bills, raw answers, sync times and the
+   * choices that point at its records. A choice made on a transaction that another source also saw moves to that
+   * source's record first. `apply: false` only counts. The canonical data is rebuilt by the next reconciliation.
+   */
+  purgeSource(sourceId: SourceId, apply: boolean): PurgeReport;
   listFreshness(): Freshness[];
   /** Inserts new records and refreshes existing ones; first_seen_at is kept, last_seen_at becomes seenAt. */
   upsertSourceAccounts(sourceId: SourceId, accounts: SourceAccount[], seenAt: string): void;

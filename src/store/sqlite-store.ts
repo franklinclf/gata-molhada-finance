@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction } from './store.ts';
+import type { BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PurgeReport } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -1024,6 +1024,58 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
 
     setSetting(key: string, value: string, updatedAt: string): void {
       db.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at').run(key, value, updatedAt);
+    },
+
+    purgeSource(sourceId: SourceId, apply: boolean): PurgeReport {
+      const source = db.prepare('SELECT active FROM sources WHERE id = ?').get(sourceId) as { active: number } | undefined;
+      if (!source) throw new Error(`unknown source: ${sourceId}`);
+      // A source that is still in use would be read again at once, so it has to be retired first (its adapter removed).
+      if (source.active === 1) throw new Error(`source ${sourceId} is still active; remove its adapter first`);
+
+      const tables: Array<{ table: string; where: string; args: string[] }> = [
+        { table: 'source_transactions', where: 'source_id = ?', args: [sourceId] },
+        { table: 'source_accounts', where: 'source_id = ?', args: [sourceId] },
+        { table: 'source_bills', where: 'source_id = ?', args: [sourceId] },
+        { table: 'raw_snapshots', where: 'source_id = ?', args: [sourceId] },
+        { table: 'freshness', where: 'source_id = ?', args: [sourceId] },
+        { table: 'quota_events', where: 'source_id = ?', args: [sourceId] },
+        { table: 'refresh_log', where: 'source_id = ?', args: [sourceId] },
+        { table: 'transaction_links', where: 'source_id = ?', args: [sourceId] },
+        { table: 'ignored_records', where: 'source_id = ?', args: [sourceId] },
+        { table: 'manual_links', where: 'source_a = ? OR source_b = ?', args: [sourceId, sourceId] },
+        { table: 'ai_matches', where: 'source_a = ?', args: [sourceId] },
+        { table: 'category_overrides', where: 'source_id = ?', args: [sourceId] },
+        { table: 'installment_overrides', where: 'source_id = ?', args: [sourceId] },
+      ];
+
+      // The record another source holds for the same canonical transaction, if there is one.
+      const twinOf = (externalId: string) =>
+        db
+          .prepare('SELECT b.source_id AS source_id, b.external_id AS external_id FROM transaction_links a JOIN transaction_links b ON b.transaction_id = a.transaction_id AND b.source_id != a.source_id WHERE a.source_id = ? AND a.external_id = ? ORDER BY b.source_id LIMIT 1')
+          .get(sourceId, externalId) as { source_id: string; external_id: string } | undefined;
+      type Choice = { external_id: string; category?: string; number?: number; total?: number; updated_at: string };
+      const withTwin = (table: string) => (db.prepare(`SELECT * FROM ${table} WHERE source_id = ?`).all(sourceId) as unknown as Choice[]).flatMap((choice) => {
+        const twin = twinOf(choice.external_id);
+        return twin ? [{ choice, twin }] : [];
+      });
+      const categoryChoices = withTwin('category_overrides');
+      const installmentChoices = withTwin('installment_overrides');
+
+      const removed: Record<string, number> = {};
+      for (const { table, where, args } of tables) removed[table] = (db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`).get(...args) as { n: number }).n;
+
+      if (apply) {
+        inTransaction(() => {
+          for (const { choice, twin } of categoryChoices) {
+            db.prepare('INSERT OR IGNORE INTO category_overrides (source_id, external_id, category, updated_at) VALUES (?, ?, ?, ?)').run(twin.source_id, twin.external_id, choice.category!, choice.updated_at);
+          }
+          for (const { choice, twin } of installmentChoices) {
+            db.prepare('INSERT OR IGNORE INTO installment_overrides (source_id, external_id, number, total, updated_at) VALUES (?, ?, ?, ?, ?)').run(twin.source_id, twin.external_id, choice.number!, choice.total!, choice.updated_at);
+          }
+          for (const { table, where, args } of tables) db.prepare(`DELETE FROM ${table} WHERE ${where}`).run(...args);
+        });
+      }
+      return { sourceId, applied: apply, removed, moved: { categoryOverrides: categoryChoices.length, installmentOverrides: installmentChoices.length } };
     },
 
     copyTo(path: string): void {
