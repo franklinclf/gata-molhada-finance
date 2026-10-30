@@ -496,3 +496,5 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .mini-day.today { outline: 1.5px solid var(--accent); }
 .mini-day .dot { position: absolute; left: 50%; bottom: 3px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--accent); }
 .mini-day .dot.soft { opacity: 0.45; }
+.correct { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.correct label { display: grid; gap: 4px; }

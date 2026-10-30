@@ -240,6 +240,17 @@ Também dá para informar à mão a parcela de uma compra no painel da transaç�
 
 A aba Cartões → Futuras mostra as próximas seis faturas por mês de vencimento, em três camadas, da mais certa à menos certa: **parcelas já compradas** (vêm do plano de parcelas), **cobranças que se repetem** (mesmo texto em pelo menos 3 meses das últimas 6 faturas, com valor estável, que entram todo mês pelo último valor) e o **gasto de costume**, uma média do que as últimas 3 faturas fechadas tiveram além das duas primeiras camadas (um chute). A fatura em aberto mostra também o que já tem e nunca é estimada abaixo disso. Um clique no mês mostra a divisão por cartão.
 
+## Corrigir faturas e transações de cartão
+
+No painel de uma transação (qualquer uma que não seja digitada por você), "Corrigir" tem dois ajustes, guardados como escolhas suas por registro da fonte (tabela `transaction_overrides`) e que sobrevivem a novas leituras e à limpeza de uma fonte:
+
+- **Status:** pendente ou lançada, por cima do que a fonte diz. Chamar de lançada uma pendente antiga posta de lado a traz de volta para os totais; "Como a fonte diz" desfaz.
+- **Fatura (só cartão):** move a compra para outra fatura, escolhida pelo vencimento. A compra passa a contar nesse ciclo e a sair do outro, na tela Faturas, no filtro por ciclo de Transações e nas previsões. "Pela data da compra" desfaz.
+
+Já existiam: marcar uma fatura como paga ou não paga (Faturas > histórico), ignorar uma transação, mudar a parcela, mudar a categoria e lançar uma transação à mão (para o que o banco não mandou, como IOF e juros).
+
+Meses sem fatura publicada: quando a lista de faturas do banco pula um mês (ou a fatura ainda não saiu), o app cria um ciclo fechado para ele, com o mesmo dia de fechamento, em vez de juntar tudo no ciclo aberto. Esse ciclo aparece como "não conferido": mostra os pagamentos e as compras do período, sem inventar o valor da fatura. Isso corrigia, por exemplo, o Nubank, cuja fatura de outubro nunca veio do Meu Pluggy e fazia o ciclo "aberto" cobrir de 15/09 a 14/11.
+
 ## Pendentes antigas
 
 Uma transação pendente vista por uma única fonte há mais de 7 dias é posta de lado ("stale") só em conta bancária. Em cartão ela continua valendo, porque o Meu Pluggy deixa toda compra da fatura aberta como pendente até a fatura fechar. A regra antiga valia para cartões porque o Pierre também marcava as compras e a coincidência das duas fontes as confirmava; com uma fonte só, ela derrubava compras reais do ciclo aberto dos totais (73 transações em 30/10/2026, logo depois de remover o Pierre).

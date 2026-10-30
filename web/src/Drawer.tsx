@@ -6,6 +6,7 @@ import { navigate, patchParams } from './router.ts';
 import { CopyButton } from './copy.tsx';
 import { CategorySelect } from './CategorySelect.tsx';
 import { ManualForm } from './ManualForm.tsx';
+import { Select } from './Select.tsx';
 import { Loading, STATE_LABEL, StatusBadge } from './ui.tsx';
 
 function InstallmentEditor({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
@@ -40,6 +41,51 @@ function InstallmentEditor({ id, d, onSaved }: { id: string; d: NonNullable<Retu
           Remover o que informei
         </button>
       )}
+      {error && <div class="error">{error}</div>}
+    </>
+  );
+}
+
+/** Fixes what a source got wrong: whether the charge is pending or posted, and which card bill it belongs to. */
+function Corrections({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const save = async (work: () => Promise<unknown>) => {
+    setError(null);
+    try {
+      await work();
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
+    }
+  };
+  const cycleLabel = (c: { key: string; from: string; to: string; dueDate: string }) => `Vence ${dayMonth(c.dueDate)}/${c.dueDate.slice(0, 4)} (${dayMonth(c.from)} a ${dayMonth(c.to)})`;
+  return (
+    <>
+      <h3>Corrigir</h3>
+      <div class="correct">
+        <label>
+          <span class="muted">Status{d.statusByUser ? ' (definido por você)' : ''}</span>
+          <Select
+            ariaLabel="Status da transação"
+            value={d.statusByUser ? d.transaction.status : ''}
+            emptyLabel={`Como a fonte diz (${d.statusByUser ? '...' : d.transaction.status === 'pending' ? 'pendente' : 'lançada'})`}
+            options={[{ value: 'pending', label: 'Pendente' }, { value: 'posted', label: 'Lançada' }]}
+            onChange={(value) => void save(() => api.setStatus(id, value === '' ? null : (value as 'pending' | 'posted')))}
+          />
+        </label>
+        {d.cycleOptions.length > 0 && (
+          <label>
+            <span class="muted">Fatura{d.cycleByUser ? ' (movida por você)' : ''}</span>
+            <Select
+              ariaLabel="Fatura da compra"
+              value={d.cycleByUser && d.cycle ? d.cycle.key : ''}
+              emptyLabel="Pela data da compra"
+              options={d.cycleOptions.map((c) => ({ value: c.key, label: cycleLabel(c) }))}
+              onChange={(value) => void save(() => api.setCycle(id, value === '' ? null : value))}
+            />
+          </label>
+        )}
+      </div>
       {error && <div class="error">{error}</div>}
     </>
   );
@@ -224,6 +270,8 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
                 </>
               )}
             </dl>
+
+            {!manual && <Corrections id={id} d={d} onSaved={detail.reload} />}
 
             <h3>Categoria</h3>
             <div>

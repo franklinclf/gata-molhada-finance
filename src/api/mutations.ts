@@ -158,6 +158,27 @@ export function setIgnored(store: Store, id: string, ignored: unknown, now: Date
   return { ok: true };
 }
 
+/** The owner says a transaction is pending or posted, over what the source says. `null` goes back to the source. */
+export function setTransactionStatus(store: Store, id: string, status: unknown, now: Date): MutationResult {
+  if (status !== 'pending' && status !== 'posted' && status !== null) return { ok: false, status: 400, error: 'status must be pending, posted or null' };
+  if (!knownTransaction(store, id)) return { ok: false, status: 404, error: 'not_found' };
+  if (isManualId(id)) return { ok: false, status: 400, error: 'a transaction you typed in is edited directly' };
+  store.setTransactionOverride(id, { status }, now.toISOString());
+  rebuild(store, now);
+  return { ok: true };
+}
+
+/** The owner moves a card charge to another bill (named by its due month, YYYY-MM). `null` goes back to following its date. */
+export function setTransactionCycle(store: Store, id: string, cycleKey: unknown, now: Date): MutationResult {
+  if (cycleKey !== null && (typeof cycleKey !== 'string' || !/^\d{4}-\d{2}$/.test(cycleKey))) return { ok: false, status: 400, error: 'cycleKey must be YYYY-MM or null' };
+  const transaction = effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).find((t) => t.id === id);
+  if (!transaction) return { ok: false, status: 404, error: 'not_found' };
+  if (isManualId(id)) return { ok: false, status: 400, error: 'a transaction you typed in is edited directly' };
+  if (!store.listCanonicalAccounts().some((a) => a.id === transaction.accountId && a.kind === 'credit_card')) return { ok: false, status: 400, error: 'only card charges belong to a bill' };
+  store.setTransactionOverride(id, { cycleKey }, now.toISOString());
+  return { ok: true };
+}
+
 /** "This is not the same transaction": the suggestion does not come back. */
 export function dismissSuggestion(store: Store, findingId: string, now: Date): MutationResult {
   if (!store.listFindings().some((f) => f.id === findingId)) return { ok: false, status: 404, error: 'not_found' };

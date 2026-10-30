@@ -101,7 +101,9 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     if (query.hideOwnTransfers && t.role === 'own_transfer') return false;
     if (query.cycle !== undefined) {
       const range = cycleRanges[t.accountId];
-      if (!range || day < range.from || day > range.to) return false;
+      if (!range) return false;
+      // A charge the owner moved to a bill belongs to that bill, whatever its date.
+      if (t.billCycle ? t.billCycle !== range.dueDate.slice(0, 7) : day < range.from || day > range.to) return false;
     }
     if (text) {
       const haystack = `${t.description} ${t.descriptionRaw ?? ''} ${t.category ?? ''}`.toLowerCase();

@@ -133,6 +133,10 @@ export const api = {
   separate: (id: string) => request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/merge`, { method: 'DELETE' }),
   setIgnored: (id: string, ignored: boolean) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/ignore`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ignored }) }),
+  setStatus: (id: string, status: 'pending' | 'posted' | null) =>
+    request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }),
+  setCycle: (id: string, cycleKey: string | null) =>
+    request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/cycle`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cycleKey }) }),
   dismiss: (findingId: string) => request<{ ok: true }>(`/api/findings/${encodeURIComponent(findingId)}/dismiss`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
   ai: () => request<AiView>('/api/ai'),
   acceptAi: (key: string, category?: string) => request<{ ok: true }>('/api/ai/accept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, category }) }),

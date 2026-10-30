@@ -299,3 +299,41 @@ test('choosing the sources\' own name for a role (Credit card payment) keeps the
   assert.equal(roleOf({ sourceCategory: 'x', description: 'x', category: 'Same person transfer', categoryOrigin: 'rule' }), 'own_transfer');
   assert.equal(roleOf({ sourceCategory: 'Credit card payment', description: 'x', category: 'Aluguel', categoryOrigin: 'override' }), null);
 });
+
+test('a month the issuer published no bill for gets its own closed cycle, so the charges after it do not pile into the open one', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  // Bills up to September (closing the 14th); October's was never published.
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-sep', accountExternalId: 'ext-nu', dueDate: '2026-09-21', closingDate: '2026-09-14', total: 134530, minimumPayment: null }], NOW.toISOString());
+  const nu = account('nu', { refs: [{ sourceId: 'pluggy', externalId: 'ext-nu', role: 'member' }] });
+  const list = [
+    tx('start', 'nu', '2026-08-01', -100),
+    tx('pay-sep', 'nu', '2026-09-14', 134530, 'Pagamento de cartão de crédito'),
+    tx('coffee', 'nu', '2026-10-05', -7835),
+    tx('market', 'nu', '2026-10-11', -3418),
+    tx('pay-oct', 'nu', '2026-10-15', 107735, 'Pagamento de cartão de crédito'),
+    tx('new', 'nu', '2026-10-20', -2490),
+  ];
+  store.replaceCanonicalAccounts([nu], [], NOW.toISOString());
+  store.replaceCanonicalTransactions(list, [], NOW.toISOString());
+  const cycles = cyclesFor(store, nu, effectiveTransactions(store), '2026-10-27');
+  assert.deepEqual(cycles.map((c) => [c.key, c.from, c.to, c.status]), [['2026-09', '2026-08-15', '2026-09-14', 'paid'], ['2026-10', '2026-09-15', '2026-10-14', 'unknown'], ['2026-11', '2026-10-15', '2026-11-14', 'open']]);
+  const closed = cycles[1]!;
+  assert.deepEqual([closed.billTotal, closed.charges, closed.paid], [null, 11253, 107735]);
+  assert.equal(cycles[2]!.charges, 2490, 'only the charge after the closing is in the open cycle');
+});
+
+test('a charge the owner moves to another bill counts there, and going back to automatic follows the date again', () => {
+  const { store, card1 } = setup();
+  const before = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27');
+  assert.equal(before[1]!.charges, 68000);
+  const id = effectiveTransactions(store).find((t) => t.description === 'buy-oct')!.id;
+  // The canonical rows above carry no links, so write the override straight on a link the test creates.
+  store.replaceCanonicalTransactions(effectiveTransactions(store, { includeExcluded: true }).map((t) => ({ ...t })), [{ sourceId: 'pierre', externalId: 'buy-oct', transactionId: id, matchPass: 0 }], NOW.toISOString());
+  store.setTransactionOverride(id, { cycleKey: '2026-09' }, NOW.toISOString());
+  const moved = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27');
+  // The September bill held 50000 + 80000; the moved charge adds 68000, and October loses it.
+  assert.deepEqual([moved[0]!.charges, moved[1]!.charges], [198000, 0]);
+  store.setTransactionOverride(id, { cycleKey: null }, NOW.toISOString());
+  assert.equal(cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27')[1]!.charges, 68000);
+});

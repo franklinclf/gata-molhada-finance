@@ -116,35 +116,48 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
   }, null);
   const payments = paymentsOf(own);
 
-  const windows: Array<{ from: string; to: string; due: string; total: Cents | null }> = [];
+  const windows: Array<{ from: string; to: string; due: string; total: Cents | null; open: boolean }> = [];
   bills.forEach((bill, i) => {
     const previous = bills[i - 1];
-    windows.push({ from: previous ? addDays(previous.closing, 1) : addDays(addMonthsToDay(bill.closing, -1), 1), to: bill.closing, due: bill.due, total: bill.total });
+    // A month the issuer published no bill for (the list skips it, or the bill is not out yet) still closed on the same
+    // day, so it gets its own window instead of being folded into the next cycle.
+    if (previous) {
+      const months = monthsBetween(previous.closing, bill.closing);
+      for (let k = 1; k < months; k++) {
+        const closing = addMonthsToDay(previous.closing, k);
+        windows.push({ from: addDays(addMonthsToDay(previous.closing, k - 1), 1), to: closing, due: addMonthsToDay(previous.due, k), total: null, open: false });
+      }
+    }
+    windows.push({ from: previous ? addDays(windows[windows.length - 1]!.to, 1) : addDays(addMonthsToDay(bill.closing, -1), 1), to: bill.closing, due: bill.due, total: bill.total, open: false });
   });
   const last = bills[bills.length - 1]!;
-  let openClosing = addMonthsToDay(last.closing, 1);
-  let openDue = addMonthsToDay(last.due, 1);
-  while (openClosing < today) {
-    openClosing = addMonthsToDay(openClosing, 1);
-    openDue = addMonthsToDay(openDue, 1);
+  let steps = 1;
+  let closing = addMonthsToDay(last.closing, steps);
+  while (closing < today) {
+    windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: false });
+    steps++;
+    closing = addMonthsToDay(last.closing, steps);
   }
-  windows.push({ from: addDays(last.closing, 1), to: openClosing, due: openDue, total: null });
+  windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: true });
 
   const cycles: Cycle[] = windows.map((w, i) => {
     let charges = 0;
     let credits = 0;
     for (const t of own) {
       const day = localDay(t.occurredAt);
-      if (day < w.from || day > w.to || isCardPayment(t)) continue;
+      if (isCardPayment(t)) continue;
+      // The owner can move a charge to another bill; otherwise it follows its date.
+      if (t.billCycle ? t.billCycle !== w.due.slice(0, 7) : day < w.from || day > w.to) continue;
       if (t.amount < 0) charges += -t.amount;
       else credits += t.amount;
     }
     const next = windows[i + 1];
-    const paid = w.total === null ? 0 : payments.filter((p) => p.day >= w.to && (next === undefined || p.day < next.to)).reduce((s, p) => s + p.amount, 0);
+    const paid = w.open ? 0 : payments.filter((p) => p.day >= w.to && (next === undefined || p.day < next.to)).reduce((s, p) => s + p.amount, 0);
     let status: CycleStatus;
     let outstanding = 0;
-    if (w.total === null) status = 'open';
-    else if (coverageStart === null || w.from < coverageStart) status = 'unknown';
+    if (w.open) status = 'open';
+    // A closed month with no published bill cannot be judged: the payments are shown, the amount owed is not guessed.
+    else if (w.total === null || coverageStart === null || w.from < coverageStart) status = 'unknown';
     else {
       outstanding = Math.max(w.total - paid, 0);
       if (w.total === 0) status = 'empty';
@@ -155,6 +168,13 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     return { key: w.due.slice(0, 7), accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, status, adjusted: null };
   });
   return settleLeftovers(store, account.id, cycles, today);
+}
+
+/** Whole months from one day to another (closing days drift by a day or two, so this rounds). */
+function monthsBetween(from: string, to: string): number {
+  const a = parseDay(from);
+  const b = parseDay(to);
+  return (b.y - a.y) * 12 + (b.m - a.m);
 }
 
 const WRITE_OFF_AFTER_DAYS = 30;
