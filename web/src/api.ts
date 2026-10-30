@@ -4,6 +4,7 @@ import type { AiView, Decision, DecisionStatus, Suggestion } from '../../src/api
 import type { ForecastView } from '../../src/api/forecast.ts';
 import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
+import type { BillCheckView } from '../../src/api/bill-check.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
 import type { InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
 import type { AnalystReply } from '../../src/ai/analyst.ts';
@@ -19,7 +20,7 @@ import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts'
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -120,6 +121,7 @@ export const api = {
   cashflow: (from: string, to: string) => request<CashFlowView>(`/api/cashflow${query({ from, to })}`),
   spending: (from: string, to: string, by: 'category' | 'merchant') => request<SpendingView>(`/api/spending${query({ from, to, by })}`),
   bills: () => request<BillsView>('/api/cards/bills'),
+  billCheck: () => request<BillCheckView>('/api/bill-check'),
   installments: () => request<InstallmentsView>('/api/installments'),
   transactions: (from: string, to: string, limit: number) => request<ExplorerResult>(`/api/transactions${query({ from, to, limit })}`),
   /** Explorer with any filters, given as URL parameters. */
