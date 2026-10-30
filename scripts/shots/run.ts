@@ -35,6 +35,7 @@ const ROUTES: Array<[string, string, number]> = [
   ['gastos', 'spending', 1500],
   ['gastos-tendencia', 'spending?by=trend', 1300],
   ['cartoes', 'cards', 1500],
+  ['cartoes-conferir', 'cards?tab=check', 1300],
   ['cartoes-futuras', 'cards?tab=forecast', 1500],
   ['cartoes-parcelas', 'cards?tab=installments', 1500],
   ['orcamento', 'budgets', 1300],

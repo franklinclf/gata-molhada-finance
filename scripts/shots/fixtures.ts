@@ -158,6 +158,7 @@ export function buildFixtures(now = new Date()): Fixtures {
     '/api/spending': call('/api/spending', `from=${range.from}&to=${range.to}`),
     '/api/transactions': call('/api/transactions', 'limit=50'),
     '/api/freshness': call('/api/freshness'),
+    '/api/bill-check': call('/api/bill-check'),
     '/api/rules': call('/api/rules'),
     '/api/budgets': call('/api/budgets'),
     '/api/networth': call('/api/networth'),

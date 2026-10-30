@@ -7,8 +7,102 @@ import { patchParams, type Route } from '../router.ts';
 import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
 import { Select } from '../Select.tsx';
+import { patchParams as openParams } from '../router.ts';
 
 const fullDay = (day: string) => `${dayMonth(day)}/${day.slice(0, 4)}`;
+
+/** Closed bills whose published total differs from what the app adds up, each with the likeliest cause and a way to fix it. */
+function CheckTab({ hidden }: { hidden: boolean }) {
+  const check = useLoad(() => api.billCheck(), []);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const apply = async (key: string, work: () => Promise<unknown>) => {
+    setBusy(key);
+    setMessage(null);
+    try {
+      await work();
+      check.reload();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Não foi possível aplicar.');
+    } finally {
+      setBusy(null);
+    }
+  };
+  if (!check.data) return <Loading error={check.error} />;
+  const { items, setAside } = check.data;
+  return (
+    <>
+      <p class="muted">
+        Compara o total de cada fatura fechada que o banco publicou com a soma das compras do ciclo. Quando uma compra perto do fechamento explica a diferença dos dois lados, a sugestão é movê-la para a fatura vizinha. O que nenhuma compra explica é algo que o banco não mandou (lance à mão em “+ Nova”) ou que ele não cobra (ignore a transação).
+      </p>
+      {message && <div class="error">{message}</div>}
+      <section class="panel">
+        <h2>Faturas que não fecham ({items.length})</h2>
+        {items.length === 0 ? (
+          <div class="empty">Todas as faturas fechadas batem com as compras.</div>
+        ) : (
+          <ul class="rows tall">
+            {items.map((item) => {
+              const key = `${item.accountId}|${item.cycleKey}`;
+              const s = item.suggestion;
+              return (
+                <li key={key} class="suggestion">
+                  <div class="grow">
+                    <div>
+                      {item.institution}
+                      {item.last4 ? ` •••• ${item.last4}` : ''} · vence {fullDay(item.dueDate)} <span class="muted">({dayMonth(item.from)} a {dayMonth(item.to)})</span>
+                    </div>
+                    <div class="muted">
+                      Banco {brl(item.billTotal, hidden)} · app {brl(item.ours, hidden)} · diferença <span class={item.gap > 0 ? 'bad-text' : ''}>{brl(item.gap, hidden)}</span>
+                    </div>
+                    {s.kind === 'move' && (
+                      <ul class="rows">
+                        {s.moves.map((m) => (
+                          <li key={m.transactionId}>
+                            <button class="link grow clip" onClick={() => patchParams({ tx: m.transactionId })}>
+                              {fullDay(m.day)} · {m.description}
+                            </button>
+                            <span>{brl(m.amount, hidden)}</span>
+                            <span class="muted">vai para a fatura de {monthName(m.toCycleKey)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {s.kind === 'missing' && <div class="muted">O banco cobra {brl(s.amount, hidden)} que nenhuma compra perto do fechamento explica. Provavelmente uma compra, juros ou IOF que não chegaram: lance à mão em “+ Nova”.</div>}
+                    {s.kind === 'extra' && <div class="muted">O app soma {brl(s.amount, hidden)} a mais do que o banco cobrou e nenhuma compra perto do fechamento explica. Pode ser uma pendente que o banco nunca lançou: abra a compra suspeita e ignore ou mude o status.</div>}
+                  </div>
+                  {s.kind === 'move' && (
+                    <button class="primary small" disabled={busy === key} onClick={() => void apply(key, async () => { for (const m of s.moves) await api.setCycle(m.transactionId, m.toCycleKey); })}>
+                      {busy === key ? 'Movendo...' : s.moves.length === 1 ? 'Mover a compra' : `Mover ${s.moves.length} compras`}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+      <section class="panel">
+        <h2>Pendentes postas de lado ({setAside.length})</h2>
+        <div class="muted">Pendentes antigas em conta que só uma fonte vê ficam fora dos totais. Se alguma for real, abra e mude o status para lançada.</div>
+        {setAside.length === 0 ? (
+          <div class="empty">Nenhuma.</div>
+        ) : (
+          <ul class="rows">
+            {setAside.map((t) => (
+              <li key={t.id}>
+                <button class="link grow clip" onClick={() => patchParams({ tx: t.id })}>
+                  {fullDay(t.day)} · {t.description} <span class="muted">({t.institution}{t.last4 ? ` ${t.last4}` : ''})</span>
+                </button>
+                <span>{brl(t.amount, hidden)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  );
+}
 
 function History({ accountId, hidden }: { accountId: string; hidden: boolean }) {
   const { data, error, reload } = useLoad(() => api.cycles(accountId), [accountId]);
@@ -328,7 +422,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
     <div class="page-body">
       <h1 class="page-title">Cartões</h1>
       <div class="tabs">
-        {[['cards', 'Faturas'], ['forecast', 'Futuras'], ['installments', 'Parcelas'], ['limits', 'Limites']].map(([id, label]) => (
+        {[['cards', 'Faturas'], ['check', 'Conferir'], ['forecast', 'Futuras'], ['installments', 'Parcelas'], ['limits', 'Limites']].map(([id, label]) => (
           <button key={id} class={tab === id ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: id === 'cards' ? null : id })}>
             {label}
           </button>
@@ -364,7 +458,8 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
           <Select ariaLabel="Ciclo" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...(data?.cycles ?? []).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
         </label>
       )}
-      {error || (loading && !data) ? (
+      {tab === 'check' && <CheckTab hidden={hidden} />}
+      {tab === 'check' ? null : error || (loading && !data) ? (
         <Loading error={error} />
       ) : data ? (
         <>

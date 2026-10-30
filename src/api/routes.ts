@@ -16,6 +16,7 @@ import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type
 import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rule-suggestions.ts';
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
+import { billCheck } from './bill-check.ts';
 import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
@@ -295,6 +296,8 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!CYCLE.test(cycle)) return badRequest('cycle must be open or a month like 2026-10');
       return { status: 200, body: views.cards(store, now, opts, cycle) };
     }
+    case 'bill-check':
+      return method === 'GET' && parts.length === 2 ? { status: 200, body: billCheck(store, now) } : methodNotAllowed();
     case 'cycles': {
       if (parts.length !== 2) return null;
       if (method === 'PUT') {

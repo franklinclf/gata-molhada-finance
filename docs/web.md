@@ -249,6 +249,8 @@ No painel de uma transação (qualquer uma que não seja digitada por você), "C
 
 Já existiam: marcar uma fatura como paga ou não paga (Faturas > histórico), ignorar uma transação, mudar a parcela, mudar a categoria e lançar uma transação à mão (para o que o banco não mandou, como IOF e juros).
 
+Cartões > Conferir (`GET /api/bill-check`) compara o total de cada fatura fechada que o banco publicou (até 400 dias) com a soma do ciclo (compras menos créditos, sem pagamentos de fatura) e dá a causa mais provável. Se algumas compras a até 6 dias de um fechamento, em número de 1 a 3, somam exatamente a diferença, a sugestão é movê-las para a fatura vizinha (botão "Mover"); quando o movimento já explica o outro lado, a fatura vizinha não aparece de novo. Sem combinação exata, o item diz que falta algo que o banco não mandou (lance à mão), ou que o app soma a mais (provável pendente que o banco nunca lançou). A tela lista também as pendentes postas de lado, para você abrir e marcar como lançada se alguma for real.
+
 Meses sem fatura publicada: quando a lista de faturas do banco pula um mês (ou a fatura ainda não saiu), o app cria um ciclo fechado para ele, com o mesmo dia de fechamento, em vez de juntar tudo no ciclo aberto. Esse ciclo aparece como "não conferido": mostra os pagamentos e as compras do período, sem inventar o valor da fatura. Isso corrigia, por exemplo, o Nubank, cuja fatura de outubro nunca veio do Meu Pluggy e fazia o ciclo "aberto" cobrir de 15/09 a 14/11.
 
 ## Pendentes antigas
