@@ -345,6 +345,22 @@ export function RulesTab({ hidden }: { hidden: boolean }) {
           </ul>
         )}
       </section>
+      {categories.data && categories.data.rules.length > 0 && (
+        <section class="panel">
+          <h2>Atalhos por descrição ({categories.data.rules.length})</h2>
+          <div class="muted">Criados ao marcar “Aplicar a todas com a mesma descrição” numa transação. Cada um vale para um texto exato e passa na frente das regras acima.</div>
+          <ul class="rows">
+            {categories.data.rules.map((r) => (
+              <li key={r.match}>
+                <span class="grow clip">“{r.match}” vai para {r.category}</span>
+                <button class="link" onClick={() => void run(async () => { await api.deleteRule(r.match); categories.reload(); })}>
+                  Remover
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </>
   );
 }

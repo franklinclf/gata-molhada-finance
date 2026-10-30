@@ -33,7 +33,35 @@ const ENTRIES: Array<[string[], string]> = [
   [['Serviços digitais', 'Digital services', 'Streaming de vídeo', 'Video streaming', 'Streaming de música', 'Music streaming'], 'Assinaturas e streaming'],
   [['Livraria', 'Bookstore'], 'Educação'],
   [['Bem-estar e fitness', 'Wellness and fitness', 'Ingressos', 'Tickets'], 'Lazer e esportes'],
+
+  // The rest of the Meu Pluggy category tree (docs.pluggy.ai, "Category Tree"), so every label it can send has a home.
+  [['Income', 'Retirement', 'Entrepreneurial activities', 'Government aid', 'Non-recurring income'], 'Renda'],
+  [['Loans and Financing', 'Loans', 'Interests charged', 'Financing', 'Real estate financing', 'Vehicle Financing', 'Student loan'], 'Empréstimos e financiamentos'],
+  [['Mutual funds', 'Variable income', 'Margin', 'Pension'], 'Investimentos'],
+  [['Same person transfer - Cash', 'Same person transfer - PIX', 'Same person transfer - TED'], 'Transferência entre minhas contas'],
+  [['Transfer - Bank slip (Boleto)', 'Transfer - Cash', 'Transfer - Check', 'Transfer - DOC', 'Transfer - Foreign exchange', 'Transfer - Internal', 'Third-party transfers', 'Third-party transfers - Bank slip', 'Third-party transfers - Debt card', 'Third-party transfers - DOC', 'Third-party transfers - PIX', 'Third-party transfers - TED'], 'Transferências'],
+  [['Legal obligations', 'Blocked balances', 'Alimony'], 'Pensão e obrigações legais'],
+  [['Internet', 'TV'], 'Telecomunicação'],
+  [['Education', 'Online Courses', 'University', 'School', 'Kindergarten'], 'Educação'],
+  [['Sports practice', 'Wellness', 'Stadiums and arenas', 'Landmarks and museums', 'Sports goods', 'Gaming'], 'Lazer e esportes'],
+  [['Electronics'], 'Eletrônicos'],
+  [['Kids and toys'], 'Crianças e brinquedos'],
+  [['Office Supplies'], 'Casa e utilidades'],
+  [['Travel', 'Airport and airlines', 'Mileage programs', 'Bus tickets', 'Car rental'], 'Viagens'],
+  [['Gambling', 'Lottery', 'Online bet'], 'Jogos e apostas'],
+  [['Taxes', 'Income taxes', 'Taxes on investments', 'Bank fees', 'Account fees', 'Wire transfer fees and ATM fees'], 'Impostos e taxas'],
+  [['Rent', 'Urban land and building tax', 'Utilities', 'Water', 'Electricity', 'Gas'], 'Moradia'],
+  [['Optometry', 'Hospital clinics and labs'], 'Saúde'],
+  [['Public transportation', 'Bicycle'], 'Transporte público'],
+  [['Automotive', 'Gas stations', 'Parking', 'Tolls and in-vehicle payment', 'Vehicle ownership taxes and fees', 'Vehicle maintenance', 'Traffic tickets', 'Vehicle insurance'], 'Combustível e carro'],
+  [['Life insurance', 'Home Insurance'], 'Seguros'],
 ];
+
+/**
+ * Labels of the Meu Pluggy tree that name only a broad area. They stay out of the table on purpose and go to the model,
+ * which sees what was bought. `npm test` checks that every other label of the tree has a home.
+ */
+export const GENERIC_SOURCE_LABELS = ['Shopping', 'Services', 'Food and drinks'];
 
 const TABLE = new Map<string, string>();
 for (const [labels, category] of ENTRIES) for (const label of labels) TABLE.set(normalizeName(label), category);
