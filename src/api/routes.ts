@@ -16,7 +16,7 @@ import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type
 import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rule-suggestions.ts';
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
-import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -365,6 +365,18 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const input = parseBody(body);
         if (!input) return badRequest('body must be { number, total } or both null');
         return fromMutation(setTransactionInstallment(store, id, input.number, input.total, now));
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'status') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input || !('status' in input)) return badRequest('body must be { status } with pending, posted or null');
+        return fromMutation(setTransactionStatus(store, id, input.status, now));
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'cycle') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input || !('cycleKey' in input)) return badRequest('body must be { cycleKey } with YYYY-MM or null');
+        return fromMutation(setTransactionCycle(store, id, input.cycleKey, now));
       }
       if (parts.length === 4 && id !== undefined && sub === 'ignore') {
         if (method !== 'PUT') return methodNotAllowed();

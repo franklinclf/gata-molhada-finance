@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PurgeReport } from './store.ts';
+import type { BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PurgeReport, TransactionOverride } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -702,6 +702,26 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       });
     },
 
+    listTransactionOverrides(): Map<string, TransactionOverride> {
+      const rows = db
+        .prepare('SELECT l.transaction_id AS id, o.status AS status, o.cycle_key AS cycle_key FROM transaction_links l JOIN transaction_overrides o ON o.source_id = l.source_id AND o.external_id = l.external_id ORDER BY o.updated_at')
+        .all() as Array<{ id: string; status: 'pending' | 'posted' | null; cycle_key: string | null }>;
+      return new Map(rows.map((r) => [r.id, { status: r.status, cycleKey: r.cycle_key }]));
+    },
+
+    setTransactionOverride(transactionId: string, patch: Partial<TransactionOverride>, now: string): void {
+      inTransaction(() => {
+        const links = db.prepare('SELECT source_id, external_id FROM transaction_links WHERE transaction_id = ?').all(transactionId) as Array<{ source_id: string; external_id: string }>;
+        for (const l of links) {
+          const current = db.prepare('SELECT status, cycle_key FROM transaction_overrides WHERE source_id = ? AND external_id = ?').get(l.source_id, l.external_id) as { status: string | null; cycle_key: string | null } | undefined;
+          const status = 'status' in patch ? (patch.status ?? null) : (current?.status ?? null);
+          const cycleKey = 'cycleKey' in patch ? (patch.cycleKey ?? null) : (current?.cycle_key ?? null);
+          if (status === null && cycleKey === null) db.prepare('DELETE FROM transaction_overrides WHERE source_id = ? AND external_id = ?').run(l.source_id, l.external_id);
+          else db.prepare('INSERT INTO transaction_overrides (source_id, external_id, status, cycle_key, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET status = excluded.status, cycle_key = excluded.cycle_key, updated_at = excluded.updated_at').run(l.source_id, l.external_id, status, cycleKey, now);
+        }
+      });
+    },
+
     listCategoryRules(): Map<string, string> {
       const rows = db.prepare('SELECT match_key, category FROM category_rules').all() as Array<{ match_key: string; category: string }>;
       return new Map(rows.map((r) => [r.match_key, r.category]));
@@ -1046,6 +1066,7 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         { table: 'ai_matches', where: 'source_a = ?', args: [sourceId] },
         { table: 'category_overrides', where: 'source_id = ?', args: [sourceId] },
         { table: 'installment_overrides', where: 'source_id = ?', args: [sourceId] },
+        { table: 'transaction_overrides', where: 'source_id = ?', args: [sourceId] },
       ];
 
       // The record another source holds for the same canonical transaction, if there is one.

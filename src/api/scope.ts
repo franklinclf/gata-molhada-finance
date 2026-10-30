@@ -32,6 +32,10 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   operation: string | null;
   /** The original amount of a purchase made in another currency (the transaction amount is in reais). */
   foreign: ForeignAmount | null;
+  /** Card bill (due month, YYYY-MM) the owner moved the transaction to; null when it follows its date. */
+  billCycle: string | null;
+  /** The owner set the status by hand. */
+  statusByUser: boolean;
 }
 
 export interface Counterparty {
@@ -100,7 +104,10 @@ export function effectiveTransactions(
   const rules = store.listCategoryRules();
   const ai = store.listAiCategories();
   const installmentOverrides = store.listInstallmentOverrides();
-  const all = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: options.includeExcluded });
+  const txOverrides = store.listTransactionOverrides();
+  // A set-aside pending entry the owner called posted is brought back, so it must be loaded even when excluded ones are not wanted.
+  const loaded = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: true });
+  const all = options.includeExcluded ? loaded : loaded.filter((t) => !t.excluded || (t.state === 'stale_pending' && txOverrides.get(t.id)?.status === 'posted'));
   const { labels: labelsOf, parties: partiesOf } = sourceFacts(store);
   const engineRules = sortRules(store.listRules());
   const regexes = new Map<string, RegExp | null>();
@@ -140,7 +147,11 @@ export function effectiveTransactions(
       const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: roleOrigin, owners, ownerDocument: counterparty?.isOwner === true && /^(pix|ted|transferencia)/i.test(parties?.operation ?? '') }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
       // What the source or the AI called it must agree with what it is for the arithmetic.
       if (role && (origin === 'source' || origin === 'ai' || engineHit)) category = ROLE_CATEGORY[role];
-      return { ...t, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null };
+      // The owner's word about the status wins over the source's. Calling a set-aside pending entry posted brings it back into the totals.
+      const word = txOverrides.get(t.id);
+      const status = word?.status ?? t.status;
+      const revived = word?.status === 'posted' && t.state === 'stale_pending';
+      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, billCycle: word?.cycleKey ?? null, statusByUser: word?.status != null };
     });
 }
 

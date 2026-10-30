@@ -33,6 +33,11 @@ export interface TransactionDetail {
   merchant: { key: string; count: number; total: Cents; firstDay: string | null; lastDay: string | null; recent: Array<{ id: string; day: string; amount: Cents; category: string | null }> };
   /** Billing cycle the transaction falls in, for card transactions. */
   cycle: { key: string; from: string; to: string; dueDate: string; status: string } | null;
+  /** The bills of this card the charge can be moved to, newest first. Empty for anything but a card charge. */
+  cycleOptions: Array<{ key: string; from: string; to: string; dueDate: string; status: string }>;
+  /** The owner moved the charge to this bill, or set its status by hand. */
+  cycleByUser: boolean;
+  statusByUser: boolean;
   findings: StoredFinding[];
   /** The category rule that applies to this description, if there is one. */
   rule: { category: string } | null;
@@ -86,10 +91,13 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
   const days = same.map((t) => localDay(t.occurredAt));
 
   let cycle: TransactionDetail['cycle'] = null;
+  let cycleOptions: TransactionDetail['cycleOptions'] = [];
   if (account.kind === 'credit_card') {
     const day = localDay(transaction.occurredAt);
-    const found = cyclesFor(store, account, all, localDay(now.toISOString())).find((c) => day >= c.from && day <= c.to);
+    const cycles = cyclesFor(store, account, all, localDay(now.toISOString()));
+    const found = transaction.billCycle ? cycles.find((c) => c.key === transaction.billCycle) : cycles.find((c) => day >= c.from && day <= c.to);
     if (found) cycle = { key: found.key, from: found.from, to: found.to, dueDate: found.dueDate, status: found.status };
+    cycleOptions = [...cycles].reverse().slice(0, 12).map((c) => ({ key: c.key, from: c.from, to: c.to, dueDate: c.dueDate, status: c.status }));
   }
 
   const rule = store.listCategoryRules().get(key);
@@ -109,6 +117,9 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
       recent: same.slice(0, 6).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, category: t.category })),
     },
     cycle,
+    cycleOptions,
+    cycleByUser: transaction.billCycle !== null,
+    statusByUser: transaction.statusByUser,
     findings: store.listFindings({ includeResolved: false }).filter((f) => f.transactionId === id),
     rule: rule !== undefined ? { category: rule } : null,
     joinedByHand,

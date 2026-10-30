@@ -173,6 +173,12 @@ export interface AiMatch {
   decidedAt: string;
 }
 
+export interface TransactionOverride {
+  status: 'pending' | 'posted' | null;
+  /** Due month (YYYY-MM) of the card bill the transaction belongs to. */
+  cycleKey: string | null;
+}
+
 export interface PurgeReport {
   sourceId: SourceId;
   applied: boolean;
@@ -339,6 +345,10 @@ export interface Store {
   listInstallmentOverrides(): Map<string, { number: number; total: number }>;
   /** Sets (or with null clears) the installment on every source record of a canonical transaction. */
   setInstallmentOverride(transactionId: string, installment: { number: number; total: number } | null, now: string): void;
+  /** What the owner says about each transaction: its status (pending or posted) and the card bill (due month) it belongs to. */
+  listTransactionOverrides(): Map<string, TransactionOverride>;
+  /** Sets the given fields and leaves the others alone; `null` clears a field. */
+  setTransactionOverride(transactionId: string, patch: Partial<TransactionOverride>, now: string): void;
   /** Restores pending transactions that a card bill proved real: they count again. */
   markTransactionsBilled(ids: string[]): void;
   getSetting(key: string): string | null;
