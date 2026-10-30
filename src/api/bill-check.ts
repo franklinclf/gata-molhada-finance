@@ -51,13 +51,18 @@ interface Candidate {
   value: Cents;
 }
 
-/** Smallest group (up to MAX_MOVES) whose values add up to `target`, if exactly one group of that size does. */
-function exactGroup(candidates: Candidate[], target: Cents): Candidate[] | null {
+const dayNumber = (day: string): number => Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000);
+
+/**
+ * Smallest group (up to MAX_MOVES) whose values add up to `target`. When several groups of that size do, the one closest
+ * to the closing day (`anchor`) wins, because that is where bank and card disagree about the day; a tie gives up.
+ */
+function exactGroup(candidates: Candidate[], target: Cents, anchor: string): Candidate[] | null {
   if (target <= 0) return null;
+  const distance = (group: Candidate[]) => group.reduce((s, c) => s + Math.abs(dayNumber(localDay(c.t.occurredAt)) - dayNumber(anchor)), 0);
   for (let size = 1; size <= MAX_MOVES; size++) {
     const found: Candidate[][] = [];
     const walk = (from: number, left: number, sum: number, chosen: Candidate[]) => {
-      if (found.length > 1) return;
       if (left === 0) {
         if (sum === target) found.push([...chosen]);
         return;
@@ -65,8 +70,9 @@ function exactGroup(candidates: Candidate[], target: Cents): Candidate[] | null 
       for (let i = from; i < candidates.length; i++) walk(i + 1, left - 1, sum + candidates[i]!.value, [...chosen, candidates[i]!]);
     };
     walk(0, size, 0, []);
-    if (found.length === 1) return found[0]!;
-    if (found.length > 1) return null;
+    if (found.length === 0) continue;
+    const ranked = found.map((g) => ({ g, d: distance(g) })).sort((a, b) => a.d - b.d);
+    return ranked.length > 1 && ranked[0]!.d === ranked[1]!.d ? null : ranked[0]!.g;
   }
   return null;
 }
@@ -109,16 +115,21 @@ export function billCheck(store: Store, now: Date): BillCheckView {
         delta.set(toCycle.key, (delta.get(toCycle.key) ?? 0) + sum);
         suggestion = { kind: 'move', moves: picked.map((p) => ({ transactionId: p.t.id, day: localDay(p.t.occurredAt), amount: p.t.amount, description: p.t.description, toCycleKey: toCycle.key })) };
       };
+      // A neighbour with no published bill says nothing either way. One with a bill can take a charge only if it is short by
+      // that much, and give one only if it has that much to spare; anything else would trade one gap for another.
+      const spare = (c: Cycle | undefined): Cents | null => (c && c.billTotal !== null && c.status !== 'unknown' && c.status !== 'open' ? c.charges - c.credits + (delta.get(c.key) ?? 0) - c.billTotal : null);
+      const canTake = (c: Cycle | undefined, amount: Cents) => c !== undefined && (spare(c) === null || spare(c)! <= -amount + TOLERANCE);
+      const canGive = (c: Cycle | undefined, amount: Cents) => c !== undefined && (spare(c) === null || spare(c)! >= amount - TOLERANCE);
       if (gap > 0) {
         // We count more than the bill: the last days of this cycle may belong to the next bill, the first days to the previous one.
-        const tail = next ? exactGroup(near(membership(cycle), addDays(cycle.to, -EDGE_DAYS), cycle.to), gap) : null;
-        const head = previous && previous.billTotal !== null ? exactGroup(near(membership(cycle), cycle.from, addDays(cycle.from, EDGE_DAYS)), gap) : null;
+        const tail = canTake(next, gap) ? exactGroup(near(membership(cycle), addDays(cycle.to, -EDGE_DAYS), cycle.to), gap, cycle.to) : null;
+        const head = canTake(previous, gap) ? exactGroup(near(membership(cycle), cycle.from, addDays(cycle.from, EDGE_DAYS)), gap, cycle.from) : null;
         if (tail && next) record(tail, next, cycle.key);
         else if (head && previous) record(head, previous, cycle.key);
       } else {
         // The bill is larger: the first days of the next cycle, or the last days of the previous one, may belong here.
-        const pullFromNext = next ? exactGroup(near(membership(next), next.from, addDays(next.from, EDGE_DAYS + 1)), -gap) : null;
-        const pullFromPrevious = previous ? exactGroup(near(membership(previous), addDays(previous.to, -EDGE_DAYS), previous.to), -gap) : null;
+        const pullFromNext = canGive(next, -gap) && next ? exactGroup(near(membership(next), next.from, addDays(next.from, EDGE_DAYS + 1)), -gap, next.from) : null;
+        const pullFromPrevious = canGive(previous, -gap) && previous ? exactGroup(near(membership(previous), addDays(previous.to, -EDGE_DAYS), previous.to), -gap, previous.to) : null;
         if (pullFromNext && next) record(pullFromNext, cycle, next.key);
         else if (pullFromPrevious && previous) record(pullFromPrevious, cycle, previous.key);
       }
