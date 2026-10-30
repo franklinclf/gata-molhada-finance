@@ -18,7 +18,8 @@ const SOURCE_CATEGORY: Array<[RegExp, Role]> = [
 ];
 
 const DESCRIPTION: Array<[RegExp, Role]> = [
-  [/^(pagamento recebido|pagto por deb|pagamento de fatura|credit card payment|pagamento fatura|gastos cartao de credito)/, 'card_payment'],
+  // Itaú shows a card bill paid with the account balance as "PAGAMENTO COM SALDO", a credit on the card.
+  [/^(pagamento recebido|pagto por deb|pagamento de fatura|credit card payment|pagamento fatura|gastos cartao de credito|pagamento com saldo)/, 'card_payment'],
   // A card bill paid from the bank account: the bank names the issuer (Bradescard's bills go to "BANCO IBI").
   [/^(pagto eletron cobranca banco (bradescard|ibi)|pagamento efetuado banco ibi)/, 'card_payment'],
   [/^(transferencia mesma titularidade)/, 'own_transfer'],
