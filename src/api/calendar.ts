@@ -1,3 +1,4 @@
+import { addDays, lastDayOf, nextMonth } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
@@ -33,16 +34,6 @@ export interface CalendarView {
   recurring: RecurringItem[];
 }
 
-const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
-const lastDayOf = (month: string): string => {
-  const [y, m] = month.split('-').map(Number) as [number, number];
-  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-};
-const nextMonth = (month: string): string => {
-  const [y, m] = month.split('-').map(Number) as [number, number];
-  const t = y * 12 + m;
-  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
-};
 
 const MAX_AHEAD_DAYS = 100;
 

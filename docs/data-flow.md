@@ -141,4 +141,11 @@ Duas travas: uma leitura vazia não remove nada, e mais da metade da janela (ou 
 ## 9. Limitações conhecidas
 
 - O id da conta canônica é um hash de tipo, instituição e nome, o que o mantém igual quando uma conexão é refeita (ids novos na fonte). Ao renomear uma conexão em `PLUGGY_ITEMS` o id muda, e as escolhas por conta (oculta, fatura quitada, lançamentos digitados, metas) acompanham os registros da fonte para o id novo no mesmo rebuild.
-- O mesmo conceito aparece escrito em mais de um lugar: a lista de fontes `['pierre','pluggy']`, a data de início 2026-01-01, o fuso -3h e vários cálculos de data.
+- A ordem de precedência entre fontes ainda tem `pierre` em primeiro (`DEFAULT_SOURCE_PRIORITY`); só entra em jogo se registros dele voltarem (por exemplo, um backup restaurado). Qualquer fonte registrada que não esteja na lista entra depois dela.
+
+## 10. Onde cada constante mora
+
+- Data de início dos dados, fuso do Brasil e início do dia local: `src/core/time.ts` (`DATA_START`, `BRAZIL_OFFSET_MS`, `startOfLocalDay`). A web usa `localDay` de `web/src/format.ts` em vez de somar -3h à mão.
+- Conta de dias, soma de meses e último dia do mês: `src/core/dates.ts`.
+- Fontes: `store.listSourceIds()` e `sourcePriority(store)` em `src/reconcile/run.ts`.
+- Janela de leitura: `SYNC_LOOKBACK_DAYS` em `src/scheduler/defaults.ts`.

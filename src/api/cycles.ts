@@ -1,7 +1,8 @@
 import type { CanonicalAccount } from '../core/canonical.ts';
 import type { Cents } from '../core/money.ts';
+import { addDays, dayNumber } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
-import { DEFAULT_SOURCE_PRIORITY } from '../reconcile/run.ts';
+import { sourcePriority } from '../reconcile/run.ts';
 import type { Store, StoredSourceBill } from '../store/store.ts';
 import type { EffectiveTransaction } from './scope.ts';
 
@@ -46,9 +47,7 @@ function fmt(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-export function addDays(day: string, n: number): string {
-  return new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
-}
+export { addDays };
 
 /** Same day of the month `n` months later, or the last day when the month is shorter. */
 export function addMonthsToDay(day: string, n: number): string {
@@ -67,9 +66,10 @@ interface BillInfo {
 }
 
 function billsOf(store: Store, account: CanonicalAccount): BillInfo[] {
+  const order = sourcePriority(store);
   const rank = (sourceId: string) => {
-    const i = DEFAULT_SOURCE_PRIORITY.indexOf(sourceId);
-    return i < 0 ? DEFAULT_SOURCE_PRIORITY.length : i;
+    const i = order.indexOf(sourceId);
+    return i < 0 ? order.length : i;
   };
   const byDueMonth = new Map<string, { bill: StoredSourceBill; rank: number }>();
   for (const sourceId of new Set(account.refs.map((r) => r.sourceId))) {
@@ -96,7 +96,6 @@ const SAME_PAYMENT_DAYS = 3;
 function paymentsOf(transactions: EffectiveTransaction[]): Array<{ day: string; amount: Cents }> {
   const seen = new Map<string, Array<{ sources: string[]; status: string }>>();
   const out: Array<{ day: string; amount: Cents; status: string; merged: boolean }> = [];
-  const dayNumber = (day: string) => Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000);
   for (const t of transactions) {
     if (t.excluded || t.amount <= 0 || !isCardPayment(t)) continue;
     const day = localDay(t.occurredAt);

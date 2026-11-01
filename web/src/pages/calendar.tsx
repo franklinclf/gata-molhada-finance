@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import type { CalendarDay } from '../api.ts';
-import { brl, dayMonth, monthName } from '../format.ts';
+import { brl, dayMonth, localDay, monthName } from '../format.ts';
 import { TxRow } from '../ui.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
@@ -30,7 +30,7 @@ function Cell({ d, today, picked, onPick, hidden }: { d: CalendarDay; today: str
 }
 
 export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; hidden: boolean }) {
-  const current = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 7);
+  const current = localDay(now.toISOString()).slice(0, 7);
   const month = route.params.get('month') ?? current;
   const { data, error, loading, reload } = useLoad(() => api.calendar(month), [month]);
   // One tap selects a day; a second tap on another day selects the days between; a tap on a selected single day clears it.

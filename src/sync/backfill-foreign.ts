@@ -25,18 +25,6 @@ function pluggyRecords(body: unknown): Found[] {
   });
 }
 
-function pierreRecords(body: unknown): Found[] {
-  const list = typeof body === 'object' && body !== null ? (body as { data?: unknown }).data : null;
-  if (!Array.isArray(list)) return [];
-  return list.flatMap((r: Record<string, unknown>) => {
-    const currency = typeof r.currency_code === 'string' ? r.currency_code : null;
-    const amount = typeof r.amount === 'number' ? r.amount : Number(r.amount);
-    if (!currency || currency === 'BRL' || typeof r.id !== 'string' || !Number.isFinite(amount)) return [];
-    const inAccount = r.amount_in_account_currency === null || r.amount_in_account_currency === undefined ? null : Number(r.amount_in_account_currency);
-    return [{ externalId: r.id, currency, original: cents(Math.abs(amount)), charged: inAccount !== null && Number.isFinite(inAccount) ? cents(Math.abs(inAccount)) : null }];
-  });
-}
-
 /**
  * Purchases in another currency were saved with the foreign number as if it were reais (9 euros counted as R$ 9,00). The raw
  * answers the sources gave still hold the amount charged in reais, so the saved records are corrected from them, once.
@@ -47,7 +35,6 @@ export function backfillForeignAmounts(store: Store, now: Date): number {
   let changed = 0;
   const sources: Array<[string, string, (body: unknown) => Found[]]> = [
     ['pluggy', '/v2/transactions', pluggyRecords],
-    ['pierre', 'get-transactions', pierreRecords],
   ];
   for (const [sourceId, prefix, read] of sources) {
     const saved = new Map(store.listSourceTransactions(sourceId).map((t) => [t.externalId, t]));

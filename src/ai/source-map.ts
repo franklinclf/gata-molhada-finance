@@ -1,7 +1,7 @@
 import { normalizeName } from '../core/names.ts';
 
 /**
- * The sources (Pierre in Portuguese, Meu Pluggy in English) use one fixed list of categories. Most of them say the same
+ * Meu Pluggy uses one fixed list of categories (English names; the Portuguese ones are accepted too). Most of them say the same
  * thing as one of ours, so they are translated by a table instead of asked of a model. The labels that are too generic to
  * mean one thing (Shopping, Services, Food and drinks...) are left out and go to the model.
  */

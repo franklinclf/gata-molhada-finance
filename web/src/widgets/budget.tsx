@@ -1,13 +1,13 @@
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
-import { brl, percent } from '../format.ts';
+import { brl, localDay, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Go } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
 export function BudgetWidget({ now, hidden, size }: WidgetProps) {
-  const month = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 7);
+  const month = localDay(now.toISOString()).slice(0, 7);
   const { data, error, loading } = useLoad(() => api.budgets(month), [month], 120_000);
   const budgeted = data?.lines.filter((l) => l.budget !== null) ?? [];
   return (

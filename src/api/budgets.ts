@@ -1,4 +1,5 @@
-import { localDay } from '../core/time.ts';
+import { addMonths, lastDayOf } from '../core/dates.ts';
+import { DATA_START_MONTH, localDay } from '../core/time.ts';
 import type { BudgetRow, BudgetScope, Store } from '../store/store.ts';
 import { categoryParents } from './category-groups.ts';
 import { cleanCategoryName } from './mutations.ts';
@@ -9,17 +10,9 @@ export type BudgetResult<T = Record<string, never>> = { ok: true; value: T } | {
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MAX_AMOUNT = 1_000_000_000; // R$ 10 million, in cents
 /** The first month the app holds data for. Averages never look before it. */
-const DATA_START_MONTH = '2026-01';
 
-export const addMonths = (month: string, n: number): string => {
-  const [y, m] = month.split('-').map(Number) as [number, number];
-  const t = y * 12 + (m - 1) + n;
-  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
-};
-export const lastDay = (month: string): string => {
-  const next = addMonths(month, 1);
-  return new Date(Date.parse(`${next}-01T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
-};
+export { addMonths };
+export const lastDay = lastDayOf;
 const daysIn = (month: string): number => Number(lastDay(month).slice(8, 10));
 
 export interface Resolved {

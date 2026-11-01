@@ -203,7 +203,7 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
         return null;
       };
 
-      // A source rarely says "posted" unless the bank did, and Pierre often keeps things pending long after the bank
+      // A source rarely says "posted" unless the bank did, and one source can keep things pending long after the bank
       // posted them. So one posted report is enough, and sources are never in conflict over the status.
       let state: TransactionState;
       if (records.some((r) => ignored.has(refKey(r.sourceId, r.tx.externalId)))) state = 'ignored';

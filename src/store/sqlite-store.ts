@@ -280,6 +280,10 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       };
     },
 
+    listSourceIds(): SourceId[] {
+      return (db.prepare('SELECT id FROM sources ORDER BY id').all() as Array<{ id: string }>).map((r) => r.id);
+    },
+
     retireSourcesExcept(activeIds: SourceId[]): SourceId[] {
       const rows = db.prepare('SELECT id FROM sources WHERE active = 1').all() as Array<{ id: string }>;
       const retired = rows.map((r) => r.id).filter((id) => !activeIds.includes(id));

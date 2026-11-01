@@ -1,3 +1,4 @@
+import { dayNumber } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
 import type { Goal, Store } from '../store/store.ts';
 import { cleanCategoryName } from './mutations.ts';
@@ -25,7 +26,6 @@ export interface GoalView extends Goal {
   requiredMonthly: number | null;
 }
 
-const dayNumber = (day: string): number => Math.round(Date.parse(`${day}T00:00:00Z`) / 86_400_000);
 
 /** Where a goal stands today. */
 export function currentAmount(store: Store, goal: Goal, today: string, net: () => number): { amount: number; linkLost: boolean } {

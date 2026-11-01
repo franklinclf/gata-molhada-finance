@@ -202,7 +202,7 @@ export async function categorizePending(store: Store, options: CategorizerOption
 /** Every label the sources put on a description, from both of them. */
 function sourceLabels(store: Store): Map<string, string[]> {
   const map = new Map<string, Set<string>>();
-  for (const sourceId of ['pierre', 'pluggy']) {
+  for (const sourceId of store.listSourceIds()) {
     for (const t of store.listSourceTransactions(sourceId)) {
       if (!t.category) continue;
       const key = ruleKey(t.description);
