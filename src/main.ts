@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Debounce } from './http/deploy-hook.ts';
@@ -28,7 +28,21 @@ import { loadAdapterEnv } from './sync/config.ts';
 
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
 const config = loadConfig(process.env);
+// The database, its journal files and the backups hold everything about the owner's money: readable by the app's user only.
+process.umask(0o077);
 const store = openSqliteStore(config.dbPath, migrationsDir);
+for (const suffix of ['', '-wal', '-shm']) {
+  try {
+    chmodSync(`${config.dbPath}${suffix}`, 0o600);
+  } catch {
+    // The journal files exist only while the database is in use.
+  }
+}
+try {
+  chmodSync(join(dirname(config.dbPath), 'backups'), 0o700);
+} catch {
+  // No backups folder yet.
+}
 const backfilled = backfillParties(store, new Date());
 const corrected = backfillForeignAmounts(store, new Date());
 if (backfilled > 0 || corrected > 0) {

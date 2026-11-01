@@ -197,3 +197,59 @@ test('the version route tells what is running, and checking for a new version ne
   assert.equal(handle(post('/api/deploy/check', {}, { cookie }), armed).status, 429, 'asked again too soon');
   assert.equal(handle(get('/api/deploy/check', { cookie }), armed).status, 405);
 });
+
+function signedIn() {
+  const { deps, code } = setup();
+  const login = handle(post('/api/auth/login', { password: PASSWORD, code: code() }), deps);
+  return { deps, cookie: cookieOf(login.headers['Set-Cookie']) };
+}
+
+test('the refresh route needs a session, reports whether it is available, and 503s a start when there is no refresher', () => {
+  const { deps, cookie } = signedIn();
+  assert.equal(handle(get('/api/refresh'), deps).status, 401);
+  const state = handle(get('/api/refresh', { cookie }), deps);
+  assert.equal(state.status, 200);
+  assert.deepEqual(JSON.parse(state.body as string), { available: false });
+  assert.equal(handle(post('/api/refresh', {}, { cookie }), deps).status, 503);
+  assert.equal(handle({ ...get('/api/refresh', { cookie }), method: 'DELETE' }, deps).status, 405);
+});
+
+test('a started refresh answers 202, and a blocked one 409 with its reasons', () => {
+  const { deps, cookie } = signedIn();
+  const blocked = { ...deps, refresher: { state: () => ({ running: false, startedAt: null, finishedAt: null, result: null, timedOut: [], error: null }), start: () => ({ started: false as const, reasons: ['too soon'] }) } };
+  const response = handle(post('/api/refresh', {}, { cookie }), blocked);
+  assert.equal(response.status, 409);
+  assert.deepEqual(JSON.parse(response.body as string).reasons, ['too soon']);
+  const ok = { ...deps, refresher: { ...blocked.refresher, start: () => ({ started: true as const }) } };
+  assert.equal(handle(post('/api/refresh', {}, { cookie }), ok).status, 202);
+});
+
+test('the chat conversation list, the card bills and the bill check are served to a session', () => {
+  const { deps, cookie } = signedIn();
+  assert.equal(handle(get('/api/chat/conversations'), deps).status, 401);
+  assert.deepEqual(JSON.parse(handle(get('/api/chat/conversations', { cookie }), deps).body as string), { items: [] });
+  assert.equal(handle(get('/api/cards/bills', { cookie }), deps).status, 200);
+  assert.equal(handle(get('/api/bill-check', { cookie }), deps).status, 200);
+  assert.equal(handle({ ...get('/api/chat', { cookie }), method: 'GET' }, deps).status, 405);
+});
+
+test('the backup needs a recent sign-in and a passphrase of at least 12 characters', () => {
+  const { deps, cookie } = signedIn();
+  assert.equal(handle(post('/api/backup', { passphrase: 'long enough passphrase' }), deps).status, 401);
+  const noBackup = handle(post('/api/backup', { passphrase: 'long enough passphrase' }, { cookie }), deps);
+  assert.equal(noBackup.status, 503);
+  const withBackup = { ...deps, backup: (p: string) => Buffer.from(`copy:${p.length}`) };
+  assert.equal(handle(post('/api/backup', { passphrase: 'short' }, { cookie }), withBackup).status, 400);
+  assert.equal(handle({ ...get('/api/backup', { cookie }), method: 'GET' }, withBackup).status, 405);
+  const ok = handle(post('/api/backup', { passphrase: 'long enough passphrase' }, { cookie }), withBackup);
+  assert.equal(ok.status, 200);
+  assert.match(ok.headers['Content-Disposition'] ?? '', /gmf-backup-2026-10-27/);
+});
+
+test('failed sign-ins from one address lock that address and leave another free', () => {
+  const { deps, code } = setup();
+  const attempt = (ip: string, password: string) => handle(post('/api/auth/login', { password, code: code() }, { 'x-forwarded-for': `1.1.1.1, ${ip}` }), deps);
+  for (let i = 0; i < 5; i++) assert.equal(attempt('203.0.113.9', 'wrong password!!').status, 401);
+  assert.equal(attempt('203.0.113.9', PASSWORD).status, 429);
+  assert.equal(attempt('198.51.100.7', PASSWORD).status, 200);
+});

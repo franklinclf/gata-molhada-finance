@@ -59,6 +59,9 @@ export interface AuthOptions {
   graceSeconds: number;
 }
 
+/** The shared counter locks everyone after this many times the per-address limit (a spread-out attack). */
+const GLOBAL_FACTOR = 6;
+
 const DEFAULTS: AuthOptions = { sessionHours: 12, maxFailures: 5, lockMinutes: 15, deviceDays: 30, deviceMaxDays: 90, challengeMinutes: 5, freshMinutes: 15, graceSeconds: 60 };
 const LAST_TOTP_KEY = 'last_totp_counter';
 const MAX_CHALLENGES = 100;
@@ -73,7 +76,11 @@ export class AuthService {
   private readonly config: AuthConfig | null;
   private readonly now: () => Date;
   private readonly options: AuthOptions;
-  /** Failure times (ms). One account, so one shared counter; behind the proxy a per-address limit would not work. */
+  /**
+   * Failure times (ms) per client address, and all together. One address is locked after `maxFailures` misses. The
+   * shared counter locks everyone only after many more misses, so a single address cannot lock the owner out.
+   */
+  private failuresBy = new Map<string, number[]>();
   private failures: number[] = [];
   /** Wrong passkey signatures cannot be guessed, so they do not lock the password login; they only slow a flood. */
   private passkeyFailures: number[] = [];
@@ -98,16 +105,25 @@ export class AuthService {
     return this.config !== null;
   }
 
-  private lockedFor(): number | null {
+  private lockedFor(client: string): number | null {
     const nowMs = this.now().getTime();
     const windowMs = this.options.lockMinutes * 60_000;
     this.failures = this.failures.filter((t) => nowMs - t < windowMs);
-    if (this.failures.length < this.options.maxFailures) return null;
-    return Math.max(1, Math.ceil((this.failures[0]! + windowMs - nowMs) / 1000));
+    const mine = (this.failuresBy.get(client) ?? []).filter((t) => nowMs - t < windowMs);
+    if (mine.length > 0) this.failuresBy.set(client, mine);
+    else this.failuresBy.delete(client);
+    const own = mine.length >= this.options.maxFailures ? mine : null;
+    const all = this.failures.length >= this.options.maxFailures * GLOBAL_FACTOR ? this.failures : null;
+    const first = own?.[0] ?? all?.[0];
+    return first === undefined ? null : Math.max(1, Math.ceil((first + windowMs - nowMs) / 1000));
   }
 
-  private fail(): void {
-    this.failures.push(this.now().getTime());
+  private fail(client: string): void {
+    const at = this.now().getTime();
+    this.failures.push(at);
+    this.failuresBy.set(client, [...(this.failuresBy.get(client) ?? []), at]);
+    // Addresses are kept only while they have recent failures; a flood of made-up ones cannot grow the map without bound.
+    if (this.failuresBy.size > 1000) this.failuresBy.delete(this.failuresBy.keys().next().value as string);
   }
 
   private startSession(strength: SessionStrength, deviceId: string | null = null): { token: string; expiresAt: string } {
@@ -137,20 +153,21 @@ export class AuthService {
     return { token, maxAgeSeconds: Math.floor(idle / 1000), id };
   }
 
-  login(password: string, code: string, trust?: { name: string } | null): LoginResult {
+  login(password: string, code: string, trust?: { name: string } | null, client = 'unknown'): LoginResult {
     if (!this.config) return { ok: false, reason: 'not_configured' };
-    const locked = this.lockedFor();
+    const locked = this.lockedFor(client);
     if (locked !== null) return { ok: false, reason: 'locked', retryAfterSeconds: locked };
 
     // Both factors are always checked, so the response time does not say which one was wrong.
     const passwordOk = verifyPassword(password, this.config.passwordHash);
     const second = this.checkSecondFactor(code.trim(), this.now().getTime());
     if (!passwordOk || !second.ok) {
-      this.fail();
+      this.fail(client);
       return { ok: false, reason: 'invalid' };
     }
     second.consume();
     this.failures = [];
+    this.failuresBy.delete(client);
     const device = trust ? this.issueDevice(trust.name) : null;
     const session = this.startSession('password', device?.id ?? null);
     return { ok: true, ...session, ...(device ? { device: { token: device.token, maxAgeSeconds: device.maxAgeSeconds } } : {}) };

@@ -77,8 +77,9 @@ fi
 
 if [[ -n "$cur_id" && -f "$DATA_DIR/gmf.sqlite" ]]; then
   mkdir -p "$DATA_DIR/backups"
+  chmod 700 "$DATA_DIR/backups"
   backup="/data/backups/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ).sqlite"
-  if ! docker exec gmf-app node -e "const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync('/data/gmf.sqlite');d.exec(\"VACUUM INTO '${backup}'\");d.close()"; then
+  if ! docker exec gmf-app node -e "const {DatabaseSync}=require('node:sqlite');process.umask(0o077);const d=new DatabaseSync('/data/gmf.sqlite');d.exec(\"VACUUM INTO '${backup}'\");d.close()"; then
     if [[ "$cur_health" == "healthy" ]]; then
       log "database backup failed while the current version is healthy; aborting the deploy"
       exit 1

@@ -27,6 +27,11 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Deploy and secrets scripts
+        run: |
+          bash deploy/tests/deploy.test.sh
+          bash deploy/tests/fetch-secrets.test.sh
+          bash infra/azure/tests/set-secret.test.sh
 
   image:
     runs-on: ubuntu-latest
