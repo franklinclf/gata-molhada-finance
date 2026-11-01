@@ -109,3 +109,11 @@ test('two different purchases with the same text and plan but different prices s
   const list = [tx('a-1', '2026-09-02', -10000, 'Amazon', { number: 1, total: 3 }), tx('b-1', '2026-09-03', -25000, 'Amazon', { number: 1, total: 3 })];
   assert.equal(installments(seeded(list), NOW).purchases.length, 2);
 });
+
+test('installments Meu Pluggy lists as pending charges dated in the future are future installments, not paid ones', () => {
+  // 4 x 50,00: the first is in the open bill, the others are dated on the coming due days.
+  const list = series('Fridge', 4, 5000, [[1, '2026-10-12'], [2, '2026-11-12'], [3, '2026-12-12'], [4, '2027-01-12']]);
+  const p = installments(seeded(list), NOW).purchases[0]!;
+  assert.deepEqual(p.slots.map((s) => [s.number, s.status, s.inferred]), [[1, 'open', false], [2, 'future', false], [3, 'future', false], [4, 'future', false]]);
+  assert.deepEqual([p.open, p.future, p.remaining], [1, 3, 20000]);
+});

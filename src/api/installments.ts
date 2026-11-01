@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { dayNumber } from '../core/dates.ts';
 import type { Cents } from '../core/money.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
@@ -110,7 +111,8 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}): I
   for (const account of cardAccounts) {
     const cycles = cyclesFor(store, account, transactions, today);
     const byKey = new Map(cycles.map((c) => [c.key, c]));
-    const openKey = cycles.find((c) => c.status === 'open')?.key;
+    const openCycle = cycles.find((c) => c.status === 'open');
+    const openKey = openCycle?.key;
     const cycleOfDay = (day: string) => cycles.find((c) => day >= c.from && day <= c.to);
 
     for (const [key, list] of series) {
@@ -120,14 +122,21 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}): I
       const amount = -first.amount;
 
       // One charge per number; if a number repeats, the latest wins.
-      const seen = new Map<number, { cycle: Cycle | undefined; day: string }>();
+      // Meu Pluggy lists the installments still to come as pending charges dated in the future. They are in no bill yet,
+      // so they are future installments, not paid ones: `ahead` is how many bills after the open one they fall.
+      const seen = new Map<number, { cycle: Cycle | undefined; day: string; ahead: number }>();
       for (const t of [...list].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
         const day = localDay(t.occurredAt);
-        seen.set(t.installment!.number, { cycle: t.billCycle ? byKey.get(t.billCycle) : cycleOfDay(day), day });
+        const cycle = t.billCycle ? byKey.get(t.billCycle) : cycleOfDay(day);
+        const ahead = !cycle && openCycle && day > openCycle.to ? Math.max(1, Math.ceil((dayNumber(day) - dayNumber(openCycle.to)) / 30.4375)) : 0;
+        seen.set(t.installment!.number, { cycle, day, ahead });
       }
       const numbers = [...seen.keys()].sort((a, b) => a - b);
       // Month of a seen charge: its bill, or the month of its date when it falls before the first bill we know.
-      const keyOf = (n: number) => seen.get(n)!.cycle?.key ?? seen.get(n)!.day.slice(0, 7);
+      const keyOf = (n: number) => {
+        const s = seen.get(n)!;
+        return s.cycle?.key ?? (s.ahead > 0 && openKey ? addMonthsToKey(openKey, s.ahead) : s.day.slice(0, 7));
+      };
       // The seen charge nearest to a number (the earlier one on a tie) is the base to count months from.
       const nearest = (n: number) => numbers.reduce((best, m) => (Math.abs(m - n) < Math.abs(best - n) || (Math.abs(m - n) === Math.abs(best - n) && m < best) ? m : best), numbers[0]!);
 
@@ -138,7 +147,7 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}): I
         const base = nearest(n);
         const cycleKey = s ? keyOf(n) : addMonthsToKey(keyOf(base), n - base);
         if (s) {
-          slots.push({ number: n, cycle: cycleKey, status: s.cycle ? statusOf(s.cycle) : 'paid', inferred: false, day: s.day });
+          slots.push({ number: n, cycle: cycleKey, status: s.ahead > 0 ? 'future' : s.cycle ? statusOf(s.cycle) : 'paid', inferred: false, day: s.day });
         } else {
           const cycle = byKey.get(cycleKey);
           let status: InstallmentStatus;
