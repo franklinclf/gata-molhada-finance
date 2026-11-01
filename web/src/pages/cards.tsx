@@ -487,6 +487,9 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
                   <strong>{brl(data.totals.reportedByIssuer, hidden)}</strong>
                 </div>
               </div>
+              <div class="note">
+                O saldo devedor é o limite usado que cada banco informa: a fatura aberta, as faturas fechadas não pagas e todas as parcelas que ainda vão vencer. Por isso é maior que a fatura aberta. Cartões que dividem o mesmo limite entram uma vez. A fatura aberta de cada cartão é a soma das compras do ciclo; quando o banco ainda não publicou a fatura, o app estima o valor pelo saldo menos as parcelas futuras e marca como estimado.
+              </div>
               <div class="cards-grid">
                 {data.cards.map((card) => (
                   <CardBlock key={card.id} card={card} cycle={cycle} hidden={hidden} />

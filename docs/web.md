@@ -261,6 +261,10 @@ Gastos, orçamento e os links que saem deles agora somam a mesma coisa. Clicar n
 
 Na interface, o período de cobrança de um cartão é sempre "fatura" ("Fatura em aberto", "Nesta fatura", "Fatura de 09/10 a 08/11"). O Painel e as outras telas mostram o erro de qualquer das consultas de um widget, não só da primeira. Um endereço de tela que não existe mostra "Página não encontrada" em vez de abrir o Painel. Na API, ids de linha precisam ser só dígitos (`1e0` e `0x1` dão 404), `GET /api/cycles` sem `accountId` responde 400, `/api/chat` com outro método responde 405 e um corpo que não é JSON em `/api/ai/*` responde 400. O cache do aplicativo instalado guarda no máximo as 120 entradas mais recentes.
 
+## O que é o "saldo devedor nos emissores"
+
+É a soma, por cartão, do saldo que o Open Finance informa para a conta de cartão (`balance`), que é o limite usado: limite menos limite disponível. Inclui a fatura aberta, as faturas fechadas não pagas e todas as parcelas a vencer, e por isso não é o valor da fatura. Cartões com o mesmo limite (os dois Bradesco) informam o mesmo número e entram uma vez. A fatura aberta de um cartão sem fatura publicada é estimada por esse saldo menos as faturas fechadas não pagas e menos as parcelas futuras. O Meu Pluggy lista as parcelas que ainda vão vencer como cobranças pendentes com data no futuro (por exemplo as quatro parcelas restantes da Amazon no Nubank); elas contam como parcelas futuras, e não como pagas, senão a estimativa da fatura aberta ficava maior que a real.
+
 ## Pendentes antigas
 
 Uma transação pendente vista por uma única fonte há mais de 7 dias é posta de lado ("stale") só em conta bancária. Em cartão ela continua valendo, porque o Meu Pluggy deixa toda compra da fatura aberta como pendente até a fatura fechar. A regra antiga valia para cartões porque o Pierre também marcava as compras e a coincidência das duas fontes as confirmava; com uma fonte só, ela derrubava compras reais do ciclo aberto dos totais (73 transações em 30/10/2026, logo depois de remover o Pierre).
