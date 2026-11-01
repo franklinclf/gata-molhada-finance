@@ -118,6 +118,18 @@ run_deploy
 check "update after a failed backup deploys once the backup works" "0" "$rc"
 check "keeps only the newest backups" "pre-deploy-3.sqlite pre-deploy-4.sqlite" "$(ls "$tmp/data/backups" | tr '\n' ' ' | sed 's/ $//')"
 
+# 9. A Caddyfile that git pull replaced is not what the running Caddy reads: caddy is recreated, and only then.
+printf '%s' "new" > "$tmp/app/deploy/Caddyfile"
+: > "$STUB_STATE/compose.log"
+export STUB_CADDY_INSIDE="old"
+run_deploy
+check "a stale Caddyfile in the container recreates caddy" "1" "$(grep -c -- '--force-recreate caddy' "$STUB_STATE/compose.log" || true)"
+: > "$STUB_STATE/compose.log"
+export STUB_CADDY_INSIDE="new"
+run_deploy
+check "an up-to-date Caddyfile leaves caddy alone" "0" "$(grep -c -- '--force-recreate caddy' "$STUB_STATE/compose.log" || true)"
+unset STUB_CADDY_INSIDE
+
 if (( failures > 0 )); then
   echo "$failures check(s) failed"
   exit 1

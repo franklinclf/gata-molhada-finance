@@ -41,6 +41,22 @@ export GMF_HOST
 
 compose() { docker compose --env-file "$VM_ENV" -f "$APP_DIR/deploy/docker-compose.yml" "$@"; }
 
+# The Caddyfile is mounted as a single file, and `git pull` replaces it with a new file, so a running Caddy keeps reading
+# the old one. When what Caddy sees differs from the repository's copy, the container is recreated (certificates live in a volume).
+hash_file() { if command -v sha256sum > /dev/null; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+caddy_up() {
+  local inside host
+  inside="$(docker exec gmf-caddy cat /etc/caddy/Caddyfile 2> /dev/null | hash_file || true)"
+  host=""
+  if [[ -f "$APP_DIR/deploy/Caddyfile" ]]; then host="$(hash_file < "$APP_DIR/deploy/Caddyfile")"; fi
+  if [[ -n "$host" && -n "$inside" && "$inside" != "$host" && "$inside" != "$(printf '' | hash_file)" ]]; then
+    log "the Caddyfile changed, recreating caddy"
+    compose up -d --no-deps --force-recreate caddy > /dev/null
+  else
+    compose up -d --no-deps caddy > /dev/null
+  fi
+}
+
 wait_healthy() {
   local waited=0 status
   while (( waited < HEALTH_TIMEOUT )); do
@@ -66,12 +82,12 @@ cur_env_hash="$(docker inspect -f '{{index .Config.Labels "gmf.env-hash"}}' gmf-
 
 if [[ -f "$FAILED_MARKER" && "$(cat "$FAILED_MARKER")" == "$new_id" ]]; then
   log "image $new_id already failed its health check; waiting for a newer one"
-  compose up -d --no-deps caddy > /dev/null
+  caddy_up
   exit 0
 fi
 
 if [[ "$new_id" == "$cur_id" && "$cur_health" == "healthy" && "$env_hash" == "$cur_env_hash" ]]; then
-  compose up -d --no-deps caddy > /dev/null
+  caddy_up
   exit 0
 fi
 
@@ -110,7 +126,7 @@ if ! wait_healthy; then
 fi
 
 rm -f "$FAILED_MARKER"
-compose up -d --no-deps caddy > /dev/null
+caddy_up
 
 # shellcheck disable=SC2012
 { ls -1t "$DATA_DIR"/backups/pre-deploy-*.sqlite 2> /dev/null || true; } | tail -n +"$((KEEP_BACKUPS + 1))" | while IFS= read -r old; do
