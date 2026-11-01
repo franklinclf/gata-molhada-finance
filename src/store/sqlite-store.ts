@@ -442,6 +442,13 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
 
     replaceCanonicalAccounts(accounts: CanonicalAccount[], groups: LimitGroup[], builtAt: string): void {
       inTransaction(() => {
+        // Which account each source record belonged to before this rebuild. The id of an account is a hash of its kind,
+        // institution and name, so renaming a connection gives the same bank account a new id. What the owner attached to
+        // the old id (hidden flag, paid bills, typed-in transactions, goals) has to follow the records to the new one.
+        const before = new Map<string, string>();
+        for (const r of db.prepare("SELECT source_id, external_id, account_id FROM account_source_refs WHERE role = 'member'").all() as Array<{ source_id: string; external_id: string; account_id: string }>) {
+          before.set(`${r.source_id}|${r.external_id}`, r.account_id);
+        }
         db.exec('DELETE FROM account_source_refs');
         db.exec('DELETE FROM accounts');
         db.exec('DELETE FROM limit_groups');
@@ -457,6 +464,23 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
           insertAccount.run(a.id, a.institution, a.kind, a.name, a.last4, a.balance, a.balanceSourceId, a.balanceAsOf,
             a.creditLimit, a.availableLimit, a.minimumPayment, a.dueDate, a.limitGroupId, builtAt);
           for (const r of a.refs) insertRef.run(r.sourceId, r.externalId, a.id, r.role);
+        }
+        const newIds = new Set(accounts.map((a) => a.id));
+        const moved = new Map<string, string>();
+        for (const a of accounts) {
+          for (const r of a.refs) {
+            const old = r.role === 'member' ? before.get(`${r.sourceId}|${r.externalId}`) : undefined;
+            if (old !== undefined && old !== a.id && !newIds.has(old) && !moved.has(old)) moved.set(old, a.id);
+          }
+        }
+        for (const [old, next] of moved) {
+          // INSERT-style moves: when the new id already has its own row the old one is dropped, so the newer choice wins.
+          db.prepare('UPDATE OR IGNORE account_prefs SET account_id = ? WHERE account_id = ?').run(next, old);
+          db.prepare('DELETE FROM account_prefs WHERE account_id = ?').run(old);
+          db.prepare('UPDATE OR IGNORE cycle_overrides SET account_id = ? WHERE account_id = ?').run(next, old);
+          db.prepare('DELETE FROM cycle_overrides WHERE account_id = ?').run(old);
+          db.prepare('UPDATE manual_transactions SET account_id = ? WHERE account_id = ?').run(next, old);
+          db.prepare("UPDATE goals SET track_ref = ? WHERE track = 'account' AND track_ref = ?").run(next, old);
         }
       });
     },

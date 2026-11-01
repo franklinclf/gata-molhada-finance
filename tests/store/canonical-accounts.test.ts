@@ -72,3 +72,28 @@ test('a source reference can point at only one canonical account', () => {
   const b = account({ id: 'acc_2', limitGroupId: null });
   assert.throws(() => store.replaceCanonicalAccounts([a, b], [], T1), /UNIQUE|constraint/i);
 });
+
+test('what the owner attached to an account follows its records when the account gets a new id', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, T1);
+  const account = (id: string, name: string) => ({
+    id, institution: 'Bank', kind: 'credit_card' as const, name, last4: '1111', balance: 0, balanceSourceId: 'pluggy', balanceAsOf: T1, creditLimit: null, availableLimit: null,
+    minimumPayment: null, dueDate: null, limitGroupId: null, refs: [{ sourceId: 'pluggy', externalId: 'ext-1', role: 'member' as const }],
+  });
+  store.replaceCanonicalAccounts([account('acc_old', 'Card')], [], T1);
+  store.setAccountHidden('acc_old', true, T1);
+  store.setCycleOverride('acc_old', '2026-09', true, T1);
+  store.saveManualTransaction({ accountId: 'acc_old', day: '2026-10-01', amount: -213, description: 'IOF', category: null, notes: null }, T1);
+  store.saveGoal({ name: 'Pay the card', target: 100000, targetDay: null, track: 'account', trackRef: 'acc_old', saved: 0, initial: 0, createdDay: '2026-10-01', archived: false });
+
+  // The connection was renamed: same source record, new name, so a new id.
+  store.replaceCanonicalAccounts([account('acc_new', 'Card renamed')], [], T1);
+  assert.deepEqual([...store.listHiddenAccountIds()], ['acc_new']);
+  assert.equal(store.listCycleOverrides().get('acc_new|2026-09'), true);
+  assert.equal(store.listManualTransactions()[0]?.accountId, 'acc_new');
+  assert.equal(store.listGoals()[0]?.trackRef, 'acc_new');
+
+  // A rebuild that keeps the id changes nothing, and an account with other records does not take over the choices.
+  store.replaceCanonicalAccounts([account('acc_new', 'Card renamed')], [], T1);
+  assert.deepEqual([...store.listHiddenAccountIds()], ['acc_new']);
+});
