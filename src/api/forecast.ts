@@ -114,8 +114,10 @@ export function forecast(store: Store, now: Date, opts: ViewOptions = {}, horizo
     const row = open.cards.find((c) => c.id === account.id);
     months.forEach((m, i) => {
       const inst = plan.purchases.filter((p) => p.accountId === account.id).reduce((s, p) => s + p.slots.filter((x) => x.cycle === m.key && x.status !== 'paid').length * p.amount, 0);
-      const known = i === 0 ? (row?.total ?? 0) : 0;
-      const total = i === 0 ? Math.max(known, inst + recurringMonthly + average) : inst + recurringMonthly + average;
+      // Each card's open bill sits in its own due month, which is not always the first month of the forecast.
+      const isOpenMonth = row?.cycle?.key === m.key;
+      const known = isOpenMonth ? (row?.total ?? 0) : 0;
+      const total = isOpenMonth ? Math.max(known, inst + recurringMonthly + average) : inst + recurringMonthly + average;
       m.cards.push({ id: account.id, label: label(account.id), installments: inst, recurring: recurringMonthly, variable: average, total });
       m.installments += inst;
       m.recurring += recurringMonthly;

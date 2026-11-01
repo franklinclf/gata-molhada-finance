@@ -117,7 +117,8 @@ export function effectiveTransactions(
   // A card bill paid by boleto or Pix QR code looks like any transfer; its amount gives it away.
   const cardIds = new Set(store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card').map((a) => a.id));
   const slipPayments = slipBillPayments(
-    all.filter((t) => !cardIds.has(t.accountId)).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })),
+    // Every live bank transaction, whatever the view asked for, so the same boleto is matched the same way on every screen.
+    store.listCanonicalTransactions({ includeExcluded: false }).filter((t) => !cardIds.has(t.accountId)).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })),
     ['pierre', 'pluggy'].flatMap((sourceId) => store.listSourceBills(sourceId)),
   );
   return all

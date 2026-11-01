@@ -35,7 +35,7 @@ function Line({ line, month, hidden, onChanged, onError }: { line: BudgetLine; m
     }
   };
   const over = line.used !== null && line.used > 1;
-  const params = line.scope === 'category' ? { category: line.name, from: `${month}-01`, kind: 'expense', spendingOnly: 'true' } : undefined;
+  const params = line.scope === 'category' ? { category: line.name, from: `${month}-01`, netSpending: 'true' } : undefined;
   return (
     <li class="budget-line">
       <div class="budget-head">

@@ -96,3 +96,16 @@ test('installments whose description carries the number ("Store 5/6") are one pu
   assert.equal(v.purchases.length, 1);
   assert.equal(v.purchases[0]!.description, 'Jim.Com* Instituto');
 });
+
+test('instalments that differ by a rounding cent are one purchase, not two', () => {
+  // 3 x 100,00 billed as 33,34 / 33,33 / 33,33.
+  const list = [tx('tv-1', '2026-08-02', -3334, 'TV', { number: 1, total: 3 }), tx('tv-2', '2026-09-02', -3333, 'TV', { number: 2, total: 3 }), tx('tv-3', '2026-10-02', -3333, 'TV', { number: 3, total: 3 })];
+  const purchases = installments(seeded(list), NOW).purchases;
+  assert.equal(purchases.length, 1);
+  assert.deepEqual(purchases[0]!.slots.map((s) => s.number), [1, 2, 3]);
+});
+
+test('two different purchases with the same text and plan but different prices stay apart', () => {
+  const list = [tx('a-1', '2026-09-02', -10000, 'Amazon', { number: 1, total: 3 }), tx('b-1', '2026-09-03', -25000, 'Amazon', { number: 1, total: 3 })];
+  assert.equal(installments(seeded(list), NOW).purchases.length, 2);
+});

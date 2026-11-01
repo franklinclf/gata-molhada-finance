@@ -47,7 +47,7 @@ function setup(options: { payments?: boolean } = {}) {
     list.push(tx('pay-sep', 'card1', '2026-09-15', 80000, 'Pagamento de cartão de crédito'));
     list.push(tx('pay-oct', 'card1', '2026-10-15', 68000, 'Pagamento de cartão de crédito'));
     // The same payment reported twice by another source counts once.
-    list.push(tx('pay-oct-dup', 'card1', '2026-10-15', 68000, 'Credit card payment'));
+    list.push({ ...tx('pay-oct-dup', 'card1', '2026-10-15', 68000, 'Credit card payment'), sourceIds: ['pluggy'] });
   }
   store.replaceCanonicalAccounts([card1], [], NOW.toISOString());
   store.replaceCanonicalTransactions(list, [], NOW.toISOString());
@@ -379,4 +379,17 @@ test('a pending copy and a posted copy of one payment on different days count on
   const cycles = cyclesFor(store, pay, effectiveTransactions(store), '2026-10-27');
   assert.equal(cycles.find((c) => c.key === '2026-09')?.paid, 100000, 'the pending and the posted copy are one payment');
   assert.equal(cycles.find((c) => c.key === '2026-10')?.paid, 100000, 'two real payments of 500 each add up');
+});
+
+test('two payments of the same amount on the same day from one source are two payments', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-sep', accountExternalId: 'ext-two', dueDate: '2026-09-15', closingDate: '2026-09-08', total: 100000, minimumPayment: null }, { externalId: 'b-oct', accountExternalId: 'ext-two', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 100000, minimumPayment: null }], NOW.toISOString());
+  const two = account('two', { refs: [{ sourceId: 'pluggy', externalId: 'ext-two', role: 'member' }] });
+  const pays = [tx('p1', 'two', '2026-09-12', 50000, 'Pagamento de cartão de crédito'), tx('p2', 'two', '2026-09-12', 50000, 'Pagamento de cartão de crédito')].map((t) => ({ ...t, sourceIds: ['pluggy'] }));
+  store.replaceCanonicalAccounts([two], [], NOW.toISOString());
+  // The canonical rows get their source ids from the links, so both payments are linked to the same source.
+  const links = pays.map((p) => ({ sourceId: 'pluggy', externalId: `e-${p.id}`, transactionId: p.id, matchPass: 0 }));
+  store.replaceCanonicalTransactions([tx('start', 'two', '2026-08-01', -100), tx('buy', 'two', '2026-09-02', -100000), ...pays], links, NOW.toISOString());
+  assert.equal(cyclesFor(store, two, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-09')?.paid, 100000);
 });

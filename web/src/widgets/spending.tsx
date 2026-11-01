@@ -19,7 +19,7 @@ export function SpendingWidget({ item, now, hidden, size, config, setConfig }: W
   const { data, error, loading } = useLoad(() => api.spending(range.from, range.to, by), [range.from, range.to, by], 120_000);
   const limit = 60;
   const groups = data?.groups.slice(0, limit) ?? [];
-  const link = (name: string) => (by === 'category' ? { from: range.from, to: range.to, category: name, kind: 'expense', spendingOnly: 'true' } : { from: range.from, to: range.to, q: name, kind: 'expense', spendingOnly: 'true' });
+  const link = (name: string) => (by === 'category' ? { from: range.from, to: range.to, category: name, netSpending: 'true' } : { from: range.from, to: range.to, q: name, netSpending: 'true' });
   return (
     <Widget
       title="Gastos"
