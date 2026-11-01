@@ -337,3 +337,31 @@ test('a charge the owner moves to another bill counts there, and going back to a
   store.setTransactionOverride(id, { cycleKey: null }, NOW.toISOString());
   assert.equal(cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27')[1]!.charges, 68000);
 });
+
+test('a card is judged only from its own first transaction, not from another account\'s older history', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-may', accountExternalId: 'ext-late', dueDate: '2026-05-15', closingDate: '2026-05-08', total: 200000, minimumPayment: null }], NOW.toISOString());
+  const late = account('late', { refs: [{ sourceId: 'pluggy', externalId: 'ext-late', role: 'member' }] });
+  const bank = account('bank', { kind: 'checking', refs: [{ sourceId: 'pluggy', externalId: 'ext-bank', role: 'member' }] });
+  // The bank has history from January; the card only from June, and May's bill is older than anything the card shows.
+  store.replaceCanonicalAccounts([late, bank], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('bank-old', 'bank', '2026-01-02', -500), tx('card-first', 'late', '2026-06-03', -1000)], [], NOW.toISOString());
+  const cycles = cyclesFor(store, late, effectiveTransactions(store), '2026-10-27');
+  assert.equal(cycles.find((c) => c.key === '2026-05')?.status, 'unknown', 'not overdue: the card has no payments to judge it by');
+});
+
+test('closing days that drift across a month end do not invent a month in between', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [
+    { externalId: 'b-1', accountExternalId: 'ext-drift', dueDate: '2026-10-10', closingDate: '2026-09-30', total: 10000, minimumPayment: null },
+    { externalId: 'b-2', accountExternalId: 'ext-drift', dueDate: '2026-11-10', closingDate: '2026-11-01', total: 20000, minimumPayment: null },
+  ], NOW.toISOString());
+  const drift = account('drift', { refs: [{ sourceId: 'pluggy', externalId: 'ext-drift', role: 'member' }] });
+  store.replaceCanonicalAccounts([drift], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('start', 'drift', '2026-08-01', -100)], [], NOW.toISOString());
+  const keys = cyclesFor(store, drift, effectiveTransactions(store), '2026-10-27').map((c) => c.key);
+  assert.deepEqual(keys, ['2026-10', '2026-11', '2026-12'].slice(0, keys.length).filter((k) => keys.includes(k)));
+  assert.equal(new Set(keys).size, keys.length, 'no two cycles share a bill month');
+});

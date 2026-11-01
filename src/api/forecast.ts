@@ -1,5 +1,5 @@
 import type { Cents } from '../core/money.ts';
-import { localDay } from '../core/time.ts';
+import { localDay, localMonth } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { addMonthsToDay, cyclesFor } from './cycles.ts';
 import { installments } from './installments.ts';
@@ -92,7 +92,7 @@ export function forecast(store: Store, now: Date, opts: ViewOptions = {}, horizo
     }
     const repeating = new Map<string, number>();
     for (const [key, list] of byKey) {
-      const months = new Set(list.map((t) => t.occurredAt.slice(0, 7)));
+      const months = new Set(list.map((t) => localMonth(t.occurredAt)));
       const amounts = list.map((t) => -t.amount);
       if (months.size < MIN_MONTHS || Math.max(...amounts) > Math.min(...amounts) * 1.1) continue;
       const latest = [...list].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))[0]!;

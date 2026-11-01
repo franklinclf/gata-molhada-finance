@@ -130,7 +130,7 @@ export function App() {
       page = <CashflowPage route={route} now={now} hidden={hidden} />;
       break;
     case 'status':
-      page = <StatusPage now={now} />;
+      page = <StatusPage now={now} hidden={hidden} />;
       break;
     case 'settings':
       page = <SettingsPage route={route} hidden={hidden} now={now} />;

@@ -14,6 +14,11 @@ export function brl(cents: number, hidden = false): string {
   return hidden ? MASK : BRL.format(cents / 100);
 }
 
+/** Hides the amounts written inside a sentence ("R$ 1.234,56") when values are hidden. */
+export function maskMoney(text: string, hidden: boolean): string {
+  return hidden ? text.replace(/-?R\$\s?-?\d+(?:\.\d{3})*(?:,\d{1,2})?/g, MASK) : text;
+}
+
 /** Whole reais, for chart labels. */
 export function brlShort(cents: number, hidden = false): string {
   if (hidden) return '••••';

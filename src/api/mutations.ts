@@ -235,6 +235,7 @@ export function setCycleSettled(store: Store, accountId: unknown, cycleKey: unkn
 export function setTransactionInstallment(store: Store, transactionId: string, number: unknown, total: unknown, now: Date): MutationResult {
   const transaction = effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).find((t) => t.id === transactionId);
   if (!transaction) return { ok: false, status: 404, error: 'not_found' };
+  if (isManualId(transactionId)) return { ok: false, status: 400, error: 'a transaction you typed in is edited directly' };
   if (number === null && total === null) {
     store.setInstallmentOverride(transactionId, null, now.toISOString());
     return { ok: true };

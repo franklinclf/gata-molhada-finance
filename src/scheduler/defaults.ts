@@ -13,6 +13,12 @@ export const WEBHOOK_POLL_INTERVAL_MS: Record<string, number> = {
 
 export const DEFAULT_POLL_INTERVAL_MS = 5 * 60_000;
 
+/**
+ * Days of transactions re-read whenever a source reports new data. A card purchase can stay pending for the whole
+ * statement and change on posting, so the window has to reach back past one statement, not two weeks.
+ */
+export const SYNC_LOOKBACK_DAYS = 45;
+
 export function observedSources(adapters: SourceAdapter[], withWebhook: ReadonlySet<string> = new Set()): ObservedSource[] {
   return adapters
     .filter((adapter) => adapter.fetchFreshness !== undefined)

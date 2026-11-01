@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import type { ChatConversation, ChatMessage } from '../api.ts';
+import { maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
 import { Loading } from '../ui.tsx';
@@ -11,17 +12,17 @@ const TOOL_LABEL: Record<string, string> = {
   summary: 'visão geral', spending: 'gastos', cashflow: 'fluxo de caixa', transactions: 'transações', cards: 'cartões', card_forecast: 'faturas futuras', budgets: 'orçamento', recurring: 'recorrentes', net_worth: 'patrimônio', goals: 'metas', trend: 'tendência',
 };
 
-function Bubble({ m }: { m: ChatMessage }) {
+function Bubble({ m, hidden }: { m: ChatMessage; hidden: boolean }) {
   return (
     <div class={m.role === 'user' ? 'chat-msg user' : 'chat-msg'}>
-      <div class="chat-text">{m.content}</div>
+      <div class="chat-text">{maskMoney(m.content, hidden)}</div>
       {m.role === 'assistant' && m.steps && m.steps.length > 0 && (
         <details class="chat-steps">
           <summary>Consultei {m.steps.length} {m.steps.length === 1 ? 'fonte' : 'fontes'}</summary>
           <ul>
             {m.steps.map((s, i) => (
               <li key={i}>
-                {TOOL_LABEL[s.tool] ?? s.tool} <span class="muted">{Object.keys(s.args).length > 0 ? JSON.stringify(s.args) : ''} {s.summary !== 'ok' ? `· ${s.summary}` : ''}</span>
+                {TOOL_LABEL[s.tool] ?? s.tool} <span class="muted">{Object.keys(s.args).length > 0 ? maskMoney(JSON.stringify(s.args), hidden) : ''} {s.summary !== 'ok' ? `· ${maskMoney(s.summary, hidden)}` : ''}</span>
               </li>
             ))}
           </ul>
@@ -31,7 +32,7 @@ function Bubble({ m }: { m: ChatMessage }) {
   );
 }
 
-export function ChatPage({ route }: { route: Route; hidden: boolean }) {
+export function ChatPage({ route, hidden }: { route: Route; hidden: boolean }) {
   const status = useLoad(() => api.chatStatus(), []);
   const conversations = useLoad(() => api.chatConversations(), []);
   const current = route.params.get('c') ? Number(route.params.get('c')) : null;
@@ -115,7 +116,7 @@ export function ChatPage({ route }: { route: Route; hidden: boolean }) {
               </div>
             )}
             {messages.map((m, i) => (
-              <Bubble key={`${m.id}-${i}`} m={m} />
+              <Bubble key={`${m.id}-${i}`} m={m} hidden={hidden} />
             ))}
             {busy && <div class="chat-msg"><div class="chat-text muted">Consultando seus dados…</div></div>}
             <div ref={end} />

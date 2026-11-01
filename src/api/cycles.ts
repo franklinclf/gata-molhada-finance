@@ -109,8 +109,9 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
   const bills = billsOf(store, account);
   if (bills.length === 0) return [];
   const own = transactions.filter((t) => t.accountId === account.id && !t.excluded);
-  // Before the first transaction we hold, no payment can be seen, so a bill from that time is not judged.
-  const coverageStart = transactions.reduce<string | null>((min, t) => {
+  // Before the first transaction this card has, no payment can be seen, so a bill from that time is not judged. Another
+  // account's history does not count: a card added later would otherwise have its older bills judged overdue.
+  const coverageStart = own.reduce<string | null>((min, t) => {
     const day = localDay(t.occurredAt);
     return min === null || day < min ? day : min;
   }, null);
@@ -170,11 +171,9 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
   return settleLeftovers(store, account.id, cycles, today);
 }
 
-/** Whole months from one day to another (closing days drift by a day or two, so this rounds). */
+/** Whole months from one day to another. Closing days drift by a day or two (30/09 then 01/11 is one month), so this rounds by length. */
 function monthsBetween(from: string, to: string): number {
-  const a = parseDay(from);
-  const b = parseDay(to);
-  return (b.y - a.y) * 12 + (b.m - a.m);
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000 / 30.4375);
 }
 
 const WRITE_OFF_AFTER_DAYS = 30;
