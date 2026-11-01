@@ -135,8 +135,17 @@ export function App() {
     case 'settings':
       page = <SettingsPage route={route} hidden={hidden} now={now} />;
       break;
-    default:
+    case '':
+    case 'dashboard':
       page = <Dashboard hidden={hidden} now={now} />;
+      break;
+    default:
+      page = (
+        <div class="page-body">
+          <h1 class="page-title">Página não encontrada</h1>
+          <p class="muted">O endereço #/{route.page} não existe. Use o menu para voltar.</p>
+        </div>
+      );
   }
 
   return (

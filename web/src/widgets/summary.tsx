@@ -19,7 +19,7 @@ export function SummaryWidget({ now, hidden, size }: WidgetProps) {
       to={{ page: 'cashflow' }}
       now={now}
       loading={!flow.data && flow.loading}
-      error={flow.error}
+      error={flow.error ?? spend.error ?? worth.error}
       head={
         flow.data && (
           <>

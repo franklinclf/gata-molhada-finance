@@ -23,7 +23,7 @@ export function UpcomingWidget({ now, hidden, size }: WidgetProps) {
       to={{ page: 'calendar' }}
       now={now}
       loading={!a.data && a.loading}
-      error={a.error}
+      error={a.error ?? b.error}
       head={
         a.data && (
           <>

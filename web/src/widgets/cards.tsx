@@ -28,7 +28,7 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
           <>
             <div class="big">{brl(data.totals.cycleTotal, hidden)}</div>
             <div class="muted">
-              {cycle === 'open' ? 'Ciclo em aberto' : `Faturas com vencimento em ${monthName(cycle)}`}
+              {cycle === 'open' ? 'Fatura em aberto' : `Faturas com vencimento em ${monthName(cycle)}`}
               {data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(data.totals.nextDueDate)}` : ''}
             </div>
             {cycle === 'open' && data.totals.futureInstallments > 0 && <div class="muted">fora desse valor: {brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras · saldo devedor total {brl(data.totals.reportedByIssuer, hidden)}</div>}
@@ -44,7 +44,7 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
                   label: b.open ? 'Aberta' : monthName(b.key).slice(0, 3),
                   value: b.total,
                   color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : 'var(--warn)',
-                  tip: `${b.open ? 'Ciclo em aberto' : `Venc. ${monthName(b.key)}`}\n${hidden ? '••••' : brl(b.total)}`,
+                  tip: `${b.open ? 'Fatura em aberto' : `Venc. ${monthName(b.key)}`}\n${hidden ? '••••' : brl(b.total)}`,
                 }))}
               />
             )}

@@ -126,6 +126,9 @@ function parseBody(body: string): Record<string, unknown> | null {
   }
 }
 
+/** A row id from the path: plain digits only, so 1e0 or 0x1 cannot alias row 1. NaN when it is anything else. */
+const numericId = (text: string | undefined): number => (text !== undefined && /^\d{1,15}$/.test(text) ? Number(text) : Number.NaN);
+
 export function apiRoute(method: string, pathname: string, params: URLSearchParams, store: Store, now: Date, body = ''): ApiResult | null {
   const opts: ViewOptions = { includeHidden: params.get('includeHidden') === 'true' };
   const parts = pathname.split('/').filter(Boolean); // ['api', 'transactions', ':id', ...]
@@ -145,7 +148,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
     case 'chat': {
       if (resourceIs(parts, 'conversations')) {
         if (parts.length === 3) return method === 'GET' ? { status: 200, body: { items: store.listChatConversations() } } : methodNotAllowed();
-        const convoId = Number(parts[3]);
+        const convoId = numericId(parts[3]);
         if (parts.length !== 4 || !Number.isInteger(convoId)) return null;
         if (!store.listChatConversations().some((c) => c.id === convoId)) return { status: 404, body: { error: 'not_found' } };
         if (method === 'GET') return { status: 200, body: { items: store.listChatMessages(convoId) } };
@@ -165,7 +168,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const input = parseBody(body);
         return input ? asResult(createGoal(store, input, now)) : badRequest('body must be { name, target, track }');
       }
-      const goalId = Number(id);
+      const goalId = numericId(id);
       if (parts.length !== 3 || !Number.isInteger(goalId)) return null;
       if (method === 'DELETE') return asResult(deleteGoal(store, goalId));
       if (method !== 'PUT') return methodNotAllowed();
@@ -213,7 +216,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const input = parseBody(body);
         return input ? asResult(addAsset(store, input, now)) : badRequest('body must be { name, kind, value?, day? }');
       }
-      const assetId = Number(id);
+      const assetId = numericId(id);
       if (!Number.isInteger(assetId)) return null;
       if (parts.length === 3) {
         if (method === 'DELETE') return asResult(deleteAsset(store, assetId));
@@ -276,7 +279,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         if (id === 'import') return asResult(importRules(store, input, now));
         return asResult(reorderRules(store, input.ids, now));
       }
-      const ruleId = Number(id);
+      const ruleId = numericId(id);
       if (parts.length !== 3 || !Number.isInteger(ruleId)) return null;
       if (method === 'DELETE') return asResult(deleteRule(store, ruleId));
       if (method === 'PUT') {
@@ -298,7 +301,8 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       return { status: 200, body: views.cards(store, now, opts, cycle) };
     }
     case 'bill-check':
-      return method === 'GET' && parts.length === 2 ? { status: 200, body: billCheck(store, now) } : methodNotAllowed();
+      if (parts.length !== 2) return null;
+      return method === 'GET' ? { status: 200, body: billCheck(store, now) } : methodNotAllowed();
     case 'cycles': {
       if (parts.length !== 2) return null;
       if (method === 'PUT') {
@@ -308,6 +312,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       }
       if (method !== 'GET') return methodNotAllowed();
       const accountId = params.get('accountId');
+      if (!accountId) return badRequest('accountId is required');
       const account = store.listCanonicalAccounts().find((a) => a.id === accountId && a.kind === 'credit_card');
       if (!account) return { status: 404, body: { error: 'not_found' } };
       const cycles = cyclesFor(store, account, effectiveTransactions(store, { includeHidden: true }), localDay(now.toISOString()));
@@ -459,7 +464,9 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         return { status: 200, body: listDecisions(store, { status: status as DecisionStatus | undefined, q: params.get('q') ?? undefined }) };
       }
       if (parts.length !== 3 || method !== 'POST') return parts.length === 3 ? methodNotAllowed() : null;
-      const input = parseBody(body) ?? {};
+      const parsed = parseBody(body);
+      if (parsed === null && body.trim() !== '') return badRequest('body must be a JSON object');
+      const input = parsed ?? {};
       if (id === 'accept') return fromMutation(acceptSuggestion(store, input.key, input.category, now));
       if (id === 'reject') return fromMutation(rejectSuggestion(store, input.key));
       if (id === 'decide') return fromMutation(decide(store, input.key, input.action, input.category, now));

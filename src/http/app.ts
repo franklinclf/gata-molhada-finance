@@ -226,6 +226,7 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
       return done(deps.deployNow() ? json(202, { asked: true }) : json(429, { error: 'too_soon' }));
     }
     if (pathname === '/api/chat/status') return method === 'GET' ? done(json(200, { available: deps.analyst !== undefined })) : done(notAllowed('GET'));
+    if (pathname === '/api/chat' && method !== 'POST') return done(notAllowed('POST'));
     if (pathname === '/api/chat' && method === 'POST') {
       if (!deps.analyst) return done(json(503, { error: 'unavailable' }));
       const input = parseJson(request);

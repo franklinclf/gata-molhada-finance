@@ -66,7 +66,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
     ...accountIds.map((c) => ({ label: data?.facets.accounts.find((a) => a.id === c)?.name ?? 'Conta', remove: () => set({ accountId: accountIds.filter((x) => x !== c) }) })),
     ...states.map((c) => ({ label: STATE_LABEL[c] ?? c, remove: () => set({ state: states.filter((x) => x !== c) }) })),
     ...(p.get('merchant') ? [{ label: `Estabelecimento: ${p.get('merchant')}`, remove: () => set({ merchant: null }) }] : []),
-    ...(p.get('cycle') ? [{ label: p.get('cycle') === 'open' ? 'Ciclo em aberto' : `Fatura ${monthName(p.get('cycle')!)}`, remove: () => set({ cycle: null }) }] : []),
+    ...(p.get('cycle') ? [{ label: p.get('cycle') === 'open' ? 'Fatura em aberto' : `Fatura ${monthName(p.get('cycle')!)}`, remove: () => set({ cycle: null }) }] : []),
     ...(p.get('status') ? [{ label: p.get('status') === 'pending' ? 'Só pendentes' : 'Só lançadas', remove: () => set({ status: null }) }] : []),
     ...(p.get('min') || p.get('max') ? [{ label: `Valor ${p.get('min') ? `de ${brl(Number(p.get('min')))}` : ''} ${p.get('max') ? `até ${brl(Number(p.get('max')))}` : ''}`.trim(), remove: () => set({ min: null, max: null }) }] : []),
     ...(p.get('spendingOnly') === 'true' ? [{ label: 'Só gastos reais', remove: () => set({ spendingOnly: null }) }] : []),
@@ -99,7 +99,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         <CheckList options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: f.name, count: f.count }))} selected={accountIds} onChange={(v) => set({ accountId: v })} />
       </Section>
       <Section title="Fatura do cartão" active={p.get('cycle') ? 1 : 0}>
-        <Select ariaLabel="Ciclo da fatura" value={p.get('cycle') ?? ''} onChange={(value) => set({ cycle: value || null })} options={[{ value: '', label: 'Qualquer ciclo' }, { value: 'open', label: 'Ciclo em aberto' }, ...(cards.data?.cycles ?? []).map((c) => ({ value: c, label: `Fatura com venc. ${monthName(c)}` }))]} />
+        <Select ariaLabel="Fatura" value={p.get('cycle') ?? ''} onChange={(value) => set({ cycle: value || null })} options={[{ value: '', label: 'Qualquer ciclo' }, { value: 'open', label: 'Fatura em aberto' }, ...(cards.data?.cycles ?? []).map((c) => ({ value: c, label: `Fatura com venc. ${monthName(c)}` }))]} />
       </Section>
       <Section title="Valor" active={p.get('min') || p.get('max') ? 1 : 0}>
         <label class="amount">

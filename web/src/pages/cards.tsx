@@ -33,7 +33,7 @@ function CheckTab({ hidden }: { hidden: boolean }) {
   return (
     <>
       <p class="muted">
-        Compara o total de cada fatura fechada que o banco publicou com a soma das compras do ciclo. Quando uma compra perto do fechamento explica a diferença dos dois lados, a sugestão é movê-la para a fatura vizinha. O que nenhuma compra explica é algo que o banco não mandou (lance à mão em “+ Nova”) ou que ele não cobra (ignore a transação).
+        Compara o total de cada fatura fechada que o banco publicou com a soma das compras da fatura. Quando uma compra perto do fechamento explica a diferença dos dois lados, a sugestão é movê-la para a fatura vizinha. O que nenhuma compra explica é algo que o banco não mandou (lance à mão em “+ Nova”) ou que ele não cobra (ignore a transação).
       </p>
       {message && <div class="error">{message}</div>}
       <section class="panel">
@@ -181,11 +181,11 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
         <>
           <div class="big">{brl(card.total, hidden)}</div>
           <div class="muted">
-            Ciclo de {dayMonth(c.from)} a {dayMonth(c.to)} · vence {fullDay(c.dueDate)}
+            Fatura de {dayMonth(c.from)} a {dayMonth(c.to)} · vence {fullDay(c.dueDate)}
             {card.estimated ? ' · estimado: saldo do emissor menos as parcelas de faturas futuras' : ''}
           </div>
           <dl class="facts inline">
-            <dt>Lançado no ciclo</dt>
+            <dt>Lançado na fatura</dt>
             <dd>{brl(card.posted, hidden)}</dd>
             {card.futureInstallments > 0 && (
               <>
@@ -227,7 +227,7 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
       )}
       <div class="links">
         <Go page="transactions" params={{ accountId: card.id, cycle: c ? (cycle === 'open' ? 'open' : c.key) : undefined }}>
-          Ver transações do ciclo
+          Ver transações da fatura
         </Go>
         <button class="link" onClick={() => setHistory(!history)}>
           {history ? 'Ocultar histórico' : 'Histórico de faturas'}
@@ -358,11 +358,11 @@ function InstallmentsTab({ installments, hidden, route }: { installments: Return
     <>
       <div class="summary">
         <div>
-          <span class="muted">Neste ciclo</span>
+          <span class="muted">Nesta fatura</span>
           <strong>{brl(v.thisCycle, hidden)}</strong>
         </div>
         <div>
-          <span class="muted">No próximo ciclo</span>
+          <span class="muted">Na próxima fatura</span>
           <strong>{brl(v.nextCycle, hidden)}</strong>
         </div>
         <div>
@@ -380,7 +380,7 @@ function InstallmentsTab({ installments, hidden, route }: { installments: Return
         <div class="legend">
           <span><i style={{ background: 'var(--good)' }} /> paga</span>
           <span><i style={{ background: 'var(--warn)' }} /> fatura fechada, a pagar</span>
-          <span><i style={{ background: 'var(--accent)' }} /> ciclo em aberto</span>
+          <span><i style={{ background: 'var(--accent)' }} /> fatura em aberto</span>
           <span><i style={{ background: 'var(--muted)' }} /> ainda não cobrada</span>
         </div>
       </div>
@@ -430,7 +430,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
       </div>
       {tab === 'cards' && bills.data && (
         <div class="panel">
-          <h3>Faturas por mês de vencimento (clique em uma barra para ver o ciclo)</h3>
+          <h3>Faturas por mês de vencimento (clique em uma barra para ver a fatura)</h3>
           <Bars
             hidden={hidden}
             height={150}
@@ -441,7 +441,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
               label: b.open ? 'Aberta' : monthName(b.key).slice(0, 3),
               value: b.total,
               color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : 'var(--warn)',
-              tip: `${b.open ? 'Ciclo em aberto' : `Venc. ${monthName(b.key)}`}\n${hidden ? '••••' : brl(b.total)}${b.open ? '' : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
+              tip: `${b.open ? 'Fatura em aberto' : `Venc. ${monthName(b.key)}`}\n${hidden ? '••••' : brl(b.total)}${b.open ? '' : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
             }))}
           />
           <div class="legend">
@@ -455,7 +455,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
       {tab === 'cards' && (
         <label class="inline-field">
           Ciclo
-          <Select ariaLabel="Ciclo" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...(data?.cycles ?? []).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
+          <Select ariaLabel="Fatura" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...(data?.cycles ?? []).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
         </label>
       )}
       {tab === 'check' && <CheckTab hidden={hidden} />}
@@ -467,7 +467,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
             <>
               <div class="summary">
                 <div>
-                  <span class="muted">{cycle === 'open' ? 'Ciclo em aberto' : `Venc. ${monthName(cycle)}`}</span>
+                  <span class="muted">{cycle === 'open' ? 'Fatura em aberto' : `Venc. ${monthName(cycle)}`}</span>
                   <strong>{brl(data.totals.cycleTotal, hidden)}</strong>
                 </div>
                 <div>
