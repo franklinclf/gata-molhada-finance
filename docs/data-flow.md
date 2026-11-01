@@ -129,9 +129,16 @@ flowchart TD
 
 Cada vez que a fonte avisa que há dado novo, o app relê os últimos 45 dias (`SYNC_LOOKBACK_DAYS`, `src/scheduler/defaults.ts`; eram 14). Uma compra de cartão fica pendente até a fatura fechar e pode mudar ao ser lançada, então a janela precisa passar de uma fatura. A leitura é de dados que o Meu Pluggy já tem, e não gasta a cota mensal de leituras dos bancos.
 
-## 8. Limitações conhecidas (revisão de 01/11/2026)
+## 8. Limpeza do que o Meu Pluggy deixa de listar
 
-- Um registro que o Meu Pluggy apaga, ou recria com outro id ao lançar, continua nas tabelas da fonte. Em conta bancária a regra de 7 dias o põe de lado. Em cartão ele conta para sempre, e a saída é "Ignorar".
-- O id da conta canônica é um hash de tipo, instituição e nome. Renomear uma conexão em `PLUGGY_ITEMS` muda o id e solta as escolhas guardadas por conta (oculta, fatura quitada, lançamentos digitados).
-- Reconectar uma conexão cria ids novos na fonte e o registro antigo continua em `source_accounts`.
+Depois de uma leitura completa (contas e transações sem erro), o app remove da fonte:
+
+- as transações dentro da janela lida (do dia seguinte ao início até agora) que a leitura não trouxe. É o caso de um registro apagado, ou recriado com outro id ao ser lançado (por exemplo a pendente de R$ 2,36 do "Lucro", que ficou ao lado da lançada). Futuras parcelas, com data depois de hoje, ficam de fora da limpeza;
+- as contas que a lista de contas não trouxe, com as transações e faturas delas. Uma conexão refeita ganha ids novos e deixava a conta antiga para trás, o que dobrava saldos.
+
+Duas travas: uma leitura vazia não remove nada, e mais da metade da janela (ou das contas) sumindo de uma vez é tratada como leitura ruim e vira um aviso. Duas leituras da mesma fonte não rodam ao mesmo tempo, para uma resposta antiga não sobrescrever uma nova. Uma mudança vista e ainda não lida sobrevive a um reinício do servidor.
+
+## 9. Limitações conhecidas
+
+- O id da conta canônica é um hash de tipo, instituição e nome. Renomear uma conexão em `PLUGGY_ITEMS` muda o id e solta as escolhas guardadas por conta.
 - O mesmo conceito aparece escrito em mais de um lugar: a lista de fontes `['pierre','pluggy']`, a data de início 2026-01-01, o fuso -3h e vários cálculos de data.
