@@ -1,5 +1,5 @@
 import { api } from '../api.ts';
-import { brl, percent } from '../format.ts';
+import { brl, localDay, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Go } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
@@ -7,7 +7,7 @@ import type { WidgetProps } from './index.ts';
 
 /** The month in a few numbers: what came in, what went out, how much was kept, and the net worth. */
 export function SummaryWidget({ now, hidden, size }: WidgetProps) {
-  const today = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
+  const today = localDay(now.toISOString());
   const from = `${today.slice(0, 7)}-01`;
   const flow = useLoad(() => api.cashflow(from, today), [from, today], 120_000);
   const spend = useLoad(() => api.spending(from, today, 'category'), [from, today], 120_000);

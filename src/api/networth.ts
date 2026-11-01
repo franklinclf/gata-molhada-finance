@@ -1,4 +1,5 @@
-import { localDay } from '../core/time.ts';
+import { addMonths, lastDayOf } from '../core/dates.ts';
+import { DATA_START_MONTH, localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cleanCategoryName } from './mutations.ts';
 import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
@@ -8,7 +9,6 @@ export type AssetResult<T = Record<string, never>> = { ok: true; value: T } | { 
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_VALUE = 100_000_000_000; // R$ 1 billion, in cents
-const DATA_START_MONTH = '2026-01';
 const MAX_ASSETS = 100;
 
 export interface NetWorthItem {
@@ -40,15 +40,6 @@ export interface NetWorthView {
   manual: Array<{ id: number; name: string; kind: 'asset' | 'liability'; archived: boolean; values: Array<{ day: string; value: number }> }>;
 }
 
-const lastDayOf = (month: string): string => {
-  const [y, m] = month.split('-').map(Number) as [number, number];
-  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-};
-const addMonths = (month: string, n: number): string => {
-  const [y, m] = month.split('-').map(Number) as [number, number];
-  const t = y * 12 + (m - 1) + n;
-  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
-};
 
 /** Latest value on or before the day, or null when the asset had no value yet. */
 export function valueOn(values: ReadonlyArray<{ day: string; value: number }>, day: string): number | null {

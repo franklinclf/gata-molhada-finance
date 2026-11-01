@@ -1,4 +1,5 @@
 import { merchantOf } from '../core/merchant.ts';
+import { dayNumber, nextMonth } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
@@ -26,7 +27,6 @@ export interface RecurringItem {
 }
 
 const DAY = 86_400_000;
-const dayNumber = (day: string): number => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY);
 const dayString = (n: number): string => new Date(n * DAY).toISOString().slice(0, 10);
 const median = (values: number[]): number => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -46,10 +46,6 @@ export function dayInMonth(month: string, day: number): string {
   return `${month}-${String(Math.min(day, last)).padStart(2, '0')}`;
 }
 
-const nextMonth = (month: string): string => {
-  const [y, m] = month.split('-').map(Number) as [number, number];
-  return `${Math.floor((y * 12 + m) / 12)}-${String(((y * 12 + m) % 12) + 1).padStart(2, '0')}`;
-};
 
 /**
  * Charges and credits that come back about every month with a steady amount, found from the transactions themselves:

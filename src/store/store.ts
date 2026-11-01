@@ -213,6 +213,8 @@ export interface Store {
   lastRefresh(sourceId: SourceId): RefreshLogEntry | null;
   /** Marks every source that is not in the list as retired: its saved records stay, but it no longer reports freshness. Returns the ones retired now. */
   retireSourcesExcept(activeIds: SourceId[]): SourceId[];
+  /** Every registered source, active or retired. */
+  listSourceIds(): SourceId[];
   /**
    * Removes the saved records of a retired source: its transactions, accounts, bills, raw answers, sync times and the
    * choices that point at its records. A choice made on a transaction that another source also saw moves to that

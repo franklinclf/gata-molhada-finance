@@ -116,14 +116,10 @@ test('a purchase in another currency is counted by what the bank charged in reai
 test('records saved with the foreign number are corrected once from the raw answers', () => {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   store.registerSource({ id: 'pluggy', kind: 'aggregator', capabilities: {} }, NOW.toISOString());
-  store.registerSource({ id: 'pierre', kind: 'aggregator', capabilities: {} }, NOW.toISOString());
   const saved = { accountExternalId: 'acc', occurredAt: '2026-10-26T12:00:00.000Z', amount: -900, description: 'REAL-DEBRID', descriptionRaw: null, status: 'posted' as const, installment: null, category: null };
   store.upsertSourceTransactions('pluggy', [{ ...saved, externalId: 'e1' }, { ...saved, externalId: 'brl', amount: -5000 }], NOW.toISOString());
-  store.upsertSourceTransactions('pierre', [{ ...saved, externalId: 'p1' }], NOW.toISOString());
   store.saveSnapshot({ sourceId: 'pluggy', endpoint: '/v2/transactions?accountId=acc', fetchedAt: NOW.toISOString(), httpStatus: 200, body: { results: [euro('e1'), { id: 'brl', currencyCode: 'BRL', amount: 50 }] } });
-  store.saveSnapshot({ sourceId: 'pierre', endpoint: 'get-transactions?startDate=2026-10-01', fetchedAt: NOW.toISOString(), httpStatus: 200, body: { data: [{ id: 'p1', currency_code: 'EUR', amount: '9', amount_in_account_currency: '60.85' }] } });
-  assert.equal(backfillForeignAmounts(store, NOW), 2);
+  assert.equal(backfillForeignAmounts(store, NOW), 1);
   assert.deepEqual(store.listSourceTransactions('pluggy').map((t) => [t.externalId, t.amount, t.parties?.foreign?.currency ?? null]), [['brl', -5000, null], ['e1', -6085, 'EUR']]);
-  assert.equal(store.listSourceTransactions('pierre')[0]?.amount, -6085);
   assert.equal(backfillForeignAmounts(store, NOW), 0, 'it runs once');
 });

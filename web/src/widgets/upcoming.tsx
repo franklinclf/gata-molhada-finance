@@ -1,5 +1,5 @@
 import { api } from '../api.ts';
-import { brl, dayMonth } from '../format.ts';
+import { brl, dayMonth, localDay } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
@@ -8,7 +8,7 @@ const DAYS_AHEAD = 14;
 
 /** What is expected to leave or arrive in the next two weeks: card bills on their due day and recurring items. */
 export function UpcomingWidget({ now, hidden, size }: WidgetProps) {
-  const month = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 7);
+  const month = localDay(now.toISOString()).slice(0, 7);
   const next = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5)), 1)).toISOString().slice(0, 7);
   const a = useLoad(() => api.calendar(month), [month], 300_000);
   const b = useLoad(() => api.calendar(next), [next], 300_000);

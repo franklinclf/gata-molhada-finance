@@ -1,3 +1,4 @@
+import { dayNumber } from '../core/dates.ts';
 import { normalizeName } from '../core/names.ts';
 
 /**
@@ -40,7 +41,7 @@ function firstMatch(rules: Array<[RegExp, Role]>, text: string): Role | null {
 
 /** The role the source's own words point to. */
 export function evidenceRole(labels: string | null | Array<string | null>, description: string): Role | null {
-  // The two sources can label one transaction differently (Pierre said card fees, Meu Pluggy said card payment), so every label counts.
+  // Two sources can label one transaction differently (one said card fees, the other card payment), so every label counts.
   for (const label of Array.isArray(labels) ? labels : [labels]) {
     const found = label ? firstMatch(SOURCE_CATEGORY, normalizeName(label)) : null;
     if (found) return found;
@@ -97,7 +98,6 @@ const SLIP_TEXT = /boleto|bank slip|pix qr code|pagto antec|recebto pagto/;
 const SLIP_WINDOW_BEFORE_DAYS = 45;
 const SLIP_WINDOW_AFTER_DAYS = 30;
 
-const dayNumber = (day: string): number => Math.floor(Date.parse(`${day.slice(0, 10)}T00:00:00Z`) / 86_400_000);
 
 /**
  * Card bills paid with a boleto or a Pix QR code. The bank names the payee's collection system, not the card, so the text

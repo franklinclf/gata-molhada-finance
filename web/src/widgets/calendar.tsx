@@ -1,5 +1,5 @@
 import { api } from '../api.ts';
-import { dayMonth, monthName } from '../format.ts';
+import { dayMonth, localDay, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { navigate } from '../router.ts';
 import { Widget } from '../Widget.tsx';
@@ -9,7 +9,7 @@ const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
 /** The month as a small grid: a dot on days with money moving, a ring on today. A tap opens that day in the calendar. */
 export function CalendarWidget({ now, size }: WidgetProps) {
-  const month = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 7);
+  const month = localDay(now.toISOString()).slice(0, 7);
   const { data, error, loading } = useLoad(() => api.calendar(month), [month], 300_000);
   const first = new Date(`${month}-01T00:00:00Z`).getUTCDay();
   const next = data?.days.flatMap((d) => d.projected.map((p) => ({ ...p, day: d.day }))).filter((p) => p.day >= data.today).slice(0, size === 'lg' ? 6 : 3) ?? [];

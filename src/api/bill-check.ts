@@ -1,6 +1,7 @@
 import type { Cents } from '../core/money.ts';
+import { addDays, dayNumber } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
-import { addDays, cyclesFor, isCardPayment, type Cycle } from './cycles.ts';
+import { cyclesFor, isCardPayment, type Cycle } from './cycles.ts';
 import { effectiveTransactions, type EffectiveTransaction } from './scope.ts';
 import type { Store } from '../store/store.ts';
 
@@ -50,8 +51,6 @@ interface Candidate {
   t: EffectiveTransaction;
   value: Cents;
 }
-
-const dayNumber = (day: string): number => Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000);
 
 /**
  * Smallest group (up to MAX_MOVES) whose values add up to `target`. When several groups of that size do, the one closest

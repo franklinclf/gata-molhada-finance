@@ -119,7 +119,7 @@ export function effectiveTransactions(
   const slipPayments = slipBillPayments(
     // Every live bank transaction, whatever the view asked for, so the same boleto is matched the same way on every screen.
     store.listCanonicalTransactions({ includeExcluded: false }).filter((t) => !cardIds.has(t.accountId)).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })),
-    ['pierre', 'pluggy'].flatMap((sourceId) => store.listSourceBills(sourceId)),
+    store.listSourceIds().flatMap((sourceId) => store.listSourceBills(sourceId)),
   );
   return all
     .filter((t) => ids.has(t.accountId))
@@ -171,7 +171,7 @@ export function counterpartyHashes(store: Store): Map<string, string> {
 /** What the source records behind each canonical transaction say: their labels, and who paid and who received. */
 function sourceFacts(store: Store): { labels: Map<string, string[]>; parties: Map<string, Parties> } {
   const byRecord = new Map<string, { label: string | null; parties: Parties | undefined }>();
-  for (const sourceId of ['pierre', 'pluggy']) for (const r of store.listSourceTransactions(sourceId)) byRecord.set(`${sourceId}|${r.externalId}`, { label: r.category, parties: r.parties });
+  for (const sourceId of store.listSourceIds()) for (const r of store.listSourceTransactions(sourceId)) byRecord.set(`${sourceId}|${r.externalId}`, { label: r.category, parties: r.parties });
   const labels = new Map<string, string[]>();
   const parties = new Map<string, Parties>();
   for (const l of store.listAllTransactionLinks()) {

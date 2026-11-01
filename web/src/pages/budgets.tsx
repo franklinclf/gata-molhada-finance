@@ -4,7 +4,7 @@ import type { BudgetLine, SuggestionLine } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { Select } from '../Select.tsx';
-import { brl, monthName, percent } from '../format.ts';
+import { brl, localDay, monthName, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
 import { Go, Loading } from '../ui.tsx';
@@ -177,7 +177,7 @@ function NewBudget({ month, onSaved, onError }: { month: string; onSaved: () => 
 }
 
 export function BudgetsPage({ route, now, hidden }: { route: Route; now: Date; hidden: boolean }) {
-  const current = new Date(now.getTime() - 3 * 3_600_000).toISOString().slice(0, 7);
+  const current = localDay(now.toISOString()).slice(0, 7);
   const month = route.params.get('month') ?? current;
   const { data, error, loading, reload } = useLoad(() => api.budgets(month), [month]);
   const [panel, setPanel] = useState<null | 'suggest' | 'copy'>(null);
