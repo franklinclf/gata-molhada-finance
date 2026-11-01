@@ -89,3 +89,19 @@ test('loadAuthConfig needs both the hash and the secret', () => {
   assert.equal(loadAuthConfig({ AUTH_PASSWORD_HASH: 'x' }), null);
   assert.deepEqual(loadAuthConfig({ AUTH_PASSWORD_HASH: 'h', AUTH_TOTP_SECRET: 's', AUTH_RECOVERY_HASHES: 'a, b,' }), { passwordHash: 'h', totpSecret: 's', recoveryHashes: ['a', 'b'] });
 });
+
+test('one address missing five times is locked, and another address (the owner) can still sign in', () => {
+  const { auth, code } = setup();
+  for (let i = 0; i < 5; i++) assert.equal(auth.login('wrong password!!', '000000', null, '203.0.113.9').ok, false);
+  const attacker = auth.login(PASSWORD, code(), null, '203.0.113.9');
+  assert.equal(!attacker.ok && attacker.reason, 'locked');
+  const owner = auth.login(PASSWORD, code(), null, '198.51.100.7');
+  assert.equal(owner.ok, true, 'the owner is not locked out by someone else');
+});
+
+test('misses spread over many addresses lock everyone, and a good sign-in clears the counters', () => {
+  const { auth, code } = setup();
+  for (let i = 0; i < 30; i++) auth.login('wrong password!!', '000000', null, `10.0.0.${i}`);
+  const locked = auth.login(PASSWORD, code(), null, '198.51.100.7');
+  assert.equal(!locked.ok && locked.reason, 'locked');
+});

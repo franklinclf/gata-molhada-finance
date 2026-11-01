@@ -54,7 +54,8 @@ export function createHttpServer(deps: Partial<AppDeps> & Pick<AppDeps, 'store' 
       const setCookie = [result.headers['Set-Cookie'], ...(result.cookies ?? [])].filter((c): c is string => c !== undefined);
       res.writeHead(result.status, setCookie.length > 0 ? { ...result.headers, 'Set-Cookie': setCookie } : result.headers);
       res.end(result.bytes ?? result.body ?? undefined);
-    })().catch(() => {
+    })().catch((error: unknown) => {
+      console.error(`request failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
       if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'internal_error' }));
     });

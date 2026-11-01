@@ -3,7 +3,12 @@
 	header {
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=31536000"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 		-Server
+	}
+	request_body {
+		max_size 1MB
 	}
 	reverse_proxy app:8080
 }

@@ -99,6 +99,13 @@ function loginResponse(result: ReturnType<AuthService['login']>, deps: AppDeps):
   return json(401, { error: 'invalid_credentials' });
 }
 
+/** The address the proxy saw: the last entry of X-Forwarded-For, which is the one the proxy added itself. */
+const clientOf = (request: AppRequest): string => {
+  const forwarded = request.headers['x-forwarded-for'];
+  const last = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded)?.split(',').at(-1)?.trim();
+  return last && last.length <= 64 ? last : 'unknown';
+};
+
 const trustFrom = (body: Record<string, unknown>): { name: string } | null => (body.trust === true ? { name: typeof body.deviceName === 'string' ? body.deviceName : 'Aparelho' } : null);
 
 export function handle(request: AppRequest, deps: AppDeps): RouteResult {
@@ -113,7 +120,11 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
     if (method !== 'POST') return notAllowed('POST');
     const body = parseJson(request);
     if (!body || typeof body.password !== 'string' || typeof body.code !== 'string') return json(400, { error: 'bad_request' });
-    return loginResponse(deps.auth.login(body.password, body.code, trustFrom(body)), deps);
+    const client = clientOf(request);
+    const result = deps.auth.login(body.password, body.code, trustFrom(body), client);
+    // A trace of failed sign-ins and lockouts, with the address and never the password or code.
+    if (!result.ok && result.reason !== 'not_configured') console.warn(`login ${result.reason} from ${client}`);
+    return loginResponse(result, deps);
   }
 
   if (pathname === '/api/auth/passkey/login/options') {
