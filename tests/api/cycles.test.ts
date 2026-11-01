@@ -365,3 +365,18 @@ test('closing days that drift across a month end do not invent a month in betwee
   assert.deepEqual(keys, ['2026-10', '2026-11', '2026-12'].slice(0, keys.length).filter((k) => keys.includes(k)));
   assert.equal(new Set(keys).size, keys.length, 'no two cycles share a bill month');
 });
+
+test('a pending copy and a posted copy of one payment on different days count once, but two payments of the same status count twice', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-sep', accountExternalId: 'ext-pay', dueDate: '2026-09-15', closingDate: '2026-09-08', total: 100000, minimumPayment: null }, { externalId: 'b-oct', accountExternalId: 'ext-pay', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 100000, minimumPayment: null }], NOW.toISOString());
+  const pay = account('pay', { refs: [{ sourceId: 'pluggy', externalId: 'ext-pay', role: 'member' }] });
+  const pending = { ...tx('pay-pending', 'pay', '2026-09-11', 100000, 'Pagamento de cartão de crédito'), status: 'pending' as const };
+  const posted = tx('pay-posted', 'pay', '2026-09-14', 100000, 'Pagamento de cartão de crédito');
+  const twoOct = [tx('oct-a', 'pay', '2026-10-12', 50000, 'Pagamento de cartão de crédito'), tx('oct-b', 'pay', '2026-10-13', 50000, 'Pagamento de cartão de crédito')];
+  store.replaceCanonicalAccounts([pay], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('start', 'pay', '2026-08-01', -100), tx('buy-sep', 'pay', '2026-09-02', -100000), tx('buy-oct', 'pay', '2026-10-02', -100000), pending, posted, ...twoOct], [], NOW.toISOString());
+  const cycles = cyclesFor(store, pay, effectiveTransactions(store), '2026-10-27');
+  assert.equal(cycles.find((c) => c.key === '2026-09')?.paid, 100000, 'the pending and the posted copy are one payment');
+  assert.equal(cycles.find((c) => c.key === '2026-10')?.paid, 100000, 'two real payments of 500 each add up');
+});

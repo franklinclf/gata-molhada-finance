@@ -86,19 +86,33 @@ function billsOf(store: Store, account: CanonicalAccount): BillInfo[] {
     .sort((a, b) => a.closing.localeCompare(b.closing));
 }
 
-/** Payments of the card bill, with the same payment reported twice on the same day counted once. */
+const SAME_PAYMENT_DAYS = 3;
+
+/**
+ * Payments of the card bill. The same payment reported twice on the same day counts once, and so does a pending copy
+ * and a posted copy of one payment a few days apart (Meu Pluggy shows the bank's pending debit and the card's posted
+ * credit, and they can fall on different days when the payment is made late on a Friday).
+ */
 function paymentsOf(transactions: EffectiveTransaction[]): Array<{ day: string; amount: Cents }> {
   const seen = new Set<string>();
-  const out: Array<{ day: string; amount: Cents }> = [];
+  const out: Array<{ day: string; amount: Cents; status: string; merged: boolean }> = [];
+  const dayNumber = (day: string) => Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000);
   for (const t of transactions) {
     if (t.excluded || t.amount <= 0 || !isCardPayment(t)) continue;
     const day = localDay(t.occurredAt);
     const key = `${day}|${t.amount}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ day, amount: t.amount });
+    const twin = out.find((o) => !o.merged && o.amount === t.amount && o.status !== t.status && Math.abs(dayNumber(o.day) - dayNumber(day)) <= SAME_PAYMENT_DAYS);
+    if (twin) {
+      // Keep the posted copy's day, which is the one the card shows.
+      if (t.status === 'posted') twin.day = day;
+      twin.merged = true;
+      continue;
+    }
+    out.push({ day, amount: t.amount, status: t.status, merged: false });
   }
-  return out;
+  return out.map(({ day, amount }) => ({ day, amount }));
 }
 
 /**

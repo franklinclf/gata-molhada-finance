@@ -163,3 +163,16 @@ test('waking an unknown source does nothing', () => {
   const { observer } = setup([new ScriptedAdapter('pluggy')]);
   observer.wake('nobody', true);
 });
+
+test('a change seen but not yet read is remembered across a restart', async () => {
+  const adapter = new ScriptedAdapter('pluggy', { reads: [[at('pluggy', 30)]], failTransactions: 1 });
+  const { observer, store, sources, events } = setup([adapter]);
+  await observer.tick(sources[0]!);
+  assert.equal(events.find((e) => e.type === 'synced')?.type === 'synced' && events.some((e) => e.type === 'synced' && e.result.errors.length > 0), true);
+  // The process restarts: a new observer on the same database, and the bank's sync time has not moved again.
+  const restarted = new Observer({ store, sources, reconcile: () => {}, now: () => new Date(T0 + 600_000), onEvent: (e) => events.push(e) });
+  events.length = 0;
+  await restarted.tick(sources[0]!);
+  assert.deepEqual(events.map((e) => e.type), ['synced']);
+  assert.equal(adapter.transactionCalls.length, 2);
+});

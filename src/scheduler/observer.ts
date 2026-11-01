@@ -30,6 +30,8 @@ export interface ObserverDeps {
   maxBackoffMs?: number;
 }
 
+const pendingKey = (sourceId: SourceId): string => `observer_pending_sync:${sourceId}`;
+
 interface SourceState {
   failures: number;
   nextDueAt: number;
@@ -64,7 +66,12 @@ export class Observer {
   constructor(deps: ObserverDeps) {
     this.deps = deps;
     this.now = deps.now ?? (() => new Date());
-    for (const s of deps.sources) this.states.set(s.adapter.id, { failures: 0, nextDueAt: 0, needsSync: false, forceSync: false, rewake: false });
+    // A change seen but not yet read survives a restart: the sync time is saved before the read, so without this it would be forgotten.
+    for (const s of deps.sources) this.states.set(s.adapter.id, { failures: 0, nextDueAt: 0, needsSync: deps.store.getSetting(pendingKey(s.adapter.id)) === '1', forceSync: false, rewake: false });
+  }
+
+  private remember(sourceId: SourceId, pending: boolean): void {
+    this.deps.store.setSetting(pendingKey(sourceId), pending ? '1' : '0', this.now().toISOString());
   }
 
   private emit(event: ObserverEvent): void {
@@ -86,11 +93,13 @@ export class Observer {
         if (changed.length > 0) this.emit({ type: 'changed', sourceId: adapter.id, institutions: changed.map((c) => c.institution) });
         state.needsSync = true;
         state.forceSync = false;
+        this.remember(adapter.id, true);
         const since = new Date(this.now().getTime() - (this.deps.lookbackDays ?? SYNC_LOOKBACK_DAYS) * 86_400_000);
         const result = await syncSource(adapter, { store: this.deps.store, now: this.now }, since);
         this.deps.reconcile();
         this.emit({ type: 'synced', sourceId: adapter.id, result });
         state.needsSync = result.errors.length > 0;
+        this.remember(adapter.id, state.needsSync);
       }
       state.failures = 0;
       state.nextDueAt = state.rewake ? 0 : this.now().getTime() + intervalMs;

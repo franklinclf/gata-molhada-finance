@@ -179,6 +179,12 @@ export interface TransactionOverride {
   cycleKey: string | null;
 }
 
+export interface PruneResult {
+  removed: number;
+  /** True when the removal was refused because it looked like a failed read. */
+  skipped: boolean;
+}
+
 export interface PurgeReport {
   sourceId: SourceId;
   applied: boolean;
@@ -328,6 +334,17 @@ export interface Store {
   listDismissedFindingIds(): Set<string>;
   /** Hard-deletes source transactions dated before the instant. Returns how many were removed. */
   deleteSourceTransactionsBefore(instant: string): number;
+  /**
+   * Drops source transactions inside a window that the latest complete read did not return (`seenAt` is the stamp that
+   * read gave to every record it returned). A record the provider deleted, or re-created under a new id when it posted,
+   * would otherwise stay forever. Refuses when it would remove most of the window, which looks like a bad read.
+   */
+  pruneUnseenSourceTransactions(sourceId: SourceId, from: string, to: string, seenAt: string): PruneResult;
+  /**
+   * Drops source accounts the latest complete read of the accounts did not return, with their transactions and bills (a
+   * reconnected item gets new account ids and leaves the old ones behind). Refuses when it would remove most accounts.
+   */
+  pruneUnseenSourceAccounts(sourceId: SourceId, seenAt: string): PruneResult;
   /** Map of `${accountId}|${cycleKey}` to true (settled by hand) or false (kept as owed by hand). */
   listCycleOverrides(): Map<string, boolean>;
   /** Saves the user's word on a bill; null removes it. */

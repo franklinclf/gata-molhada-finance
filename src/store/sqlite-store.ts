@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PurgeReport, TransactionOverride } from './store.ts';
+import type { BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -967,6 +967,33 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
 
     listDismissedFindingIds(): Set<string> {
       return new Set((db.prepare('SELECT finding_id FROM dismissed_findings').all() as Array<{ finding_id: string }>).map((r) => r.finding_id));
+    },
+
+    pruneUnseenSourceTransactions(sourceId: SourceId, from: string, to: string, seenAt: string): PruneResult {
+      const count = (extra: string, ...args: string[]) =>
+        (db.prepare(`SELECT COUNT(*) AS n FROM source_transactions WHERE source_id = ? AND occurred_at >= ? AND occurred_at <= ? ${extra}`).get(sourceId, from, to, ...args) as { n: number }).n;
+      const unseen = count('AND last_seen_at < ?', seenAt);
+      if (unseen === 0) return { removed: 0, skipped: false };
+      // More than half of a window gone at once is a failed or partial read, not a clean-up.
+      if (unseen > 5 && unseen > count('') / 2) return { removed: 0, skipped: true };
+      db.prepare('DELETE FROM source_transactions WHERE source_id = ? AND occurred_at >= ? AND occurred_at <= ? AND last_seen_at < ?').run(sourceId, from, to, seenAt);
+      return { removed: unseen, skipped: false };
+    },
+
+    pruneUnseenSourceAccounts(sourceId: SourceId, seenAt: string): PruneResult {
+      const total = (db.prepare('SELECT COUNT(*) AS n FROM source_accounts WHERE source_id = ?').get(sourceId) as { n: number }).n;
+      const gone = db.prepare('SELECT external_id FROM source_accounts WHERE source_id = ? AND last_seen_at < ?').all(sourceId, seenAt) as Array<{ external_id: string }>;
+      if (gone.length === 0) return { removed: 0, skipped: false };
+      // Losing most accounts in one read means the read was incomplete (or every connection was swapped): leave them for a person to judge.
+      if (gone.length >= total / 2 || gone.length === total) return { removed: 0, skipped: true };
+      inTransaction(() => {
+        for (const { external_id } of gone) {
+          db.prepare('DELETE FROM source_transactions WHERE source_id = ? AND account_external_id = ?').run(sourceId, external_id);
+          db.prepare('DELETE FROM source_bills WHERE source_id = ? AND account_external_id = ?').run(sourceId, external_id);
+          db.prepare('DELETE FROM source_accounts WHERE source_id = ? AND external_id = ?').run(sourceId, external_id);
+        }
+      });
+      return { removed: gone.length, skipped: false };
     },
 
     deleteSourceTransactionsBefore(instant: string): number {

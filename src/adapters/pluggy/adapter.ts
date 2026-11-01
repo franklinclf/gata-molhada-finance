@@ -87,6 +87,8 @@ export class PluggyAdapter implements SourceAdapter {
   }
 
   async fetchAccounts(): Promise<{ accounts: SourceAccount[]; freshness: Freshness[] }> {
+    // Rebuilt on every read, so an account Pluggy dropped is not asked for again.
+    this.kinds.clear();
     const accounts: SourceAccount[] = [];
     const freshness: Freshness[] = [];
     const observedAt = this.now().toISOString();
