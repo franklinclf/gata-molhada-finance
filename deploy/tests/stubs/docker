@@ -21,6 +21,8 @@ case "$1" in
       *Labels*) get env_hash ;;
     esac ;;
   exec)
+    # `docker exec gmf-caddy cat /etc/caddy/Caddyfile`: what the running Caddy sees.
+    if [[ "${2:-}" == "gmf-caddy" && -n "${STUB_CADDY_INSIDE:-}" ]]; then printf '%s' "$STUB_CADDY_INSIDE"; exit 0; fi
     echo "$*" >> "$s/exec.log"
     exit "${STUB_EXEC_EXIT:-0}" ;;
   tag)
