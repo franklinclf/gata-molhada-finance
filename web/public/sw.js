@@ -20,9 +20,16 @@ self.addEventListener('fetch', (event) => {
     fetch(event.request)
       .then((response) => {
         const copy = response.clone();
-        if (response.ok) caches.open(SHELL).then((cache) => cache.put(event.request, copy));
+        if (response.ok) caches.open(SHELL).then((cache) => cache.put(event.request, copy).then(() => trim(cache)));
         return response;
       })
       .catch(() => caches.match(event.request).then((hit) => hit ?? caches.match('/'))),
   );
 });
+
+// Every deploy has new hashed asset names, and the old ones are never asked for again. Keep the newest entries only.
+const MAX_ENTRIES = 120;
+async function trim(cache) {
+  const keys = await cache.keys();
+  for (const key of keys.slice(0, Math.max(0, keys.length - MAX_ENTRIES))) await cache.delete(key);
+}

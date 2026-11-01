@@ -115,7 +115,7 @@ export const api = {
   trustDevice: (name: string) => request<{ ok: true }>('/api/auth/devices/trust', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
   forgetDevice: (id: string) => request<{ ok: true }>(`/api/auth/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
-  session: () => request<{ authenticated: true }>('/api/auth/session'),
+  session: () => request<{ authenticated: true; strength?: string }>('/api/auth/session'),
   balances: () => request<BalancesView>('/api/balances'),
   cards: (cycle = 'open') => request<CardsView>(`/api/cards${query({ cycle })}`),
   cashflow: (from: string, to: string) => request<CashFlowView>(`/api/cashflow${query({ from, to })}`),

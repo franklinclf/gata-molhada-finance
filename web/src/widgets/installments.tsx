@@ -21,7 +21,7 @@ export function InstallmentsWidget({ now, hidden, size }: WidgetProps) {
           <>
             <div class="big">{brl(data.thisCycle, hidden)}</div>
             <div class="muted">
-              neste ciclo · {brl(data.nextCycle, hidden)} no próximo · {brl(data.remainingTotal, hidden)} a pagar no total
+              nesta fatura · {brl(data.nextCycle, hidden)} no próximo · {brl(data.remainingTotal, hidden)} a pagar no total
             </div>
             {size !== 'sm' && <MonthBars months={data.months.filter((m) => m.future + m.open + m.billed > 0).slice(0, size === 'lg' ? 12 : 6)} hidden={hidden} height={size === 'lg' ? 100 : 76} />}
           </>

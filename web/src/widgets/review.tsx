@@ -16,7 +16,7 @@ export function ReviewWidget({ now }: WidgetProps) {
   ];
   const total = rows.reduce((s, r) => s + r[1], 0);
   return (
-    <Widget title="Para revisar" now={now} loading={!ai.data && ai.loading} error={ai.error} head={<><div class="big">{total}</div><div class="muted">{total === 0 ? 'Nada esperando por você' : 'itens esperando por você'}</div></>}>
+    <Widget title="Para revisar" now={now} loading={!ai.data && ai.loading} error={ai.error ?? findings.error ?? rules.error} head={<><div class="big">{total}</div><div class="muted">{total === 0 ? 'Nada esperando por você' : 'itens esperando por você'}</div></>}>
       <ul class="rows">
         {rows.map(([label, n, page, params]) => (
           <li key={label}>
