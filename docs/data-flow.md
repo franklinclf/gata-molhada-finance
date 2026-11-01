@@ -140,5 +140,5 @@ Duas travas: uma leitura vazia não remove nada, e mais da metade da janela (ou 
 
 ## 9. Limitações conhecidas
 
-- O id da conta canônica é um hash de tipo, instituição e nome. Renomear uma conexão em `PLUGGY_ITEMS` muda o id e solta as escolhas guardadas por conta.
+- O id da conta canônica é um hash de tipo, instituição e nome, o que o mantém igual quando uma conexão é refeita (ids novos na fonte). Ao renomear uma conexão em `PLUGGY_ITEMS` o id muda, e as escolhas por conta (oculta, fatura quitada, lançamentos digitados, metas) acompanham os registros da fonte para o id novo no mesmo rebuild.
 - O mesmo conceito aparece escrito em mais de um lugar: a lista de fontes `['pierre','pluggy']`, a data de início 2026-01-01, o fuso -3h e vários cálculos de data.
