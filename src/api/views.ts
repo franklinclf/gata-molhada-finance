@@ -178,7 +178,9 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     const first = byId.get(g.memberIds[0] ?? '');
     const available = first?.availableLimit ?? g.creditLimit - (first?.balance ?? 0);
     const members = g.memberIds.reduce((s, id) => s + outstandingOf(id) + futureOf(id), 0);
-    return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max((first?.balance ?? 0) - members, 0) };
+    // The open total of a shared limit is never less than what is already posted on its cards.
+    const posted = g.memberIds.reduce((s, id) => s + (rows.find((r) => r.id === id)?.posted ?? 0), 0);
+    return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max((first?.balance ?? 0) - members, posted, 0) };
   });
 
   // A shared limit reports one balance for all its cards, so in the open cycle the group counts once.

@@ -80,7 +80,8 @@ export function netWorth(store: Store, now: Date, opts: ViewOptions = {}, months
   const liabilities = items.filter((i) => i.liability).reduce((s, i) => s + i.value, 0);
 
   // Going back in time from today's balances: undo every posted transaction after the day.
-  const posted = effectiveTransactions(store, opts).filter((t) => !t.excluded && t.status === 'posted').map((t) => ({ day: localDay(t.occurredAt), amount: t.amount, accountId: t.accountId }));
+  // A card's issuer balance already holds the purchases of the open statement, which Meu Pluggy keeps pending, so for cards they are undone too.
+  const posted = effectiveTransactions(store, opts).filter((t) => !t.excluded && (t.status === 'posted' || cardIds.has(t.accountId))).map((t) => ({ day: localDay(t.occurredAt), amount: t.amount, accountId: t.accountId }));
   const bankNow = bank.reduce((s, a) => s + a.balance, 0);
   const firstDay = posted.reduce((min, t) => (t.day < min ? t.day : min), today);
   const firstMonth = [firstDay.slice(0, 7), DATA_START_MONTH].sort().at(-1)!;

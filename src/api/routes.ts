@@ -101,6 +101,7 @@ export function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
       max: (max as { value?: number }).value,
       cycle,
       spendingOnly: params.get('spendingOnly') === 'true',
+      netSpending: params.get('netSpending') === 'true',
       hideOwnTransfers: params.get('hideOwnTransfers') === 'true',
       sort,
       limit: (limit as { value: number }).value,

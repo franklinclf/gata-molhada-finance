@@ -237,3 +237,12 @@ test('categories sit in groups: built-in defaults, the user can move them, and g
   assert.equal(setCategoryParent(store, 'Casa', 'Compras', NOW).ok, false, 'Casa is a group that holds categories');
   assert.equal(setCategoryParent(store, 'Nao existe', 'Casa', NOW).ok, false);
 });
+
+test('net spending matches the spending view: no roles, no bank money in', () => {
+  const store = seeded();
+  const all = explore(store, { ...base, from: '2026-09-01', to: '2026-10-31' }, NOW);
+  const net = explore(store, { ...base, from: '2026-09-01', to: '2026-10-31', netSpending: true }, NOW);
+  assert.ok(all.items.some((t) => t.id === 'salary'));
+  assert.equal(net.items.some((t) => t.id === 'salary'), false);
+  assert.ok(net.items.some((t) => t.id === 'rent'));
+});

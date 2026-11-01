@@ -50,7 +50,9 @@ export function proveByBills(store: Store, now: Date): string[] {
 
   for (const account of accounts) {
     const own = all.filter((t) => t.accountId === account.id);
-    const setAside = (t: EffectiveTransaction) => t.state === 'stale_pending' && t.role === null && !restored.has(t.id);
+    // An entry set aside because its posted twin already counts is that twin, not a second charge, so a bill cannot prove it.
+    const hasPostedTwin = (t: EffectiveTransaction) => own.some((o) => o.id !== t.id && !o.excluded && o.status === 'posted' && o.amount === t.amount && Math.abs(new Date(o.occurredAt).getTime() - new Date(t.occurredAt).getTime()) <= 5 * DAY);
+    const setAside = (t: EffectiveTransaction) => t.state === 'stale_pending' && t.role === null && !restored.has(t.id) && !hasPostedTwin(t);
 
     // 1. A closed bill larger than what we count, explained exactly by set-aside entries of its cycle.
     for (const cycle of cyclesFor(store, account, all, today)) {

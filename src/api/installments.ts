@@ -97,7 +97,12 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}): I
   const series = new Map<string, EffectiveTransaction[]>();
   for (const t of transactions) {
     if (!t.installment || t.excluded || t.installment.total < 2 || t.amount >= 0) continue;
-    const key = `${t.accountId}|${seriesDescription(t.description)}|${t.installment.total}|${-t.amount}`;
+    // 3 x 100,00 can be billed 33,34 / 33,33 / 33,33: amounts within one cent per instalment are the same purchase.
+    const tolerance = t.installment.total;
+    const base = `${t.accountId}|${seriesDescription(t.description)}|${tolerance}`;
+    const known = [...series.keys()].filter((k) => k.startsWith(`${base}|`)).map((k) => ({ k, amount: Number(k.slice(base.length + 1)) }));
+    const near = known.find((s) => Math.abs(s.amount - -t.amount) <= tolerance);
+    const key = near ? near.k : `${base}|${-t.amount}`;
     series.set(key, [...(series.get(key) ?? []), t]);
   }
 
@@ -118,7 +123,7 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}): I
       const seen = new Map<number, { cycle: Cycle | undefined; day: string }>();
       for (const t of [...list].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
         const day = localDay(t.occurredAt);
-        seen.set(t.installment!.number, { cycle: cycleOfDay(day), day });
+        seen.set(t.installment!.number, { cycle: t.billCycle ? byKey.get(t.billCycle) : cycleOfDay(day), day });
       }
       const numbers = [...seen.keys()].sort((a, b) => a - b);
       // Month of a seen charge: its bill, or the month of its date when it falls before the first bill we know.

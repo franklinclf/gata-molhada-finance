@@ -70,6 +70,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
     ...(p.get('status') ? [{ label: p.get('status') === 'pending' ? 'Só pendentes' : 'Só lançadas', remove: () => set({ status: null }) }] : []),
     ...(p.get('min') || p.get('max') ? [{ label: `Valor ${p.get('min') ? `de ${brl(Number(p.get('min')))}` : ''} ${p.get('max') ? `até ${brl(Number(p.get('max')))}` : ''}`.trim(), remove: () => set({ min: null, max: null }) }] : []),
     ...(p.get('spendingOnly') === 'true' ? [{ label: 'Só gastos reais', remove: () => set({ spendingOnly: null }) }] : []),
+    ...(p.get('netSpending') === 'true' ? [{ label: 'Gastos (compras menos estornos)', remove: () => set({ netSpending: null }) }] : []),
     ...(p.get('hideOwnTransfers') === 'true' ? [{ label: 'Sem transferências entre suas contas', remove: () => set({ hideOwnTransfers: null }) }] : []),
   ];
 
