@@ -40,7 +40,7 @@ function Line({ line, month, hidden, onChanged, onError }: { line: BudgetLine; m
     <li class="budget-line">
       <div class="budget-head">
         {params ? (
-          <Go class="grow clip" page="transactions" params={{ ...params, to: `${month}-31` }}>
+          <Go class="grow clip" page="transactions" params={{ ...params, to: `${month}-${String(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()).padStart(2, '0')}` }}>
             {line.name}
           </Go>
         ) : (

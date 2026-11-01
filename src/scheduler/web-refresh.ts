@@ -4,6 +4,7 @@ import type { Store } from '../store/store.ts';
 import { syncSource } from '../sync/sync.ts';
 import { canRequestRefresh } from './budget.ts';
 import { quotaReport } from './quota.ts';
+import { SYNC_LOOKBACK_DAYS } from './defaults.ts';
 import { RefreshBlockedError, requestManualRefresh } from './refresh.ts';
 
 export interface RefreshState {
@@ -37,7 +38,7 @@ export function createRefresher(deps: { store: Store; adapter: SourceAdapter; no
   async function job(): Promise<void> {
     try {
       const outcome = await requestManualRefresh({ store, adapter, now, waitMs: deps.waitMs, pollMs: deps.pollMs });
-      const result = await syncSource(adapter, { store }, new Date(now().getTime() - 14 * 86_400_000));
+      const result = await syncSource(adapter, { store }, new Date(now().getTime() - SYNC_LOOKBACK_DAYS * 86_400_000));
       runReconciliation(store);
       const failed = result.errors.length > 0;
       state = { ...state, running: false, finishedAt: now().toISOString(), result: failed ? 'failed' : outcome.timedOut.length > 0 ? 'timeout' : 'completed', timedOut: outcome.timedOut, error: failed ? result.errors[0]! : null };

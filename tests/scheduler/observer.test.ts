@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { Observer, type ObserverEvent } from '../../src/scheduler/observer.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
+import { SYNC_LOOKBACK_DAYS } from '../../src/scheduler/defaults.ts';
 import { ScriptedAdapter, syncTime } from '../support/scripted-adapter.ts';
 
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url));
@@ -62,7 +63,7 @@ test('newer sync times trigger a read of the last 14 days and a rebuild', async 
   await observer.tick(sources[0]!);
   assert.deepEqual(events.map((e) => e.type), ['changed', 'synced']);
   assert.equal(adapter.transactionCalls.length, 2);
-  assert.equal(adapter.transactionCalls[1]?.toISOString(), new Date(T0 - 14 * 86_400_000).toISOString());
+  assert.equal(adapter.transactionCalls[1]?.toISOString(), new Date(T0 - SYNC_LOOKBACK_DAYS * 86_400_000).toISOString());
   assert.equal(reconciles(), 2);
   const changed = events[0];
   assert.deepEqual(changed?.type === 'changed' ? changed.institutions : [], ['Bank A']);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiError } from '../api.ts';
 import { Meter } from '../charts.tsx';
-import { ago, isStale } from '../format.ts';
+import { ago, isStale, maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
 import { Loading } from '../ui.tsx';
@@ -14,7 +14,7 @@ function alertText(event: string, code: string | null): string {
   return 'a última leitura deu erro' + (code ? ` (${code})` : '') + '.';
 }
 
-export function StatusPage({ now }: { now: Date }) {
+export function StatusPage({ now, hidden }: { now: Date; hidden: boolean }) {
   const fresh = useLoad(() => api.freshness(), [], 60_000);
   const findings = useLoad(() => api.findings(), []);
   const ai = useLoad(() => api.ai(), []);
@@ -158,7 +158,7 @@ export function StatusPage({ now }: { now: Date }) {
             {findings.data.items.map((f) => (
               <li key={f.id} class="suggestion">
                 <div class="grow">
-                  <div>{f.summary}</div>
+                  <div>{maskMoney(f.summary, hidden)}</div>
                   <div class="muted">
                     aberta {ago(f.openedAt, now)}
                     {ai.data?.matches.opinions[f.id] && (

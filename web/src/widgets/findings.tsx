@@ -1,5 +1,5 @@
 import { api } from '../api.ts';
-import { ago } from '../format.ts';
+import { ago, maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
 import { Go } from '../ui.tsx';
@@ -10,7 +10,7 @@ export const KIND_LABEL: Record<string, string> = {
   possible_match: 'Possível duplicata entre fontes',
 };
 
-export function FindingsWidget({ now, size }: WidgetProps) {
+export function FindingsWidget({ now, size, hidden }: WidgetProps) {
   const { data, error, loading } = useLoad(() => api.findings(), [], 120_000);
   return (
     <Widget
@@ -35,7 +35,7 @@ export function FindingsWidget({ now, size }: WidgetProps) {
               <li key={f.id} class="tx" data-no-nav onClick={() => patchParams({ tx: f.transactionId })} tabIndex={0}>
                 <span class={f.severity === 'warning' ? 'swatch warn' : 'swatch'} />
                 <div class="grow">
-                  <div class="clip">{f.summary}</div>
+                  <div class="clip">{maskMoney(f.summary, hidden)}</div>
                   <div class="muted">
                     {KIND_LABEL[f.kind] ?? f.kind} · {ago(f.openedAt, now)}
                   </div>

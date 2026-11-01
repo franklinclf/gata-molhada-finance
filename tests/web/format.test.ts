@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ago, brl, brlShort, cumulative, dayMonth, isStale, localDay, MASK, periodRange } from '../../web/src/format.ts';
+import { ago, brl, brlShort, cumulative, dayMonth, isStale, localDay, MASK, maskMoney, periodRange } from '../../web/src/format.ts';
 
 const NOW = new Date('2026-10-27T15:00:00Z');
 
@@ -50,4 +50,10 @@ test('shiftRange moves whole months by months and other ranges by their own leng
   assert.equal(shiftRange('2026-10-01', '2026-10-28', 1, today), null, 'nothing after today');
   assert.deepEqual(shiftRange('2026-01-01', '2026-01-31', -1, today), { from: '2025-12-01', to: '2025-12-31' }, 'across the year');
   assert.deepEqual(shiftRange('2026-10-10', '2026-10-20', 1, today), { from: '2026-10-21', to: '2026-10-28' });
+});
+
+test('maskMoney hides the amounts inside a sentence only when values are hidden', () => {
+  const text = 'Você gastou R$ 1.234,56 e recebeu -R$ 20,00; o saldo é R$ 5.';
+  assert.equal(maskMoney(text, false), text);
+  assert.equal(maskMoney(text, true), `Você gastou ${MASK} e recebeu ${MASK}; o saldo é ${MASK}.`);
 });

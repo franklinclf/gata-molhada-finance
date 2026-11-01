@@ -2,6 +2,7 @@ import type { SourceAdapter } from '../core/adapter.ts';
 import type { SourceId } from '../core/types.ts';
 import type { Store } from '../store/store.ts';
 import { syncSource, type SyncResult } from '../sync/sync.ts';
+import { SYNC_LOOKBACK_DAYS } from './defaults.ts';
 
 export type ObserverEvent =
   | { type: 'checked'; sourceId: SourceId }
@@ -23,7 +24,7 @@ export interface ObserverDeps {
   /** Resolves after `ms`, or earlier when the signal aborts. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   onEvent?: (event: ObserverEvent) => void;
-  /** Days of transactions to re-read when a source reports new data. Defaults to 14. */
+  /** Days of transactions to re-read when a source reports new data. Defaults to SYNC_LOOKBACK_DAYS. */
   lookbackDays?: number;
   /** Longest wait after repeated failures. Defaults to 30 minutes. */
   maxBackoffMs?: number;
@@ -85,7 +86,7 @@ export class Observer {
         if (changed.length > 0) this.emit({ type: 'changed', sourceId: adapter.id, institutions: changed.map((c) => c.institution) });
         state.needsSync = true;
         state.forceSync = false;
-        const since = new Date(this.now().getTime() - (this.deps.lookbackDays ?? 14) * 86_400_000);
+        const since = new Date(this.now().getTime() - (this.deps.lookbackDays ?? SYNC_LOOKBACK_DAYS) * 86_400_000);
         const result = await syncSource(adapter, { store: this.deps.store, now: this.now }, since);
         this.deps.reconcile();
         this.emit({ type: 'synced', sourceId: adapter.id, result });

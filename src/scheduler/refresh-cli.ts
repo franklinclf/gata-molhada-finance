@@ -8,6 +8,7 @@ import { loadAdapterEnv } from '../sync/config.ts';
 import { syncSource } from '../sync/sync.ts';
 import { quotaReport, formatQuotaReport } from './quota.ts';
 import { parseRefreshArgs } from './refresh-args.ts';
+import { SYNC_LOOKBACK_DAYS } from './defaults.ts';
 import { RefreshBlockedError, requestManualRefresh } from './refresh.ts';
 
 const migrationsDir = fileURLToPath(new URL('../../migrations', import.meta.url));
@@ -29,7 +30,7 @@ try {
   } else {
     try {
       const outcome = await requestManualRefresh({ store, adapter, force: args.force, onProgress: (m) => console.log(m) });
-      const result = await syncSource(adapter, { store }, new Date(Date.now() - 14 * 86_400_000));
+      const result = await syncSource(adapter, { store }, new Date(Date.now() - SYNC_LOOKBACK_DAYS * 86_400_000));
       runReconciliation(store);
       console.log(`read ${result.accounts} accounts, ${result.transactions} transactions, ${result.bills} bills`);
       for (const e of result.errors) console.error(`  error: ${e}`);
