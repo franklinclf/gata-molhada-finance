@@ -20,6 +20,7 @@ const FIXED: Array<[RegExp, string]> = [
   [/juros e encargos|encargos financeiros|juros de mora/, 'Juros e encargos'],
   [/tarifa|tar\.? /, 'Tarifa bancária'],
   [/saldo adicionado/, 'Saldo adicionado na conta'],
+  [/^(lucro|rendimento|rendimentos)\b/, 'Rendimento'],
 ];
 
 const OPERATIONS: Record<string, [out: string, in_: string]> = {
