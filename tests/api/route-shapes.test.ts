@@ -35,3 +35,8 @@ test('an AI decision with a body that is not JSON is a 400, and an empty body is
   assert.equal(call('POST', '/api/ai/accept', '{not json')?.status, 400);
   assert.equal(call('POST', '/api/ai/accept-all', '')?.status, 200);
 });
+
+test('the duplicate candidates of a transaction that does not exist is a 404, and the method must be GET', () => {
+  assert.equal(call('GET', '/api/transactions/nope/duplicates')?.status, 404);
+  assert.equal(call('POST', '/api/transactions/nope/duplicates')?.status, 405);
+});

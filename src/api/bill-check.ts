@@ -1,5 +1,6 @@
 import type { Cents } from '../core/money.ts';
 import { addDays, dayNumber } from '../core/dates.ts';
+import { normalizeName } from '../core/names.ts';
 import { localDay } from '../core/time.ts';
 import { cyclesFor, isCardPayment, type Cycle } from './cycles.ts';
 import { effectiveTransactions, type EffectiveTransaction } from './scope.ts';
@@ -40,9 +41,20 @@ export interface BillCheckItem {
     | { kind: 'extra'; amount: Cents };
 }
 
+export interface DuplicatePayment {
+  accountId: string;
+  institution: string;
+  last4: string | null;
+  amount: Cents;
+  /** The records that look like one payment, oldest first. Ignoring all but one is the fix. */
+  members: Array<{ id: string; day: string; title: string; description: string; status: string }>;
+}
+
 export interface BillCheckView {
   generatedAt: string;
   items: BillCheckItem[];
+  /** Card bill payments listed more than once (the pending and the posted copy, or two texts for one payment). */
+  duplicatePayments: DuplicatePayment[];
   /** Pending entries set aside as stale, in case one of them is real. */
   setAside: Array<{ id: string; day: string; amount: Cents; description: string; institution: string; last4: string | null }>;
 }
@@ -155,5 +167,21 @@ export function billCheck(store: Store, now: Date): BillCheckView {
     .map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, description: t.description, institution: accountOf.get(t.accountId)?.institution ?? '', last4: accountOf.get(t.accountId)?.last4 ?? null }));
 
   items.sort((a, b) => b.dueDate.localeCompare(a.dueDate) || a.institution.localeCompare(b.institution));
-  return { generatedAt: now.toISOString(), items, setAside };
+
+  // The same card payment listed twice: equal amounts within three days that differ in text or status.
+  const duplicatePayments: DuplicatePayment[] = [];
+  for (const account of store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card')) {
+    const payments = live.filter((t) => t.accountId === account.id && isCardPayment(t) && t.amount > 0).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+    const used = new Set<string>();
+    for (const first of payments) {
+      if (used.has(first.id)) continue;
+      const group = payments.filter((o) => !used.has(o.id) && o.amount === first.amount && Math.abs(dayNumber(localDay(o.occurredAt)) - dayNumber(localDay(first.occurredAt))) <= 3);
+      const looksRepeated = group.length > 1 && group.some((o) => o.status !== first.status || normalizeName(o.description) !== normalizeName(first.description));
+      for (const o of group) used.add(o.id);
+      if (!looksRepeated) continue;
+      duplicatePayments.push({ accountId: account.id, institution: account.institution, last4: account.last4, amount: first.amount, members: group.map((o) => ({ id: o.id, day: localDay(o.occurredAt), title: o.title, description: o.description, status: o.status })) });
+    }
+  }
+  duplicatePayments.sort((a, b) => b.members[0]!.day.localeCompare(a.members[0]!.day));
+  return { generatedAt: now.toISOString(), items, duplicatePayments, setAside };
 }

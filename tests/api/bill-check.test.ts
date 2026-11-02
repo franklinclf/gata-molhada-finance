@@ -102,3 +102,17 @@ test('a charge is never pulled out of a neighbour bill that is itself short', ()
   const octItem = billCheck(store, NOW).items.find((i) => i.cycleKey === '2026-10')!;
   assert.deepEqual(octItem.suggestion, { kind: 'missing', amount: 1500 });
 });
+
+test('a card payment listed twice with two texts, or as a pending and a posted copy, is offered for cleaning, and two real payments are not', () => {
+  const pay = (id: string, day: string, description: string, over: Partial<CanonicalTransaction> = {}) => ({ ...tx(id, day, 50000, over), description, category: 'Pagamento de fatura' });
+  const store = setup(BILLS, [
+    tx('start', '2026-07-01', -100),
+    pay('p1', '2026-10-15', 'Pagamento recebido', { status: 'pending' }),
+    pay('p2', '2026-10-15', 'PAGTO. POR DEB EM C/C', { status: 'pending' }),
+    pay('q1', '2026-09-14', 'Pagamento recebido'),
+    pay('q2', '2026-09-14', 'Pagamento recebido'),
+  ]);
+  const { duplicatePayments } = billCheck(store, NOW);
+  assert.equal(duplicatePayments.length, 1, 'only the pair with different texts; two equal real payments are left alone');
+  assert.deepEqual(duplicatePayments[0]!.members.map((m) => m.description), ['Pagamento recebido', 'PAGTO. POR DEB EM C/C']);
+});

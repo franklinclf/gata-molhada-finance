@@ -130,6 +130,7 @@ export const api = {
   setCategory: (id: string, category: string | null, applyToSimilar: boolean) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/category`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category, applyToSimilar }) }),
   candidates: (id: string) => request<{ items: Candidate[] }>(`/api/transactions/${encodeURIComponent(id)}/candidates`),
+  duplicates: (id: string) => request<{ items: Candidate[] }>(`/api/transactions/${encodeURIComponent(id)}/duplicates`),
   join: (id: string, otherId: string) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/merge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherId }) }),
   separate: (id: string) => request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/merge`, { method: 'DELETE' }),

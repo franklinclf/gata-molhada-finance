@@ -386,7 +386,7 @@ test('two payments of the same amount on the same day from one source are two pa
   store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
   store.upsertSourceBills('pluggy', [{ externalId: 'b-sep', accountExternalId: 'ext-two', dueDate: '2026-09-15', closingDate: '2026-09-08', total: 100000, minimumPayment: null }, { externalId: 'b-oct', accountExternalId: 'ext-two', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 100000, minimumPayment: null }], NOW.toISOString());
   const two = account('two', { refs: [{ sourceId: 'pluggy', externalId: 'ext-two', role: 'member' }] });
-  const pays = [tx('p1', 'two', '2026-09-12', 50000, 'Pagamento de cartão de crédito'), tx('p2', 'two', '2026-09-12', 50000, 'Pagamento de cartão de crédito')].map((t) => ({ ...t, sourceIds: ['pluggy'] }));
+  const pays = [tx('p1', 'two', '2026-09-12', 50000, 'Pagamento de cartão de crédito'), tx('p2', 'two', '2026-09-12', 50000, 'Pagamento de cartão de crédito')].map((t) => ({ ...t, description: 'Pagamento recebido', sourceIds: ['pluggy'] }));
   store.replaceCanonicalAccounts([two], [], NOW.toISOString());
   // The canonical rows get their source ids from the links, so both payments are linked to the same source.
   const links = pays.map((p) => ({ sourceId: 'pluggy', externalId: `e-${p.id}`, transactionId: p.id, matchPass: 0 }));
@@ -406,4 +406,18 @@ test('the open bill of a card includes installments of earlier purchases that th
   const row = cards(store, NOW).cards.find((c) => c.id === 'pl')!;
   assert.deepEqual([row.posted, row.plannedInstallments], [1500, 20000]);
   assert.ok(row.total >= 21500, 'the open total counts the third installment');
+});
+
+test('the bank text and the card text of one payment on the same day are one payment', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-sep', accountExternalId: 'ext-leg', dueDate: '2026-09-15', closingDate: '2026-09-08', total: 210157, minimumPayment: null }, { externalId: 'b-oct', accountExternalId: 'ext-leg', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 10000, minimumPayment: null }], NOW.toISOString());
+  const leg = account('leg', { refs: [{ sourceId: 'pluggy', externalId: 'ext-leg', role: 'member' }] });
+  // Both pending, same source, same amount and day, different words: Pluggy's "Pagamento recebido" and the bank's own text.
+  const a = { ...tx('a', 'leg', '2026-09-14', 210157, 'Pagamento de cartão de crédito'), description: 'Pagamento recebido', status: 'pending' as const };
+  const b = { ...tx('b', 'leg', '2026-09-14', 210157, 'Pagamento de cartão de crédito'), description: 'PAGTO. POR DEB EM C/C', status: 'pending' as const };
+  const links = [a, b].map((p) => ({ sourceId: 'pluggy', externalId: `e-${p.id}`, transactionId: p.id, matchPass: 0 }));
+  store.replaceCanonicalAccounts([leg], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('start', 'leg', '2026-08-01', -100), tx('buy', 'leg', '2026-09-02', -210157), a, b], links, NOW.toISOString());
+  assert.equal(cyclesFor(store, leg, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-09')?.paid, 210157);
 });

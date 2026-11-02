@@ -1,6 +1,7 @@
 import type { CanonicalAccount } from '../core/canonical.ts';
 import type { Cents } from '../core/money.ts';
 import { addDays, dayNumber } from '../core/dates.ts';
+import { normalizeName } from '../core/names.ts';
 import { localDay } from '../core/time.ts';
 import { sourcePriority } from '../reconcile/run.ts';
 import type { Store, StoredSourceBill } from '../store/store.ts';
@@ -94,16 +95,18 @@ const SAME_PAYMENT_DAYS = 3;
  * credit, and they can fall on different days when the payment is made late on a Friday).
  */
 function paymentsOf(transactions: EffectiveTransaction[]): Array<{ day: string; amount: Cents }> {
-  const seen = new Map<string, Array<{ sources: string[]; status: string }>>();
+  const seen = new Map<string, Array<{ sources: string[]; status: string; text: string }>>();
   const out: Array<{ day: string; amount: Cents; status: string; merged: boolean }> = [];
   for (const t of transactions) {
     if (t.excluded || t.amount <= 0 || !isCardPayment(t)) continue;
     const day = localDay(t.occurredAt);
     const key = `${day}|${t.amount}`;
-    // The same payment shows up again when another source (or the pending copy) reports it. Two payments of one source, of the same amount on the same day, are two payments.
+    // The same payment shows up again when another source, the pending copy, or the other leg (the bank's own text, "PAGTO. POR DEB
+    // EM C/C", next to "Pagamento recebido") reports it. Two payments of one source with the same text, amount and day are two payments.
+    const text = normalizeName(t.description);
     const earlier = seen.get(key) ?? [];
-    if (earlier.some((e) => e.status !== t.status || !e.sources.some((s) => t.sourceIds.includes(s)))) continue;
-    seen.set(key, [...earlier, { sources: t.sourceIds, status: t.status }]);
+    if (earlier.some((e) => e.status !== t.status || e.text !== text || !e.sources.some((s) => t.sourceIds.includes(s)))) continue;
+    seen.set(key, [...earlier, { sources: t.sourceIds, status: t.status, text }]);
     const twin = out.find((o) => !o.merged && o.amount === t.amount && o.status !== t.status && Math.abs(dayNumber(o.day) - dayNumber(day)) <= SAME_PAYMENT_DAYS);
     if (twin) {
       // Keep the posted copy's day, which is the one the card shows.
