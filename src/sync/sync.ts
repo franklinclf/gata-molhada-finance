@@ -51,18 +51,23 @@ function describe(error: unknown): string {
  * Pulls accounts, transactions and bills from one source and stores them.
  * A failing step is reported and does not stop the steps after it.
  */
-export function syncSource(adapter: SourceAdapter, deps: SyncDeps, since: Date): Promise<SyncResult> {
+export interface SyncOptions {
+  /** Remove what the source no longer returns without the guard against a bad read. Used by a hard reset, only after a complete read. */
+  fullWindow?: boolean;
+}
+
+export function syncSource(adapter: SourceAdapter, deps: SyncDeps, since: Date, options: SyncOptions = {}): Promise<SyncResult> {
   // The observer, the refresh button and the command line share one adapter and one database. Two syncs of the same
   // source at once could write an older answer over a newer one, so they run one after the other.
   const previous = running.get(adapter.id) ?? Promise.resolve();
-  const next = previous.then(() => runSync(adapter, deps, since), () => runSync(adapter, deps, since));
+  const next = previous.then(() => runSync(adapter, deps, since, options), () => runSync(adapter, deps, since, options));
   running.set(adapter.id, next.catch(() => undefined));
   return next;
 }
 
 const running = new Map<string, Promise<unknown>>();
 
-async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date): Promise<SyncResult> {
+async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date, options: SyncOptions): Promise<SyncResult> {
   const now = deps.now ?? (() => new Date());
   const { store } = deps;
   registerAdapter(adapter, store, now());
@@ -86,7 +91,7 @@ async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date): Pro
     result.freshness = freshness.length;
     // An account the provider no longer lists (a reconnected item gets new ids) goes away with its records, so it cannot double a balance.
     if (accounts.length > 0) {
-      const pruned = store.pruneUnseenSourceAccounts(adapter.id, seenAt);
+      const pruned = store.pruneUnseenSourceAccounts(adapter.id, seenAt, options.fullWindow === true);
       if (pruned.skipped) result.warnings.push('accounts: several saved accounts were not listed this time, so none were removed');
     }
   } catch (error) {
@@ -101,7 +106,7 @@ async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date): Pro
     // The read covers every date from `since` to today, so a record in that range that did not come back is gone at the
     // source (deleted, or re-created under a new id when it posted). The first day stays out as a margin for the time zone.
     if (result.errors.length === 0 && transactions.length > 0) {
-      const pruned = store.pruneUnseenSourceTransactions(adapter.id, new Date(since.getTime() + 86_400_000).toISOString(), seenAt, seenAt);
+      const pruned = store.pruneUnseenSourceTransactions(adapter.id, new Date(since.getTime() + 86_400_000).toISOString(), seenAt, seenAt, options.fullWindow === true);
       if (pruned.skipped) result.warnings.push('transactions: most of the recent records did not come back, so none were removed');
     }
   } catch (error) {

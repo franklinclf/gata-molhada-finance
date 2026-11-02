@@ -344,12 +344,12 @@ export interface Store {
    * read gave to every record it returned). A record the provider deleted, or re-created under a new id when it posted,
    * would otherwise stay forever. Refuses when it would remove most of the window, which looks like a bad read.
    */
-  pruneUnseenSourceTransactions(sourceId: SourceId, from: string, to: string, seenAt: string): PruneResult;
+  pruneUnseenSourceTransactions(sourceId: SourceId, from: string, to: string, seenAt: string, force?: boolean): PruneResult;
   /**
    * Drops source accounts the latest complete read of the accounts did not return, with their transactions and bills (a
    * reconnected item gets new account ids and leaves the old ones behind). Refuses when it would remove most accounts.
    */
-  pruneUnseenSourceAccounts(sourceId: SourceId, seenAt: string): PruneResult;
+  pruneUnseenSourceAccounts(sourceId: SourceId, seenAt: string, force?: boolean): PruneResult;
   /** Map of `${accountId}|${cycleKey}` to true (settled by hand) or false (kept as owed by hand). */
   listCycleOverrides(): Map<string, boolean>;
   /** Saves the user's word on a bill; null removes it. */

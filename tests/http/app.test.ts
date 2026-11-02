@@ -253,3 +253,18 @@ test('failed sign-ins from one address lock that address and leave another free'
   assert.equal(attempt('203.0.113.9', PASSWORD).status, 429);
   assert.equal(attempt('198.51.100.7', PASSWORD).status, 200);
 });
+
+test('the reset route needs a recent sign-in, takes soft or hard, and 409s while one is running', () => {
+  const { deps, cookie } = signedIn();
+  assert.equal(handle(get('/api/reset'), deps).status, 401);
+  assert.deepEqual(JSON.parse(handle(get('/api/reset', { cookie }), deps).body as string), { available: false });
+  assert.equal(handle(post('/api/reset', { mode: 'soft' }, { cookie }), deps).status, 503);
+  const calls: string[] = [];
+  let busy = false;
+  const armed = { ...deps, resetter: { state: () => ({ running: busy, mode: null, step: null, startedAt: null, finishedAt: null, result: null, summary: null, error: null }), start: (mode: 'soft' | 'hard') => (busy ? { started: false as const, reason: 'busy' } : (calls.push(mode), (busy = true), { started: true as const })) } };
+  assert.equal(handle(post('/api/reset', { mode: 'both' }, { cookie }), armed).status, 400);
+  assert.equal(handle(post('/api/reset', { mode: 'hard' }, { cookie }), armed).status, 202);
+  assert.equal(handle(post('/api/reset', { mode: 'soft' }, { cookie }), armed).status, 409);
+  assert.deepEqual(calls, ['hard']);
+  assert.equal(handle(post('/api/reset', { mode: 'soft' }), armed).status, 401);
+});

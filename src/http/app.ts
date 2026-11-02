@@ -7,6 +7,7 @@ import { localDay } from '../core/time.ts';
 import type { AnalystReply } from '../ai/analyst.ts';
 import { decide, validSignature, type DeployHook } from './deploy-hook.ts';
 import { parsePluggyEvent, tokenMatches, type PluggyHook } from './pluggy-hook.ts';
+import type { Resetter } from '../sync/reset.ts';
 import type { Refresher } from '../scheduler/web-refresh.ts';
 import { route, type RouteResult, type RouterDeps } from './router.ts';
 
@@ -29,6 +30,8 @@ export interface AppDeps extends RouterDeps {
   backup?: (passphrase: string) => Buffer;
   /** Lets GitHub tell the app that a new image was published. Absent (and the route answers 404) when no secret is set. */
   deployHook?: DeployHook;
+  /** Reads everything the source has again (soft or hard reset). Absent when no source can be read. */
+  resetter?: Resetter;
   /** Lets Pluggy tell the app that an item changed. Absent (and the route answers 404) when no secret is set. */
   pluggyHook?: PluggyHook;
   /** Answers a question to the analyst. Absent when the AI is off. */
@@ -223,6 +226,18 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
       if (!deps.refresher) return done(json(503, { error: 'unavailable' }));
       const started = deps.refresher.start();
       return done(started.started ? json(202, { started: true }) : json(409, { error: 'blocked', reasons: started.reasons }));
+    }
+
+    if (pathname === '/api/reset') {
+      if (method === 'GET') return done(json(200, { available: deps.resetter !== undefined, ...(deps.resetter?.state() ?? {}) }));
+      if (method !== 'POST') return done(notAllowed('GET, POST'));
+      if (!deps.resetter) return done(json(503, { error: 'unavailable' }));
+      // Rebuilding everything from the source changes what every screen shows, so it needs a recent password or passkey sign-in.
+      if (!deps.auth.isFullSession(token)) return done(json(403, { error: 'reauth_required' }));
+      const input = parseJson(request);
+      if (input?.mode !== 'soft' && input?.mode !== 'hard') return done(json(400, { error: 'bad_request', message: 'mode must be soft or hard' }));
+      const started = deps.resetter.start(input.mode);
+      return done(started.started ? json(202, { started: true }) : json(409, { error: 'blocked', reason: started.reason }));
     }
 
     if (pathname === '/api/version') {
