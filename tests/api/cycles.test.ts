@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { addDays, addMonthsToDay, cyclesFor, isCardPayment } from '../../src/api/cycles.ts';
 import { effectiveTransactions } from '../../src/api/scope.ts';
+import { runReconciliation } from '../../src/reconcile/run.ts';
+import { account as sourceAccount, tx as sourceTx } from '../support/builders.ts';
 import { cardBills, cards } from '../../src/api/views.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
@@ -471,4 +473,19 @@ test('a charge from before the data start that the issuer billed after it is kep
   store.upsertSourceTransactions('pluggy', [row('old-billed-later', '2025-11-28T15:00:00Z', 'b-jan'), row('old-unbilled', '2025-11-28T15:00:00Z', null), row('new', '2026-01-02T15:00:00Z', null)], NOW.toISOString());
   assert.equal(store.deleteSourceTransactionsBefore('2026-01-01T03:00:00.000Z'), 1);
   assert.deepEqual(store.listSourceTransactions('pluggy').map((t) => t.externalId).sort(), ['new', 'old-billed-later']);
+});
+
+test('reconciliation uses a charge older than the data start when its bill is due after it', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  const at = NOW.toISOString();
+  store.registerSource({ id: 'pluggy', kind: 'aggregator', capabilities: {} }, at);
+  store.upsertSourceAccounts('pluggy', [sourceAccount({ externalId: 'ext-k', kind: 'credit_card' })], at);
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-jun', accountExternalId: 'ext-k', dueDate: '2026-06-15', closingDate: '2026-06-08', total: 27490, minimumPayment: null }], at);
+  const parties = { operation: null, mcc: null, payer: null, receiver: null, billId: 'b-jun' };
+  store.upsertSourceTransactions('pluggy', [
+    { ...sourceTx({ externalId: 'old-installment', accountExternalId: 'ext-k', occurredAt: '2025-11-28T12:00:00.000Z', amount: -27490, descriptionRaw: 'ALIPAY 07/12' }), parties },
+    sourceTx({ externalId: 'old-plain', accountExternalId: 'ext-k', occurredAt: '2025-11-28T12:00:00.000Z', amount: -100, descriptionRaw: 'OLD' }),
+  ], at);
+  runReconciliation(store, { now: () => NOW });
+  assert.deepEqual(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => t.amount), [-27490]);
 });

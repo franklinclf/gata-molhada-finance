@@ -36,6 +36,8 @@ export interface TransactionInput {
   staleDays?: number;
   /** Local day (YYYY-MM-DD). Records dated before it are not used at all. */
   dataStart?: string;
+  /** Ids of bills due on or after `dataStart`. A card charge older than the start that sits on one of them is still used. */
+  billsAfterStart?: Set<string>;
   manual?: ManualMapping;
 }
 
@@ -162,7 +164,7 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
     const groups: Group[] = [];
     for (const source of present) {
       const externalIds = new Set(memberRefs.filter((r) => r.sourceId === source.sourceId).map((r) => r.externalId));
-      const txs = source.transactions.filter((t) => externalIds.has(t.accountExternalId) && (input.dataStart === undefined || localDay(t.occurredAt) >= input.dataStart));
+      const txs = source.transactions.filter((t) => externalIds.has(t.accountExternalId) && (input.dataStart === undefined || localDay(t.occurredAt) >= input.dataStart || (t.parties?.billId != null && input.billsAfterStart?.has(t.parties.billId) === true)));
       if (groups.length === 0) {
         for (const tx of txs) groups.push({ records: [{ sourceId: source.sourceId, priority: source.priority, tx, pass: 0 }] });
       } else {
