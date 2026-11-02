@@ -293,6 +293,9 @@ export interface Store {
   saveGoal(goal: Omit<Goal, 'id'> & { id?: number }): Goal;
   deleteGoal(id: number): void;
   listRecurringIgnored(): Set<string>;
+  /** The owner's word on a recurring key: a subscription or another recurring charge. */
+  listRecurringMarks(): Map<string, 'subscription' | 'recurring'>;
+  setRecurringMark(key: string, label: 'subscription' | 'recurring' | null, now: string): void;
   setRecurringIgnored(key: string, ignored: boolean, now: string): void;
   listManualTransactions(): ManualTransaction[];
   /** Saves a manual transaction: without an id it is created. Returns the saved one. */

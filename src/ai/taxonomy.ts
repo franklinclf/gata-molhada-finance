@@ -6,16 +6,21 @@ export const TAXONOMY: Array<[name: string, meaning: string]> = [
   ['Transporte por aplicativo', 'taxi and ride-hailing: Uber, 99, Cabify'],
   ['Transporte público', 'bus, metro, train, bike sharing, transit cards'],
   ['Combustível e carro', 'fuel, parking, tolls, car services, car insurance, vehicle taxes'],
-  ['Saúde', 'doctors, dentists, labs, hospitals, health plans, therapy, gyms count as Lazer'],
+  ['Saúde', 'doctors, labs, hospitals, health plans, therapy, psychologists, orthodontic treatment paid to a clinic that is not dental'],
+  ['Dentista', 'dentists, dental clinics, orthodontics, dental labs, aligners'],
+  ['Academia', 'gyms and fitness: Selfit, SmartFit, TotalPass, Gympass or Wellhub, personal trainers, pilates and crossfit boxes'],
   ['Farmácia', 'pharmacies and drugstores'],
   ['Assinaturas e streaming', 'recurring digital subscriptions: video, music, cloud storage, apps, news'],
   ['Telecomunicação', 'mobile and internet providers, prepaid top-ups'],
   ['Compras online', 'online marketplaces and general web shopping (Amazon, Shopee, Mercado Livre)'],
   ['Vestuário e acessórios', 'clothes, shoes, accessories'],
-  ['Casa e utilidades', 'home goods, furniture, hardware stores, appliances, office supplies and stationery'],
+  ['Casa e utilidades', 'furniture, appliances, hardware stores, repairs, construction material, office supplies and stationery'],
+  ['Utensílios para casa', 'kitchenware, tableware, cleaning products, decoration, bedding and small household items; department and variety stores (Havan, Lojas Americanas, Tok&Stok, Camicado)'],
+  ['Presentes', 'gifts, gift shops, flowers, party items'],
   ['Eletrônicos', 'electronics and gadgets: phones, computers, accessories, consoles bought as goods'],
   ['Crianças e brinquedos', 'toys, baby and kids items'],
-  ['Moradia', 'rent, condo fees, electricity, water, gas, property tax'],
+  ['Aluguel', 'monthly rent, usually a Pix or boleto to a landlord or a real estate agency'],
+  ['Moradia', 'condo fees, electricity, water, gas, property tax, building maintenance'],
   ['Lazer e esportes', 'cinema, shows, games, gyms, sports, hobbies, parks'],
   ['Educação', 'schools, courses, books, tuition, certification exams'],
   ['Viagens', 'flights, hotels, travel agencies, mileage programs, car rental'],
@@ -41,7 +46,7 @@ export const CATEGORY_NAMES = TAXONOMY.map(([name]) => name);
 /** Changes whenever the category list changes, so descriptions are asked again with the new list. */
 export function taxonomyId(extra: string[] = []): string {
   // The first word changes when the prompt or its context changes, so earlier answers that were not confirmed are asked again.
-  const text = ['prompt-v5', ...CATEGORY_NAMES, ...[...extra].sort()].join('|');
+  const text = ['prompt-v6', ...CATEGORY_NAMES, ...[...extra].sort()].join('|');
   let hash = 0;
   for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash.toString(16);

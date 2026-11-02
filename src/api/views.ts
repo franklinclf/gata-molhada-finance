@@ -92,6 +92,8 @@ export interface CardRow {
   total: Cents;
   /** Net purchases already posted in the chosen cycle. */
   posted: Cents;
+  /** Installments of earlier purchases that belong to the open bill and that the bank has not listed as charges yet (in `total`, not in `posted`). */
+  plannedInstallments: Cents;
   /** True when `total` is worked out from the issuer's balance (the balance minus installments that belong to later bills). */
   estimated: boolean;
   /** Installments of purchases already made that will be charged in bills after the open cycle. The issuer counts them in its balance. */
@@ -125,6 +127,9 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
 
   // The issuer's balance is what the card owes in total, including installments that belong to bills not issued yet.
   const plan = installments(store, now, opts);
+  // Installments of earlier purchases that belong to the open bill but that the bank has not listed as charges yet: the card
+  // issuer bills them, and the plan knows them by counting months from the installments it did see.
+  const plannedOpenOf = (id: string) => plan.purchases.filter((p) => p.accountId === id).reduce((s, p) => s + p.slots.filter((x) => x.status === 'open' && x.inferred).length * p.amount, 0);
   const futureOf = (id: string) => plan.purchases.filter((p) => p.accountId === id).reduce((s, p) => s + p.slots.filter((x) => x.status === 'future').length * p.amount, 0);
 
   const outstandingOf = (id: string) => (allCycles.get(id) ?? []).reduce((s, c) => s + c.outstanding, 0);
@@ -139,6 +144,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     const cycle = (cycleChoice === 'open' ? list.find((c) => c.status === 'open') : list.find((c) => c.key === cycleChoice)) ?? null;
     const outstanding = outstandingOf(a.id);
     const posted = cycle ? cycle.charges - cycle.credits : 0;
+    const planned = cycle?.status === 'open' ? plannedOpenOf(a.id) : 0;
     // A card that has no bill in the chosen month (for example it did not exist yet) contributes nothing. Only a card
     // with no bills at all falls back to the balance the issuer reports.
     let total = list.length === 0 ? a.balance : 0;
@@ -148,9 +154,9 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       // A closed month the issuer published no bill for has no balance estimate: only the open cycle is priced from the balance.
       else if (cycle.status !== 'open') total = posted;
       else if (a.limitGroupId === null) {
-        total = Math.max(a.balance - outstanding - futureOf(a.id), posted);
-        estimated = total !== posted;
-      } else total = posted;
+        total = Math.max(a.balance - outstanding - futureOf(a.id), posted + planned);
+        estimated = total !== posted + planned;
+      } else total = posted + planned;
     }
     return {
       id: a.id,
@@ -165,6 +171,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       cycle,
       total,
       posted,
+      plannedInstallments: planned,
       estimated,
       futureInstallments: futureOf(a.id),
       outstanding,
@@ -179,7 +186,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     const available = first?.availableLimit ?? g.creditLimit - (first?.balance ?? 0);
     const members = g.memberIds.reduce((s, id) => s + outstandingOf(id) + futureOf(id), 0);
     // The open total of a shared limit is never less than what is already posted on its cards.
-    const posted = g.memberIds.reduce((s, id) => s + (rows.find((r) => r.id === id)?.posted ?? 0), 0);
+    const posted = g.memberIds.reduce((s, id) => s + (rows.find((r) => r.id === id)?.posted ?? 0) + (rows.find((r) => r.id === id)?.plannedInstallments ?? 0), 0);
     return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max((first?.balance ?? 0) - members, posted, 0) };
   });
 

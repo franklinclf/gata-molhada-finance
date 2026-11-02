@@ -46,6 +46,39 @@ function InstallmentEditor({ id, d, onSaved }: { id: string; d: NonNullable<Retu
   );
 }
 
+const RECURRENCE_LABEL: Record<string, string> = { subscription: 'assinatura', recurring: 'conta recorrente', none: 'não é recorrente' };
+
+/** Says whether this merchant's charges are a subscription, another recurring charge, or neither. It covers every charge of the merchant. */
+function Recurrence({ d, onSaved }: { d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const r = d.recurrence;
+  const detected = r.detected ? (r.detectedLabel === 'subscription' ? 'o app detectou: assinatura' : 'o app detectou: recorrente') : 'o app não detectou';
+  return (
+    <>
+      <h3>Assinatura ou recorrente</h3>
+      <label class="correct">
+        <Select
+          ariaLabel="Recorrência"
+          value={r.label ?? ''}
+          emptyLabel={`Como o app decide (${detected})`}
+          options={[{ value: 'subscription', label: 'Assinatura (streaming, app, plano)' }, { value: 'recurring', label: 'Conta recorrente (aluguel, internet, mensalidade)' }, { value: 'none', label: 'Não é recorrente' }]}
+          onChange={async (value) => {
+            setError(null);
+            try {
+              await api.markRecurring(r.key, value === '' ? null : (value as 'subscription' | 'recurring' | 'none'));
+              onSaved();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
+            }
+          }}
+        />
+      </label>
+      <div class="muted">Vale para todas as cobranças de “{r.name}”{r.label ? ` (agora: ${RECURRENCE_LABEL[r.label]})` : ''}. Marcada, ela entra no calendário e na previsão desde a primeira cobrança.</div>
+      {error && <div class="error">{error}</div>}
+    </>
+  );
+}
+
 /** Fixes what a source got wrong: whether the charge is pending or posted, and which card bill it belongs to. */
 function Corrections({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
   const [error, setError] = useState<string | null>(null);
@@ -272,6 +305,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
             </dl>
 
             {!manual && <Corrections id={id} d={d} onSaved={detail.reload} />}
+            <Recurrence d={d} onSaved={detail.reload} />
 
             <h3>Categoria</h3>
             <div>

@@ -187,6 +187,12 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
           <dl class="facts inline">
             <dt>Lançado na fatura</dt>
             <dd>{brl(card.posted, hidden)}</dd>
+            {card.plannedInstallments > 0 && (
+              <>
+                <dt>Parcelas desta fatura ainda não listadas</dt>
+                <dd>{brl(card.plannedInstallments, hidden)}</dd>
+              </>
+            )}
             {card.futureInstallments > 0 && (
               <>
                 <dt>Parcelas de faturas futuras</dt>

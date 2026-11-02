@@ -4,6 +4,7 @@ import type { Cents } from '../core/money.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
+import { detectRecurring, recurringKeyOf } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type EffectiveTransaction, type ViewOptions } from './scope.ts';
 import { isNonSpending } from './views.ts';
 import { stamp, type Stamped } from './stamp.ts';
@@ -35,6 +36,8 @@ export interface ExplorerQuery {
   netSpending?: boolean;
   /** Leave out moves between the user's own accounts, as the cash flow view does. */
   hideOwnTransfers?: boolean;
+  /** Only charges of merchants that are recurring (detected or marked by the owner): `subscription`, `recurring` (the other marked or detected ones) or `any`. */
+  recurrence?: 'any' | 'subscription' | 'recurring';
   sort: SortKey;
   limit: number;
   offset: number;
@@ -82,6 +85,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
   // The spending view labels uncategorized money "Sem categoria"; accept that label as well as the empty value.
   const wantedCategories = query.categories?.map((c) => (c === 'Sem categoria' ? '' : c));
   const text = query.q?.trim().toLowerCase();
+  const recurringKeys = query.recurrence ? new Map(detectRecurring(store, now, opts).map((i) => [i.key, i.label])) : null;
   const wanted = (skip?: Dimension) => (t: EffectiveTransaction): boolean => {
     const account = byId.get(t.accountId);
     if (!account) return false;
@@ -102,6 +106,13 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     if (query.spendingOnly && isNonSpending(t)) return false;
     if (query.netSpending && (isNonSpending(t) || (t.amount > 0 && account.kind !== 'credit_card'))) return false;
     if (query.hideOwnTransfers && t.role === 'own_transfer') return false;
+    if (recurringKeys && query.recurrence) {
+      const key = recurringKeyOf(t);
+      if (!recurringKeys.has(key)) return false;
+      const label = recurringKeys.get(key) ?? null;
+      if (query.recurrence === 'subscription' && label !== 'subscription') return false;
+      if (query.recurrence === 'recurring' && label === 'subscription') return false;
+    }
     if (query.cycle !== undefined) {
       const range = cycleRanges[t.accountId];
       if (!range) return false;

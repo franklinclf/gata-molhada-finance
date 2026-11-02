@@ -181,6 +181,8 @@ export const api = {
     request<unknown>(goal.id === undefined ? '/api/goals' : `/api/goals/${goal.id}`, { method: goal.id === undefined ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(goal) }),
   deleteGoal: (id: number) => request<unknown>(`/api/goals/${id}`, { method: 'DELETE' }),
   calendar: (month: string) => request<CalendarView>(`/api/calendar${query({ month })}`),
+  markRecurring: (key: string, label: 'subscription' | 'recurring' | 'none' | null) =>
+    request<{ ok: true }>('/api/recurring/mark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, label }) }),
   ignoreRecurring: (key: string, ignored: boolean) =>
     request<{ ok: true }>('/api/recurring/ignore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, ignored }) }),
   spendingTrend: (months: number) => request<TrendView>(`/api/spending/trend${query({ months })}`),

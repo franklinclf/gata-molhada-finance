@@ -92,7 +92,7 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
               <li key={r.key}>
                 <div class="grow">
                   <div class="clip">
-                    {r.name} {r.kind === 'variable' && <span class="badge muted">valor varia</span>} {r.account === 'card' && <span class="badge muted">no cartão</span>} {r.late && <span class="badge bad">atrasado</span>}
+                    {r.name} {r.label === 'subscription' && <span class="badge info">assinatura</span>} {r.manual && <span class="badge muted">marcada por você</span>} {r.kind === 'variable' && <span class="badge muted">valor varia</span>} {r.account === 'card' && <span class="badge muted">no cartão</span>} {r.late && <span class="badge bad">atrasado</span>}
                   </div>
                   <div class="muted">
                     todo dia {r.dayOfMonth} · {r.occurrences} vezes · próximo {dayMonth(r.nextDay)}
