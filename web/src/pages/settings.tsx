@@ -419,6 +419,8 @@ function AiTab({ hidden }: { hidden: boolean }) {
   const categories = useLoad(() => api.categories(), []);
   const [message, setMessage] = useState<string | null>(null);
   const [choice, setChoice] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState<string | null>(null);
   if (!data) return <Loading error={error} />;
   const run = async (work: () => Promise<unknown>) => {
     setMessage(null);
@@ -430,6 +432,20 @@ function AiTab({ hidden }: { hidden: boolean }) {
     }
   };
   const { job } = data;
+  const runAi = async (scope: 'pending' | 'all') => {
+    if (scope === 'all' && !confirm('Esquecer as respostas da IA (aplicadas, sugeridas e fracas) e perguntar tudo de novo? Isso gasta do orçamento do mês. O que você aceitou ou rejeitou fica.')) return;
+    setBusy(true);
+    setRunning('A IA está trabalhando…');
+    try {
+      const r = await api.runAi({ scope });
+      setRunning(r.asked === 0 && !r.stoppedBy ? 'Nada novo para perguntar.' : `Perguntadas ${r.asked}, aplicadas ${r.applied}, para você decidir ${r.suggested}, custo US$ ${r.costUsd.toFixed(4)}${r.stoppedBy === 'budget' ? ' (parou: orçamento do mês)' : r.stoppedBy === 'error' ? ' (parou: erro do modelo)' : ''}.`);
+      reload();
+    } catch (e) {
+      setRunning(e instanceof ApiError && e.message === 'reauth_required' ? 'Para reanalisar tudo, entre de novo com a senha e o código ou com uma passkey (use "Sair" e entre).' : e instanceof Error ? e.message : 'Não foi possível concluir.');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <>
       <section class="panel">
@@ -455,7 +471,18 @@ function AiTab({ hidden }: { hidden: boolean }) {
           <dd>{data.applied} descrições, com confiança alta</dd>
         </dl>
         <div class="note">
-          O modelo recebe só o texto da descrição, se entrou ou saiu dinheiro e a categoria que a fonte deu, nunca valores, contas nem nomes de bancos. Categorias que você escolher ou regras que você criar sempre valem mais que a IA, e sugestões de confiança média ou baixa só valem depois que você aceita.
+          O modelo recebe o texto da descrição, o sentido (entrou ou saiu), o banco e o tipo da conta, os rótulos da fonte, o código do estabelecimento (MCC), quantas vezes e em quantos meses o texto aparece, uma faixa de valor (nunca o valor), a parcela e a forma (Pix, TED, boleto). Também recebe como você categorizou textos parecidos (até 40) e as respostas que você rejeitou (até 15). Categorias que você escolher ou regras que você criar sempre valem mais que a IA, e sugestões de confiança média ou baixa só valem depois que você aceita.
+        </div>
+        <div class="row-head">
+          <span class="muted">{running ?? 'Roda sob demanda, além da rodada automática a cada 10 minutos.'}</span>
+          <span class="actions">
+            <button class="small" disabled={busy} onClick={() => void runAi('pending')}>
+              Rodar agora
+            </button>
+            <button class="small" disabled={busy} onClick={() => void runAi('all')} title="Esquece as respostas da IA e pergunta tudo de novo. O que você aceitou ou rejeitou fica.">
+              Reanalisar tudo
+            </button>
+          </span>
         </div>
       </section>
       <section class="panel">

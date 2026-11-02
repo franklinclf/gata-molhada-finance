@@ -1,5 +1,6 @@
 import type { TransactionDetail } from '../../src/api/detail.ts';
 import type { Layout, LayoutItem, WidgetId } from '../../src/api/layout.ts';
+import type { AiRunReply } from '../../src/ai/job.ts';
 import type { AiView, Decision, DecisionStatus, Suggestion } from '../../src/api/ai.ts';
 import type { ForecastView } from '../../src/api/forecast.ts';
 import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
@@ -152,6 +153,7 @@ export const api = {
   decisions: (status?: string, q?: string) => request<{ items: Decision[]; counts: Record<DecisionStatus, number> }>(`/api/ai/decisions${query({ status, q })}`),
   decide: (key: string, action: 'accept' | 'reject' | 'reset', category?: string) =>
     request<{ ok: true }>('/api/ai/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, action, category }) }),
+  runAi: (scope: { scope: 'pending' | 'all' } | { scope: 'transaction'; transactionId: string }) => request<AiRunReply>('/api/ai/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scope) }),
   resetDecisions: (statuses: string[] | 'all') => request<{ reset: number }>('/api/ai/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ statuses }) }),
   forecast: () => request<ForecastView>('/api/cards/forecast'),
   accounts: () => request<{ items: AccountItem[] }>('/api/accounts'),

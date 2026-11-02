@@ -421,3 +421,17 @@ test('the bank text and the card text of one payment on the same day are one pay
   store.replaceCanonicalTransactions([tx('start', 'leg', '2026-08-01', -100), tx('buy', 'leg', '2026-09-02', -210157), a, b], links, NOW.toISOString());
   assert.equal(cyclesFor(store, leg, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-09')?.paid, 210157);
 });
+
+test('a bill that closed a day or two ago and is not published yet keeps the open cycle until it is, or until the grace passes', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-oct', accountExternalId: 'ext-am', dueDate: '2026-10-15', closingDate: '2026-10-01', total: 22128, minimumPayment: null }], NOW.toISOString());
+  const am = account('am', { refs: [{ sourceId: 'pluggy', externalId: 'ext-am', role: 'member' }] });
+  store.replaceCanonicalAccounts([am], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('start', 'am', '2026-09-01', -100), tx('buy', 'am', '2026-11-02', -5000)], [], NOW.toISOString());
+  const early = cyclesFor(store, am, effectiveTransactions(store), '2026-11-02');
+  assert.deepEqual(early.map((c) => [c.key, c.status]), [['2026-10', 'overdue'], ['2026-11', 'open']]);
+  assert.equal(early[1]!.charges, 5000, 'a charge after the expected closing still lands in the open cycle');
+  const late = cyclesFor(store, am, effectiveTransactions(store), '2026-11-10');
+  assert.deepEqual(late.map((c) => c.key), ['2026-10', '2026-11', '2026-12']);
+});

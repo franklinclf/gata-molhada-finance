@@ -90,6 +90,8 @@ function billsOf(store: Store, account: CanonicalAccount): BillInfo[] {
 }
 
 const SAME_PAYMENT_DAYS = 3;
+/** Days after an expected closing during which a missing bill is read as "not published yet", not as a closed month. */
+const PUBLISH_GRACE_DAYS = 7;
 
 /**
  * Payments of the card bill. The same payment reported twice on the same day counts once, and so does a pending copy
@@ -154,12 +156,13 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
   const last = bills[bills.length - 1]!;
   let steps = 1;
   let closing = addMonthsToDay(last.closing, steps);
-  while (closing < today) {
+  // The bank publishes a bill a few days after it closes. Until then (or until the grace passes) that month stays the open cycle.
+  while (addDays(closing, PUBLISH_GRACE_DAYS) < today) {
     windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: false });
     steps++;
     closing = addMonthsToDay(last.closing, steps);
   }
-  windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: true });
+  windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing < today ? today : closing, due: addMonthsToDay(last.due, steps), total: null, open: true });
 
   const cycles: Cycle[] = windows.map((w, i) => {
     let charges = 0;
