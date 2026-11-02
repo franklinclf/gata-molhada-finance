@@ -31,6 +31,7 @@ const chrome = findBrowser();
 const SIZES: Record<string, [number, number]> = { desktop: [1440, 1000], laptop: [1024, 768], tablet: [768, 1024], phone: [390, 844] };
 const ROUTES: Array<[string, string, number]> = [
   ['painel', '', 1500],
+  ['painel-calendario-dia', `?__click=${encodeURIComponent('.mini-day[aria-label^="15/"]')}`, 3200],
   ['transacoes', 'transactions', 1300],
   ['gastos', 'spending', 1500],
   ['gastos-tendencia', 'spending?by=trend', 1300],
