@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
-import { api, ApiError } from '../api.ts';
+import { useState } from 'preact/hooks';
+import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { ago, isStale, maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
@@ -18,26 +18,6 @@ export function StatusPage({ now, hidden }: { now: Date; hidden: boolean }) {
   const fresh = useLoad(() => api.freshness(), [], 60_000);
   const findings = useLoad(() => api.findings(), []);
   const ai = useLoad(() => api.ai(), []);
-  const refresh = useLoad(() => api.refreshState(), [], 5_000);
-  const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
-  const running = refresh.data?.running === true;
-  const wasRunning = useRef(false);
-  useEffect(() => {
-    if (wasRunning.current && !running) {
-      fresh.reload();
-      findings.reload();
-    }
-    wasRunning.current = running;
-  }, [running]);
-  const refreshNow = async () => {
-    setRefreshMessage(null);
-    try {
-      await api.refreshNow();
-    } catch (e) {
-      setRefreshMessage(e instanceof ApiError && e.status === 409 ? 'Agora não: o limite de leituras dos bancos ou o intervalo mínimo entre atualizações impede um novo pedido.' : e instanceof Error ? e.message : 'Não foi possível pedir a atualização.');
-    }
-    refresh.reload();
-  };
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const act = async (id: string, work: () => Promise<unknown>) => {
@@ -86,26 +66,10 @@ export function StatusPage({ now, hidden }: { now: Date; hidden: boolean }) {
       <section class="panel">
         <div class="panel-head">
           <h2>Última leitura de cada banco</h2>
-          {refresh.data?.available && refresh.data.result !== 'refused' && (
-            <button class="primary small" disabled={running} onClick={() => void refreshNow()}>
-              {running ? 'Atualizando...' : 'Atualizar agora'}
-            </button>
-          )}
-          {refresh.data?.result === 'refused' && (
-            <a class="primary small" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer noopener">
-              Abrir o Meu Pluggy
-            </a>
-          )}
+          <a class="primary small" href="https://meu.pluggy.ai/connections" target="_blank" rel="noreferrer noopener">
+            Abrir o Meu Pluggy
+          </a>
         </div>
-        {refreshMessage && <div class="error">{refreshMessage}</div>}
-        {!running && refresh.data?.result === 'timeout' && <div class="note">Estes bancos não responderam a tempo e seguem com os dados anteriores: {refresh.data.timedOut?.join(', ')}.</div>}
-        {refresh.data?.result === 'refused' && (
-          <div class="note">
-            O Meu Pluggy não aceita pedido de atualização vindo daqui ({refresh.data.error?.replace('Pluggy refused the refresh ', '')}). Ele lê cada banco sozinho uma vez por dia. Para atualizar já, abra o Meu Pluggy e atualize a conexão; esta tela percebe em até 2 minutos e traz os dados.
-          </div>
-        )}
-        {!running && refresh.data?.result === 'failed' && <div class="error">A atualização falhou: {refresh.data.error}</div>}
-        {!running && refresh.data?.result === 'completed' && <div class="note">Atualização concluída.</div>}
         {!fresh.data ? (
           <Loading error={fresh.error} />
         ) : (
@@ -114,14 +78,18 @@ export function StatusPage({ now, hidden }: { now: Date; hidden: boolean }) {
               <li key={`${s.sourceId}${s.institution}`}>
                 <span class="grow">
                   {s.institution} <span class="muted">({s.sourceId})</span>
+                  {s.nextSyncAt && <div class="muted small">Próxima leitura automática: {s.nextSyncAt.slice(0, 16).replace('T', ' ')} UTC{s.consentExpiresAt ? ` · consentimento até ${s.consentExpiresAt.slice(0, 10)}` : ''}</div>}
                 </span>
                 {s.quotaExhausted && <span class="badge bad">limite do banco atingido</span>}
                 <span class={isStale(s.lastUpdatedAt, now) ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>
+                <a class="small" href={s.link} target="_blank" rel="noreferrer noopener" title="Abre a conexão no Meu Pluggy, onde dá para atualizar agora">
+                  Atualizar
+                </a>
               </li>
             ))}
           </ul>
         )}
-        <div class="note">As horas são de quando o Meu Pluggy leu cada banco, o que ele faz sozinho uma vez por dia. Com o aviso do Meu Pluggy (webhook) ligado, os dados novos entram em segundos e o app confere por garantia a cada 30 minutos. Sem ele, a conferência é a cada 2 minutos. Nos dois casos nada é pedido aos bancos.</div>
+        <div class="note">As horas são de quando o Meu Pluggy leu cada banco, o que ele faz sozinho uma vez por dia; o app não consegue pedir uma leitura nova, então "Atualizar" abre a conexão no Meu Pluggy. Com o aviso do Meu Pluggy (webhook) ligado, os dados novos entram em segundos e o app confere por garantia a cada 30 minutos. Sem ele, a conferência é a cada 2 minutos. Nos dois casos nada é pedido aos bancos.</div>
       </section>
       <section class="panel">
         <h2>Leituras do mês por banco</h2>

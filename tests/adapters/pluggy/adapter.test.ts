@@ -50,7 +50,7 @@ test('fetchAccounts returns normalized accounts and one freshness entry per item
     ['acc-card-1', 'credit_card', 'Bank A'],
   ]);
   assert.deepEqual(freshness, [
-    { sourceId: 'pluggy', institution: 'Bank A', lastUpdatedAt: '2026-10-26T14:53:55.112Z', observedAt: '2026-10-26T15:00:00.000Z' },
+    { sourceId: 'pluggy', institution: 'Bank A', lastUpdatedAt: '2026-10-26T14:53:55.112Z', observedAt: '2026-10-26T15:00:00.000Z', consentExpiresAt: null, nextSyncAt: null },
   ]);
 });
 
@@ -167,7 +167,7 @@ test('fetchFreshness reads only the items and records nothing', async () => {
   const { http, snapshots, adapter } = build();
   const freshness = await adapter.fetchFreshness();
   assert.deepEqual(freshness, [
-    { sourceId: 'pluggy', institution: 'Bank A', lastUpdatedAt: '2026-10-26T14:53:55.112Z', observedAt: '2026-10-26T15:00:00.000Z' },
+    { sourceId: 'pluggy', institution: 'Bank A', lastUpdatedAt: '2026-10-26T14:53:55.112Z', observedAt: '2026-10-26T15:00:00.000Z', consentExpiresAt: null, nextSyncAt: null },
   ]);
   assert.equal(http.calls.filter((c) => c.method === 'GET').length, 1);
   assert.deepEqual(snapshots, []);

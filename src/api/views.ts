@@ -357,23 +357,47 @@ export function dataHealth(store: Store, now: Date): HealthIssue[] {
     if (row.creditLimit !== null && row.outstanding > row.creditLimit) issues.push({ id: `owed-${row.id}`, message: `As faturas em aberto do cartão ${row.institution}${row.last4 ? ` ${row.last4}` : ''} somam mais que o limite dele. Confira se os pagamentos estão sendo reconhecidos.` });
   }
   if (view.totals.outstanding > view.totals.creditLimit && view.totals.creditLimit > 0) issues.push({ id: 'owed-total', message: 'O total de faturas fechadas e não pagas passa do limite somado dos cartões. Isso indica pagamentos não reconhecidos.' });
+  // A consent that ends makes the provider return empty reads without an error, so the owner is told ahead of time.
+  for (const f of store.listFreshness()) {
+    if (!f.consentExpiresAt) continue;
+    const days = Math.floor((Date.parse(f.consentExpiresAt) - now.getTime()) / 86_400_000);
+    if (days > CONSENT_WARNING_DAYS) continue;
+    issues.push({ id: `consent-${f.institution}`, message: days < 0 ? `O consentimento de ${f.institution} venceu. Os dados dele deixaram de ser lidos até você renovar no Meu Pluggy.` : `O consentimento de ${f.institution} vence em ${days === 0 ? 'menos de 1 dia' : `${days} dia${days === 1 ? '' : 's'}`}. Renove no Meu Pluggy antes disso, senão os dados dele deixam de chegar.` });
+  }
   return issues;
 }
+
+/** How long before a consent ends the owner is warned. */
+const CONSENT_WARNING_DAYS = 30;
 
 export interface FreshnessView {
   generatedAt: string;
   health: HealthIssue[];
-  sources: Array<{ sourceId: string; institution: string; lastUpdatedAt: string; observedAt: string; quotaExhausted: boolean }>;
+  sources: Array<{ sourceId: string; institution: string; lastUpdatedAt: string; observedAt: string; quotaExhausted: boolean; consentExpiresAt: string | null; nextSyncAt: string | null; /** The page of this connection at Meu Pluggy, where the owner can update it. */ link: string }>;
   /** Connections the provider said need the owner (login expired, consent to renew). */
   connectionAlerts: Array<{ institution: string; event: string; code: string | null; message: string | null; at: string }>;
   quota: ReturnType<typeof quotaReport>;
+}
+
+export const MEU_PLUGGY_CONNECTIONS = 'https://meu.pluggy.ai/connections';
+export const MEU_PLUGGY_LINKS_KEY = 'meupluggy_links';
+
+/** The owner's page for each connection at Meu Pluggy, by institution. Only pages of meu.pluggy.ai are kept. */
+export function meuPluggyLinks(store: Store): Record<string, string> {
+  try {
+    const parsed: unknown = JSON.parse(store.getSetting(MEU_PLUGGY_LINKS_KEY) ?? '{}');
+    if (typeof parsed !== 'object' || parsed === null) return {};
+    return Object.fromEntries(Object.entries(parsed).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1].startsWith('https://meu.pluggy.ai/')));
+  } catch {
+    return {};
+  }
 }
 
 export function freshness(store: Store, now: Date): FreshnessView {
   return {
     generatedAt: now.toISOString(),
     health: dataHealth(store, now),
-    sources: store.listFreshness().map((f) => ({ sourceId: f.sourceId, institution: f.institution, lastUpdatedAt: f.lastUpdatedAt, observedAt: f.observedAt, quotaExhausted: f.quotaExhausted === true })),
+    sources: store.listFreshness().map((f) => ({ sourceId: f.sourceId, institution: f.institution, lastUpdatedAt: f.lastUpdatedAt, observedAt: f.observedAt, quotaExhausted: f.quotaExhausted === true, consentExpiresAt: f.consentExpiresAt ?? null, nextSyncAt: f.nextSyncAt ?? null, link: meuPluggyLinks(store)[f.institution] ?? MEU_PLUGGY_CONNECTIONS })),
     connectionAlerts: Object.values(readAlerts(store)).sort((a, b) => a.institution.localeCompare(b.institution)),
     quota: quotaReport(store, now),
   };

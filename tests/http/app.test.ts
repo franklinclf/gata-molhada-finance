@@ -204,26 +204,6 @@ function signedIn() {
   return { deps, cookie: cookieOf(login.headers['Set-Cookie']) };
 }
 
-test('the refresh route needs a session, reports whether it is available, and 503s a start when there is no refresher', () => {
-  const { deps, cookie } = signedIn();
-  assert.equal(handle(get('/api/refresh'), deps).status, 401);
-  const state = handle(get('/api/refresh', { cookie }), deps);
-  assert.equal(state.status, 200);
-  assert.deepEqual(JSON.parse(state.body as string), { available: false });
-  assert.equal(handle(post('/api/refresh', {}, { cookie }), deps).status, 503);
-  assert.equal(handle({ ...get('/api/refresh', { cookie }), method: 'DELETE' }, deps).status, 405);
-});
-
-test('a started refresh answers 202, and a blocked one 409 with its reasons', () => {
-  const { deps, cookie } = signedIn();
-  const blocked = { ...deps, refresher: { state: () => ({ running: false, startedAt: null, finishedAt: null, result: null, timedOut: [], error: null }), start: () => ({ started: false as const, reasons: ['too soon'] }) } };
-  const response = handle(post('/api/refresh', {}, { cookie }), blocked);
-  assert.equal(response.status, 409);
-  assert.deepEqual(JSON.parse(response.body as string).reasons, ['too soon']);
-  const ok = { ...deps, refresher: { ...blocked.refresher, start: () => ({ started: true as const }) } };
-  assert.equal(handle(post('/api/refresh', {}, { cookie }), ok).status, 202);
-});
-
 test('the chat conversation list, the card bills and the bill check are served to a session', () => {
   const { deps, cookie } = signedIn();
   assert.equal(handle(get('/api/chat/conversations'), deps).status, 401);

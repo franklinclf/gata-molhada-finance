@@ -9,7 +9,6 @@ import type { AiRunReply, AiRunScope } from '../ai/job.ts';
 import { decide, validSignature, type DeployHook } from './deploy-hook.ts';
 import { parsePluggyEvent, tokenMatches, type PluggyHook } from './pluggy-hook.ts';
 import type { Resetter } from '../sync/reset.ts';
-import type { Refresher } from '../scheduler/web-refresh.ts';
 import { route, type RouteResult, type RouterDeps } from './router.ts';
 
 export interface AppRequest {
@@ -25,8 +24,6 @@ export interface AppDeps extends RouterDeps {
   auth: AuthService;
   /** Send the session cookie only over HTTPS. Turn off for local development over plain HTTP. */
   secureCookies: boolean;
-  /** Asks the sources to sync now. Absent when no source can refresh on demand. */
-  refresher?: Refresher;
   /** Builds an encrypted copy of the database. Absent when backups are not available. */
   backup?: (passphrase: string) => Buffer;
   /** Lets GitHub tell the app that a new image was published. Absent (and the route answers 404) when no secret is set. */
@@ -223,14 +220,6 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
 
     // ---------- security: passkeys and trusted devices ----------
     if (pathname.startsWith('/api/auth/')) return done(securityRoute(request, deps, token, info.deviceId));
-
-    if (pathname === '/api/refresh') {
-      if (method === 'GET') return done(json(200, { available: deps.refresher !== undefined, ...(deps.refresher?.state() ?? {}) }));
-      if (method !== 'POST') return done(notAllowed('GET, POST'));
-      if (!deps.refresher) return done(json(503, { error: 'unavailable' }));
-      const started = deps.refresher.start();
-      return done(started.started ? json(202, { started: true }) : json(409, { error: 'blocked', reasons: started.reasons }));
-    }
 
     if (pathname === '/api/reset') {
       if (method === 'GET') return done(json(200, { available: deps.resetter !== undefined, ...(deps.resetter?.state() ?? {}) }));

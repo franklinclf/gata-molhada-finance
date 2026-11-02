@@ -46,6 +46,8 @@ interface FreshnessRow {
   last_updated_at: string;
   observed_at: string;
   quota_exhausted: number;
+  consent_expires_at: string | null;
+  next_sync_at: string | null;
 }
 
 interface RefreshRow {
@@ -99,14 +101,16 @@ interface SourceTransactionRow {
   currency: string | null;
   foreign_amount: number | null;
   foreign_converted: number | null;
+  bill_id: string | null;
+  bill_forecast: string | null;
   first_seen_at: string;
   last_seen_at: string;
 }
 
 function partiesOfRow(r: SourceTransactionRow): { parties?: Parties } {
-  if (r.operation === null && r.mcc === null && r.payer_hash === null && r.payer_name === null && r.receiver_hash === null && r.receiver_name === null && r.currency === null) return {};
+  if (r.operation === null && r.mcc === null && r.payer_hash === null && r.payer_name === null && r.receiver_hash === null && r.receiver_name === null && r.currency === null && r.bill_id === null && r.bill_forecast === null) return {};
   const side = (name: string | null, hash: string | null, last4: string | null, kind: string | null): Party | null => (name === null && hash === null ? null : { name, hash, last4, kind: kind === 'person' || kind === 'company' ? kind : null });
-  return { parties: { operation: r.operation, mcc: r.mcc, payer: side(r.payer_name, r.payer_hash, r.payer_last4, r.payer_kind), receiver: side(r.receiver_name, r.receiver_hash, r.receiver_last4, r.receiver_kind), foreign: r.currency !== null && r.foreign_amount !== null ? { currency: r.currency, amount: r.foreign_amount, converted: r.foreign_converted === 1 } : null } };
+  return { parties: { operation: r.operation, mcc: r.mcc, payer: side(r.payer_name, r.payer_hash, r.payer_last4, r.payer_kind), receiver: side(r.receiver_name, r.receiver_hash, r.receiver_last4, r.receiver_kind), foreign: r.currency !== null && r.foreign_amount !== null ? { currency: r.currency, amount: r.foreign_amount, converted: r.foreign_converted === 1 } : null, billId: r.bill_id, billForecast: r.bill_forecast } };
 }
 
 interface SourceBillRow {
@@ -242,10 +246,11 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       const previous = row?.last_updated_at ?? null;
       inTransaction(() => {
         db.prepare(
-          `INSERT INTO freshness (source_id, institution, last_updated_at, observed_at, quota_exhausted) VALUES (?, ?, ?, ?, ?)
+          `INSERT INTO freshness (source_id, institution, last_updated_at, observed_at, quota_exhausted, consent_expires_at, next_sync_at) VALUES (?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (source_id, institution) DO UPDATE SET
-             last_updated_at = excluded.last_updated_at, observed_at = excluded.observed_at, quota_exhausted = excluded.quota_exhausted`,
-        ).run(f.sourceId, f.institution, f.lastUpdatedAt, f.observedAt, f.quotaExhausted ? 1 : 0);
+             last_updated_at = excluded.last_updated_at, observed_at = excluded.observed_at, quota_exhausted = excluded.quota_exhausted,
+             consent_expires_at = excluded.consent_expires_at, next_sync_at = excluded.next_sync_at`,
+        ).run(f.sourceId, f.institution, f.lastUpdatedAt, f.observedAt, f.quotaExhausted ? 1 : 0, f.consentExpiresAt ?? null, f.nextSyncAt ?? null);
         db.prepare(
           `INSERT OR IGNORE INTO quota_events (source_id, institution_key, last_updated_at, observed_at, month) VALUES (?, ?, ?, ?, ?)`,
         ).run(f.sourceId, institutionKey(f.institution), f.lastUpdatedAt, f.observedAt, localMonth(f.lastUpdatedAt));
@@ -299,6 +304,8 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         lastUpdatedAt: r.last_updated_at,
         observedAt: r.observed_at,
         ...(r.quota_exhausted === 1 ? { quotaExhausted: true } : {}),
+        consentExpiresAt: r.consent_expires_at,
+        nextSyncAt: r.next_sync_at,
       }));
     },
 
@@ -327,8 +334,8 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       const statement = db.prepare(
         `INSERT INTO source_transactions (source_id, external_id, account_external_id, occurred_at, amount, description,
            description_raw, status, installment_number, installment_total, category, first_seen_at, last_seen_at,
-           operation, mcc, payer_hash, payer_last4, payer_name, receiver_hash, receiver_last4, receiver_name, payer_kind, receiver_kind, currency, foreign_amount, foreign_converted)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           operation, mcc, payer_hash, payer_last4, payer_name, receiver_hash, receiver_last4, receiver_name, payer_kind, receiver_kind, currency, foreign_amount, foreign_converted, bill_id, bill_forecast)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (source_id, external_id) DO UPDATE SET
            account_external_id = excluded.account_external_id, occurred_at = excluded.occurred_at,
            amount = excluded.amount, description = excluded.description, description_raw = excluded.description_raw,
@@ -340,7 +347,8 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
            payer_name = COALESCE(excluded.payer_name, payer_name), receiver_hash = COALESCE(excluded.receiver_hash, receiver_hash),
            receiver_last4 = COALESCE(excluded.receiver_last4, receiver_last4), receiver_name = COALESCE(excluded.receiver_name, receiver_name),
            payer_kind = COALESCE(excluded.payer_kind, payer_kind), receiver_kind = COALESCE(excluded.receiver_kind, receiver_kind),
-           currency = excluded.currency, foreign_amount = excluded.foreign_amount, foreign_converted = excluded.foreign_converted`,
+           currency = excluded.currency, foreign_amount = excluded.foreign_amount, foreign_converted = excluded.foreign_converted,
+           bill_id = COALESCE(excluded.bill_id, bill_id), bill_forecast = COALESCE(excluded.bill_forecast, bill_forecast)`,
       );
       inTransaction(() => {
         for (const t of transactions) {
@@ -348,7 +356,7 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
           statement.run(sourceId, t.externalId, t.accountExternalId, t.occurredAt, t.amount, t.description,
             t.descriptionRaw, t.status, t.installment?.number ?? null, t.installment?.total ?? null, t.category,
             seenAt, seenAt, p?.operation ?? null, p?.mcc ?? null, p?.payer?.hash ?? null, p?.payer?.last4 ?? null,
-            p?.payer?.name ?? null, p?.receiver?.hash ?? null, p?.receiver?.last4 ?? null, p?.receiver?.name ?? null, p?.payer?.kind ?? null, p?.receiver?.kind ?? null, p?.foreign?.currency ?? null, p?.foreign?.amount ?? null, p?.foreign ? (p.foreign.converted ? 1 : 0) : null);
+            p?.payer?.name ?? null, p?.receiver?.hash ?? null, p?.receiver?.last4 ?? null, p?.receiver?.name ?? null, p?.payer?.kind ?? null, p?.receiver?.kind ?? null, p?.foreign?.currency ?? null, p?.foreign?.amount ?? null, p?.foreign ? (p.foreign.converted ? 1 : 0) : null, p?.billId ?? null, p?.billForecast ?? null);
         }
       });
     },
@@ -419,9 +427,9 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setSourceTransactionParties(sourceId: SourceId, externalId: string, parties: Parties): void {
       db.prepare(
         `UPDATE source_transactions SET operation = ?, mcc = ?, payer_hash = ?, payer_last4 = ?, payer_name = ?,
-           receiver_hash = ?, receiver_last4 = ?, receiver_name = ?, payer_kind = ?, receiver_kind = ?, currency = ?, foreign_amount = ?, foreign_converted = ? WHERE source_id = ? AND external_id = ?`,
+           receiver_hash = ?, receiver_last4 = ?, receiver_name = ?, payer_kind = ?, receiver_kind = ?, currency = ?, foreign_amount = ?, foreign_converted = ?, bill_id = ?, bill_forecast = ? WHERE source_id = ? AND external_id = ?`,
       ).run(parties.operation, parties.mcc, parties.payer?.hash ?? null, parties.payer?.last4 ?? null, parties.payer?.name ?? null,
-        parties.receiver?.hash ?? null, parties.receiver?.last4 ?? null, parties.receiver?.name ?? null, parties.payer?.kind ?? null, parties.receiver?.kind ?? null, parties.foreign?.currency ?? null, parties.foreign?.amount ?? null, parties.foreign ? (parties.foreign.converted ? 1 : 0) : null, sourceId, externalId);
+        parties.receiver?.hash ?? null, parties.receiver?.last4 ?? null, parties.receiver?.name ?? null, parties.payer?.kind ?? null, parties.receiver?.kind ?? null, parties.foreign?.currency ?? null, parties.foreign?.amount ?? null, parties.foreign ? (parties.foreign.converted ? 1 : 0) : null, parties.billId ?? null, parties.billForecast ?? null, sourceId, externalId);
     },
 
     listSnapshots(sourceId: SourceId, endpointPrefix: string): Snapshot[] {

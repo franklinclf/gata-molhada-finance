@@ -127,11 +127,11 @@ function Corrections({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType
         </label>
         {d.cycleOptions.length > 0 && (
           <label>
-            <span class="muted">Fatura{d.cycleByUser ? ' (movida por você)' : ''}</span>
+            <span class="muted">Fatura{d.cycleByUser ? ' (movida por você)' : d.cycleByBank ? ' (definida pelo banco)' : ''}</span>
             <Select
               ariaLabel="Fatura da compra"
               value={d.cycleByUser && d.cycle ? d.cycle.key : ''}
-              emptyLabel="Pela data da compra"
+              emptyLabel={d.cycleByBank ? 'Como o banco diz' : 'Pela data da compra'}
               options={d.cycleOptions.map((c) => ({ value: c.key, label: cycleLabel(c) }))}
               onChange={(value) => void save(() => api.setCycle(id, value === '' ? null : value))}
             />

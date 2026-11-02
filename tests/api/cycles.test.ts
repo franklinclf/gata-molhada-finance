@@ -435,3 +435,29 @@ test('a bill that closed a day or two ago and is not published yet keeps the ope
   const late = cyclesFor(store, am, effectiveTransactions(store), '2026-11-10');
   assert.deepEqual(late.map((c) => c.key), ['2026-10', '2026-11', '2026-12']);
 });
+
+test('a charge goes on the bill the issuer put it on, by id or by forecast, not by the day it was made', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills(
+    'pluggy',
+    [
+      { externalId: 'b-sep', accountExternalId: 'ext-bk', dueDate: '2026-09-15', closingDate: '2026-09-08', total: 10000, minimumPayment: null },
+      { externalId: 'b-oct', accountExternalId: 'ext-bk', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 5000, minimumPayment: null },
+    ],
+    NOW.toISOString(),
+  );
+  const bk = account('bk', { refs: [{ sourceId: 'pluggy', externalId: 'ext-bk', role: 'member' }] });
+  const src = (externalId: string, parties: { billId?: string; billForecast?: string }) => ({ externalId, accountExternalId: 'ext-bk', occurredAt: '2026-09-08T15:00:00Z', amount: -1000, description: externalId, descriptionRaw: null, status: 'posted' as const, installment: null, category: null, parties: { operation: null, mcc: null, payer: null, receiver: null, ...parties } });
+  store.upsertSourceTransactions('pluggy', [src('on-closing-day', { billId: 'b-oct' }), src('by-date', {}), src('forecast', { billForecast: '2026-11' })], NOW.toISOString());
+  const list = [tx('start', 'bk', '2026-08-01', -100), tx('on-closing-day', 'bk', '2026-09-08', -1000), tx('by-date', 'bk', '2026-09-08', -1000), tx('forecast', 'bk', '2026-09-08', -1000)];
+  store.replaceCanonicalAccounts([bk], [], NOW.toISOString());
+  store.replaceCanonicalTransactions(list, ['on-closing-day', 'by-date', 'forecast'].map((id) => ({ sourceId: 'pluggy', externalId: id, transactionId: id, matchPass: 0 })), NOW.toISOString());
+  const cycles = cyclesFor(store, bk, effectiveTransactions(store), '2026-10-27');
+  const sep = cycles.find((c) => c.key === '2026-09')!;
+  const oct = cycles.find((c) => c.key === '2026-10')!;
+  const open = cycles.find((c) => c.status === 'open')!;
+  assert.deepEqual([sep.charges, oct.charges, open.key, open.charges], [1000, 1000, '2026-11', 1000], 'the id puts one on October, the forecast puts one on the open November bill, and only the third follows its date');
+  const byBank = effectiveTransactions(store).filter((t) => t.billByBank).map((t) => t.id).sort();
+  assert.deepEqual(byBank, ['forecast', 'on-closing-day']);
+});

@@ -61,7 +61,8 @@ export function partiesOf(r: Record<string, unknown>) {
   const data = typeof r.paymentData === 'object' && r.paymentData !== null ? (r.paymentData as Record<string, unknown>) : {};
   const card = typeof r.creditCardMetadata === 'object' && r.creditCardMetadata !== null ? (r.creditCardMetadata as Record<string, unknown>) : {};
   const mcc = card.payeeMCC;
-  return partiesFrom({ operation: optString(r, 'operationType'), mcc: typeof mcc === 'string' || typeof mcc === 'number' ? String(mcc) : null, payer: partyOf(data.payer), receiver: partyOf(data.receiver), foreign: chargedAmount(r).foreign });
+  const forecast = card.billForecastDate;
+  return partiesFrom({ operation: optString(r, 'operationType'), mcc: typeof mcc === 'string' || typeof mcc === 'number' ? String(mcc) : null, payer: partyOf(data.payer), receiver: partyOf(data.receiver), foreign: chargedAmount(r).foreign, billId: typeof card.billId === 'string' && card.billId !== '' ? card.billId : null, billForecast: typeof forecast === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(forecast) ? forecast : null });
 }
 
 export function normalizeTransaction(raw: unknown, kind: AccountKind): SourceTransaction {

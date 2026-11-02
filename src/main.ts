@@ -21,7 +21,6 @@ import { fetchHttpClient, retryingClient } from './core/http.ts';
 import { observedSources } from './scheduler/defaults.ts';
 import { formatObserverEvent } from './scheduler/events.ts';
 import { Observer } from './scheduler/observer.ts';
-import { createRefresher } from './scheduler/web-refresh.ts';
 import { createResetter } from './sync/reset.ts';
 import { reconcileAfterSync } from './scheduler/reconcile-after-sync.ts';
 import { openSqliteStore } from './store/sqlite-store.ts';
@@ -62,7 +61,6 @@ const adapters = buildAdapters(loadAdapterEnv(process.env), { store, http: retry
 const retired = store.retireSourcesExcept(adapters.map((a) => a.id));
 if (retired.length > 0) console.log(`retired sources, kept as saved history: ${retired.join(', ')}`);
 const refreshAdapter = adapters.find((a) => a.capabilities.refreshOnDemand);
-const refresher = refreshAdapter ? createRefresher({ store, adapter: refreshAdapter }) : undefined;
 const aiOn = (): boolean => aiConfig.enabled && aiConfig.apiKey !== null;
 const resetter = refreshAdapter
   ? createResetter({
@@ -129,7 +127,7 @@ const pluggyHook = pluggySecret
     }
   : undefined;
 const categorize = aiConfig.enabled && aiConfig.apiKey ? (scope: AiRunScope) => runCategorizerNow(store, aiConfig, () => new Date(), scope).finally(() => void refreshKeyUsage(store, aiConfig.apiKey!, new Date())) : undefined;
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, resetter, backup, deployHook, pluggyHook, analyst, categorize, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, resetter, backup, deployHook, pluggyHook, analyst, categorize, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {
