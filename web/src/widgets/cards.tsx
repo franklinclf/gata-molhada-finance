@@ -78,7 +78,7 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
                   <Meter fraction={c.creditLimit ? 1 - (c.availableLimit ?? c.creditLimit - c.balance) / c.creditLimit : 0} tip="Limite usado" />
                   <div class="muted">
                     {c.cycle ? <StatusBadge status={c.cycle.status} /> : null} {c.nextDueDate ? `vence ${dayMonth(c.nextDueDate)}` : ''}
-                    {c.cycle?.adjusted ? ' · ajustada' : ''}
+                    {c.cycle?.adjusted ? (c.cycle.adjusted.by === 'auto' ? ' · sobra rolou' : ' · ajustada') : ''}
                   </div>
                 </div>
                 <strong>{brl(c.total, hidden)}</strong>

@@ -170,15 +170,15 @@ test('a leftover on an old bill is written off when every later bill was paid in
   ];
   store.replaceCanonicalTransactions(txs, [], NOW.toISOString());
   const find = () => cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-06')!;
-  assert.deepEqual([find().status, find().outstanding, find().adjusted], ['paid', 0, { amount: 3000, by: 'auto' }]);
+  assert.deepEqual([find().status, find().outstanding, find().adjusted], ['rolled', 0, { amount: 3000, by: 'auto' }]);
 
   store.setCycleOverride('card1', '2026-06', false, NOW.toISOString());
   assert.deepEqual([find().status, find().outstanding, find().adjusted], ['overdue', 3000, null]);
 
   store.setCycleOverride('card1', '2026-06', true, NOW.toISOString());
-  assert.equal(find().adjusted?.by, 'manual');
+  assert.deepEqual([find().adjusted?.by, find().status], ['manual', 'paid'], 'the owner calling it settled is a payment; the app\'s guess is not');
   store.setCycleOverride('card1', '2026-06', null, NOW.toISOString());
-  assert.equal(find().adjusted?.by, 'auto');
+  assert.deepEqual([find().adjusted?.by, find().status], ['auto', 'rolled']);
 });
 
 test('a leftover is not written off when a later bill is also unpaid, when it is large, or when it is recent', () => {
