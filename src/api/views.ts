@@ -110,10 +110,10 @@ export interface CardsView extends Stamped {
   cycle: string;
   /** Due months that exist for at least one card, newest first. */
   cycles: string[];
-  totals: { cycleTotal: Cents; outstanding: Cents; futureInstallments: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
+  totals: { cycleTotal: Cents; /** Part of cycleTotal the issuer's balance implies but no listed charge explains (shared limits only). */ unexplained: Cents; outstanding: Cents; futureInstallments: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
   cards: CardRow[];
   /** Cards that share one limit appear here once, so the limit is not counted twice. */
-  limitGroups: Array<{ id: string; institution: string; creditLimit: Cents; used: Cents; available: Cents; cardIds: string[]; openEstimate: Cents }>;
+  limitGroups: Array<{ id: string; institution: string; creditLimit: Cents; used: Cents; available: Cents; cardIds: string[]; openEstimate: Cents; unexplained: Cents }>;
 }
 
 export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoice = 'open'): CardsView {
@@ -187,11 +187,12 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     const members = g.memberIds.reduce((s, id) => s + outstandingOf(id) + futureOf(id), 0);
     // The open total of a shared limit is never less than what is already posted on its cards.
     const posted = g.memberIds.reduce((s, id) => s + (rows.find((r) => r.id === id)?.posted ?? 0) + (rows.find((r) => r.id === id)?.plannedInstallments ?? 0), 0);
-    return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max((first?.balance ?? 0) - members, posted, 0) };
+    return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max((first?.balance ?? 0) - members, posted, 0), unexplained: Math.max((first?.balance ?? 0) - members - posted, 0) };
   });
 
   // A shared limit reports one balance for all its cards, so in the open cycle the group counts once.
   let cycleTotal = 0;
+  let unexplained = 0;
   const countedGroups = new Set<string>();
   for (const row of rows) {
     const gid = groupOf.get(row.id);
@@ -199,6 +200,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       if (countedGroups.has(gid)) continue;
       countedGroups.add(gid);
       cycleTotal += limitGroups.find((g) => g.id === gid)?.openEstimate ?? 0;
+      unexplained += limitGroups.find((g) => g.id === gid)?.unexplained ?? 0;
     } else cycleTotal += row.total;
   }
   const summary = summarizeAccounts(accounts);
@@ -212,6 +214,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     cycles: [...months].sort().reverse(),
     totals: {
       cycleTotal,
+      unexplained,
       outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
       futureInstallments: rows.reduce((s, r) => s + r.futureInstallments, 0),
       reportedByIssuer: summary.cardOwed,
