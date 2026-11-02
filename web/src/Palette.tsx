@@ -76,7 +76,7 @@ export function Palette({ hidden }: { hidden: boolean }) {
     { label: 'Nova transação', words: 'adicionar criar digitar lancamento', run: go(() => navigate('transactions', { new: '1' })) },
     { label: 'Perguntar ao analista', words: 'ia chat pergunta', run: go(() => navigate('chat')) },
     { label: 'Fazer backup', words: 'baixar exportar dados', run: go(() => navigate('settings', { tab: 'data' })) },
-    { label: 'Atualizar as fontes agora', words: 'sincronizar pluggy atualizar', run: go(() => navigate('status')) },
+    { label: 'Abrir o Meu Pluggy para atualizar', words: 'sincronizar pluggy atualizar', run: go(() => void window.open('https://meu.pluggy.ai/connections', '_blank', 'noopener,noreferrer')) },
   ];
   const q = fold(text.trim());
   const matches = q === '' ? actions.slice(0, 8) : actions.filter((a) => q.split(' ').every((w) => fold(`${a.label} ${a.words}`).includes(w))).slice(0, 8);

@@ -104,7 +104,9 @@ flowchart TD
   S --> A["Atribuição de compras"]
   P --> A
   A -->|"escolha do dono (billCycle)"| X["Conta no ciclo escolhido"]
-  A -->|"padrão"| Y["Conta pelo dia da compra"]
+  A -->|"o banco informou (billId ou billForecastDate)"| X2["Conta na fatura do banco"]
+  A -->|"sem nada disso"| Y["Conta pelo dia da compra"]
+  X2 --> CMP
   X --> CMP["Conferir: total do banco x soma do ciclo"]
   Y --> CMP
   CMP -->|"1 a 3 compras a até 6 dias do fechamento<br/>somam a diferença"| MV["Sugere mover"]

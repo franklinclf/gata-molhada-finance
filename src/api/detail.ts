@@ -40,6 +40,8 @@ export interface TransactionDetail {
   cycleOptions: Array<{ key: string; from: string; to: string; dueDate: string; status: string }>;
   /** The owner moved the charge to this bill, or set its status by hand. */
   cycleByUser: boolean;
+  /** The issuer placed the charge on this bill (its id, or the month it expects), so the date does not decide. */
+  cycleByBank: boolean;
   statusByUser: boolean;
   findings: StoredFinding[];
   /** The category rule that applies to this description, if there is one. */
@@ -122,7 +124,8 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
     cycle,
     recurrence: recurrenceOf(store, transaction, now),
     cycleOptions,
-    cycleByUser: transaction.billCycle !== null,
+    cycleByUser: transaction.billCycle !== null && !transaction.billByBank,
+    cycleByBank: transaction.billByBank,
     statusByUser: transaction.statusByUser,
     findings: store.listFindings({ includeResolved: false }).filter((f) => f.transactionId === id),
     rule: rule !== undefined ? { category: rule } : null,

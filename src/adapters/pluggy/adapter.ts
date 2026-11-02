@@ -42,6 +42,12 @@ function hasQuotaWarning(item: Record<string, unknown>): boolean {
   });
 }
 
+/** An ISO instant from a response, or null when it is missing or not a date. */
+function instantOrNull(value: unknown): string | null {
+  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) return null;
+  return new Date(value).toISOString();
+}
+
 /** Pluggy answered every refresh request with an error status, so nothing was asked of the banks. */
 export class RefreshRefusedError extends Error {
   readonly refused: Array<{ label: string; status: number }>;
@@ -128,6 +134,8 @@ export class PluggyAdapter implements SourceAdapter {
       lastUpdatedAt: reqIsoInstant(body, 'lastUpdatedAt', 'pluggy.item'),
       observedAt,
       ...(hasQuotaWarning(body) ? { quotaExhausted: true } : {}),
+      consentExpiresAt: instantOrNull(body.consentExpiresAt),
+      nextSyncAt: instantOrNull(body.nextAutoSyncAt),
     };
   }
 

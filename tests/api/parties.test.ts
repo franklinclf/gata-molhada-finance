@@ -123,3 +123,12 @@ test('records saved with the foreign number are corrected once from the raw answ
   assert.deepEqual(store.listSourceTransactions('pluggy').map((t) => [t.externalId, t.amount, t.parties?.foreign?.currency ?? null]), [['brl', -5000, null], ['e1', -6085, 'EUR']]);
   assert.equal(backfillForeignAmounts(store, NOW), 0, 'it runs once');
 });
+
+test('the bill the issuer put a card charge on is read, as an id once billed and as a due month while pending', () => {
+  const base = { accountId: 'acc', description: 'Shop', amount: 10, date: '2026-10-20T12:00:00Z' };
+  const billed = pierre({ ...base, id: 'b1', status: 'POSTED', creditCardMetadata: { billId: 'bill-9', billForecastDate: '2026-11' } }, 'credit_card');
+  assert.deepEqual([billed.parties?.billId, billed.parties?.billForecast], ['bill-9', '2026-11']);
+  const pending = pierre({ ...base, id: 'b2', status: 'PENDING', creditCardMetadata: { billForecastDate: '2026-11' } }, 'credit_card');
+  assert.deepEqual([pending.parties?.billId, pending.parties?.billForecast], [null, '2026-11']);
+  assert.equal(pierre({ ...base, id: 'b3', status: 'PENDING', creditCardMetadata: { billForecastDate: 'soon' } }, 'credit_card').parties, undefined);
+});

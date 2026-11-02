@@ -19,6 +19,10 @@ export interface Parties {
   receiver: Party | null;
   /** The original amount of a purchase made in another currency. */
   foreign?: ForeignAmount | null;
+  /** The card bill the issuer put the charge on (its id), once it is on one. */
+  billId?: string | null;
+  /** The due month (YYYY-MM) of the bill the issuer expects the charge to land on. */
+  billForecast?: string | null;
 }
 
 /** What a purchase in another currency cost in that currency. */
@@ -43,6 +47,6 @@ export function partyFrom(name: string | null, document: string | null, type: st
 }
 
 /** Parties from the fields a source sends, or undefined when it sent none (so records without them stay as they were). */
-export function partiesFrom(input: { operation: string | null; mcc: string | null; payer: Party | null; receiver: Party | null; foreign?: ForeignAmount | null }): Parties | undefined {
-  return input.operation === null && input.mcc === null && input.payer === null && input.receiver === null && !input.foreign ? undefined : input;
+export function partiesFrom(input: { operation: string | null; mcc: string | null; payer: Party | null; receiver: Party | null; foreign?: ForeignAmount | null; billId?: string | null; billForecast?: string | null }): Parties | undefined {
+  return input.operation === null && input.mcc === null && input.payer === null && input.receiver === null && !input.foreign && !input.billId && !input.billForecast ? undefined : input;
 }

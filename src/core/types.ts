@@ -15,6 +15,10 @@ export interface Freshness {
   observedAt: string;
   /** True when the source reports that the bank refused further reads this month. Omitted otherwise. */
   quotaExhausted?: boolean;
+  /** When the owner's consent for this institution ends (ISO 8601 UTC), if the source says. */
+  consentExpiresAt?: string | null;
+  /** When the source will read this institution next (ISO 8601 UTC), if it says. */
+  nextSyncAt?: string | null;
 }
 
 export interface SourceAccount {

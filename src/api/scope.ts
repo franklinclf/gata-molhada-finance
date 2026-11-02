@@ -35,8 +35,10 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   foreign: ForeignAmount | null;
   /** The standard name shown on screen ("Pix enviado · Maria", "Pagamento de fatura", "Uber"). `description` stays what the bank wrote. */
   title: string;
-  /** Card bill (due month, YYYY-MM) the owner moved the transaction to; null when it follows its date. */
+  /** Card bill (due month, YYYY-MM) the transaction belongs to when it is not simply the one its date falls in: the owner moved it, or the issuer placed it. */
   billCycle: string | null;
+  /** `billCycle` comes from the issuer (the bill id or its forecast), not from the owner. */
+  billByBank: boolean;
   /** The owner set the status by hand. */
   statusByUser: boolean;
 }
@@ -108,6 +110,11 @@ export function visibleLimitGroups(store: Store, accounts: CanonicalAccount[]): 
     .filter((g) => g.memberIds.length > 0);
 }
 
+/** The bill (due month) the issuer put a charge on: its bill when it has one, otherwise the month it expects. Null when it said nothing. */
+function bankBillOf(parties: Parties | undefined, billMonth: Map<string, string>): string | null {
+  return (parties?.billId ? billMonth.get(parties.billId) : undefined) ?? parties?.billForecast ?? null;
+}
+
 export function effectiveTransactions(
   store: Store,
   options: ViewOptions & { accountId?: string; includeExcluded?: boolean } = {},
@@ -120,6 +127,8 @@ export function effectiveTransactions(
   const installmentOverrides = store.listInstallmentOverrides();
   const txOverrides = store.listTransactionOverrides();
   const aliases = store.listCategoryAliases();
+  const billMonth = new Map<string, string>();
+  for (const sourceId of store.listSourceIds()) for (const b of store.listSourceBills(sourceId)) billMonth.set(b.externalId, b.dueDate.slice(0, 7));
   // A set-aside pending entry the owner called posted is brought back, so it must be loaded even when excluded ones are not wanted.
   const loaded = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: true });
   const all = options.includeExcluded ? loaded : loaded.filter((t) => !t.excluded || (t.state === 'stale_pending' && txOverrides.get(t.id)?.status === 'posted'));
@@ -167,9 +176,11 @@ export function effectiveTransactions(
       if (category !== null && !ROLE_CATEGORY_NAMES.has(category)) category = resolveAlias(aliases, category);
       // The owner's word about the status wins over the source's. Calling a set-aside pending entry posted brings it back into the totals.
       const word = txOverrides.get(t.id);
+      // A payment of the bill carries the id of the bill it pays; it stays with its date.
+      const bankBill = role === 'card_payment' ? null : bankBillOf(parties, billMonth);
       const status = word?.status ?? t.status;
       const revived = word?.status === 'posted' && t.state === 'stale_pending';
-      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, billCycle: word?.cycleKey ?? null, statusByUser: word?.status != null, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
+      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, billCycle: word?.cycleKey ?? bankBill, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
     });
 }
 
@@ -197,7 +208,7 @@ function sourceFacts(store: Store): { labels: Map<string, string[]>; parties: Ma
     if (record.label) labels.set(l.transactionId, [...(labels.get(l.transactionId) ?? []), record.label]);
     if (record.parties) {
       const have = parties.get(l.transactionId);
-      parties.set(l.transactionId, have ? { operation: have.operation ?? record.parties.operation, mcc: have.mcc ?? record.parties.mcc, payer: have.payer ?? record.parties.payer, receiver: have.receiver ?? record.parties.receiver, foreign: have.foreign ?? record.parties.foreign ?? null } : record.parties);
+      parties.set(l.transactionId, have ? { operation: have.operation ?? record.parties.operation, mcc: have.mcc ?? record.parties.mcc, payer: have.payer ?? record.parties.payer, receiver: have.receiver ?? record.parties.receiver, foreign: have.foreign ?? record.parties.foreign ?? null, billId: have.billId ?? record.parties.billId ?? null, billForecast: have.billForecast ?? record.parties.billForecast ?? null } : record.parties);
     }
   }
   return { labels, parties };
