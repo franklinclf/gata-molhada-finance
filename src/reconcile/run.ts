@@ -70,6 +70,7 @@ export function runReconciliation(store: Store, options: RunOptions & { staleDay
     now: now(),
     staleDays: options.staleDays,
     dataStart,
+    billsAfterStart: new Set(store.listSourceIds().flatMap((id) => store.listSourceBills(id)).filter((b) => b.dueDate >= dataStart).map((b) => b.externalId)),
     manual: store.listManualMapping(),
   });
   // What the owner typed in is added after the sources are matched. It has no source record, so no link.
