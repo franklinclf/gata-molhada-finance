@@ -281,6 +281,11 @@ export interface Store {
   listCategoryRules(): Map<string, string>;
   setCategoryRule(matchKey: string, category: string | null, now: string): void;
   /** The user's choices of group per category. An empty parent means no group. */
+  /** Categories the owner renamed or merged: old name to new name. */
+  listCategoryAliases(): Map<string, string>;
+  setCategoryAlias(from: string, to: string | null, now: string): void;
+  /** Moves the budgets of a category to its new name (a budget the new name already has is kept). */
+  renameBudgetCategory(from: string, to: string): void;
   listCategoryParents(): Map<string, string>;
   /** Sets the group of a category; null forgets the choice and goes back to the default. */
   setCategoryParent(category: string, parent: string | null, now: string): void;

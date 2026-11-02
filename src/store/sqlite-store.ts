@@ -760,6 +760,22 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       else db.prepare('INSERT INTO category_rules (match_key, category, updated_at) VALUES (?, ?, ?) ON CONFLICT(match_key) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at').run(matchKey, category, now);
     },
 
+    listCategoryAliases(): Map<string, string> {
+      return new Map((db.prepare('SELECT from_name, to_name FROM category_aliases').all() as Array<{ from_name: string; to_name: string }>).map((r) => [r.from_name, r.to_name]));
+    },
+
+    setCategoryAlias(from: string, to: string | null, now: string): void {
+      if (to === null) db.prepare('DELETE FROM category_aliases WHERE from_name = ?').run(from);
+      else db.prepare('INSERT INTO category_aliases (from_name, to_name, updated_at) VALUES (?, ?, ?) ON CONFLICT (from_name) DO UPDATE SET to_name = excluded.to_name, updated_at = excluded.updated_at').run(from, to, now);
+    },
+
+    renameBudgetCategory(from: string, to: string): void {
+      inTransaction(() => {
+        db.prepare("UPDATE OR IGNORE budgets SET name = ? WHERE scope = 'category' AND name = ?").run(to, from);
+        db.prepare("DELETE FROM budgets WHERE scope = 'category' AND name = ?").run(from);
+      });
+    },
+
     listCategoryParents(): Map<string, string> {
       return new Map((db.prepare('SELECT category, parent FROM category_parents').all() as Array<{ category: string; parent: string }>).map((r) => [r.category, r.parent]));
     },

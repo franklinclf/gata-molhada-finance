@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { transactionDetail } from '../../src/api/detail.ts';
 import { explore, type ExplorerQuery } from '../../src/api/explorer.ts';
-import { addCategory, listCategories, removeCategory, setAccountHidden, setCategoryParent, setTransactionCategory } from '../../src/api/mutations.ts';
+import { addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import * as views from '../../src/api/views.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -245,4 +245,36 @@ test('net spending matches the spending view: no roles, no bank money in', () =>
   assert.ok(all.items.some((t) => t.id === 'salary'));
   assert.equal(net.items.some((t) => t.id === 'salary'), false);
   assert.ok(net.items.some((t) => t.id === 'rent'));
+});
+
+test('renaming a category, built-in or not, shows the new name everywhere, keeps its group, and can be undone', () => {
+  const store = seeded();
+  assert.deepEqual(renameCategory(store, 'Supermercado', 'Mercado', NOW), { ok: true });
+  const names = listCategories(store).map((c) => c.name);
+  assert.ok(names.includes('Mercado') && !names.includes('Supermercado'));
+  assert.equal(listCategories(store).find((c) => c.name === 'Mercado')?.count, 2);
+  assert.equal(listCategories(store).find((c) => c.name === 'Mercado')?.parent, 'Alimentação', 'the new name takes the old name\'s group');
+  assert.deepEqual(explore(store, { ...base, categories: ['Mercado'] }, NOW).items.map((t) => t.category), ['Mercado', 'Mercado']);
+  assert.deepEqual(undoRename(store, 'Supermercado'), { ok: true });
+  assert.ok(listCategories(store).some((c) => c.name === 'Supermercado' && c.count === 2));
+});
+
+test('renaming to a name that already exists merges the two, and names that mean a role or loop back are refused', () => {
+  const store = seeded();
+  assert.deepEqual(renameCategory(store, 'Aluguel do mês', 'Supermercado', NOW), { ok: true });
+  assert.equal(listCategories(store).find((c) => c.name === 'Supermercado')?.count, 3, 'the 2 market charges and the rent one');
+  assert.equal((renameCategory(store, 'Supermercado', 'Aluguel do mês', NOW) as { status: number }).status, 400, 'merging back into its own source would loop');
+  assert.equal((renameCategory(store, 'Compras', 'Supermercado', NOW) as { status: number }).status, 400, 'Compras is the name of a group');
+  assert.equal((renameCategory(store, 'Supermercado', 'Pagamento de fatura', NOW) as { status: number }).status, 400);
+  assert.equal((renameCategory(store, 'Pagamento de fatura', 'Faturas', NOW) as { status: number }).status, 400);
+  assert.equal((renameCategory(store, 'Supermercado', 'Alimentação', NOW) as { status: number }).status, 400, 'a group name cannot be a category');
+  assert.equal((renameCategory(store, 'Nada disso', 'Outra', NOW) as { status: number }).status, 404);
+  assert.equal((renameCategory(store, 'Supermercado', 'Supermercado', NOW) as { status: number }).status, 400);
+});
+
+test('the budget of a renamed category follows it', () => {
+  const store = seeded();
+  store.setBudget('category', 'Supermercado', '2026-10', 100000, true, NOW.toISOString());
+  renameCategory(store, 'Supermercado', 'Mercado', NOW);
+  assert.deepEqual(store.listBudgets().map((b) => [b.scope, b.name]), [['category', 'Mercado']]);
 });

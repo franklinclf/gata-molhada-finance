@@ -17,7 +17,7 @@ import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rul
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck } from './bill-check.ts';
-import { addCategory, dismissSuggestion, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, renameCategory, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -437,11 +437,24 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
     }
     case 'categories': {
       if (parts.length === 2) {
-        if (method === 'GET') return { status: 200, body: { items: listCategories(store), rules: [...store.listCategoryRules()].map(([match, category]) => ({ match, category })) } };
+        if (method === 'GET') return { status: 200, body: { items: listCategories(store), rules: [...store.listCategoryRules()].map(([match, category]) => ({ match, category })), aliases: [...store.listCategoryAliases()].map(([from, to]) => ({ from, to })) } };
         if (method !== 'POST') return methodNotAllowed();
         const input = parseBody(body);
         if (!input) return badRequest('body must be { name }');
         return fromMutation(addCategory(store, input.name, now));
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'rename') {
+        let name: string;
+        try {
+          name = decodeURIComponent(id);
+        } catch {
+          return badRequest('bad category name');
+        }
+        if (method === 'DELETE') return fromMutation(undoRename(store, name));
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { to }');
+        return fromMutation(renameCategory(store, name, input.to, now));
       }
       if (parts.length === 4 && id !== undefined && sub === 'parent') {
         if (method !== 'PUT') return methodNotAllowed();
