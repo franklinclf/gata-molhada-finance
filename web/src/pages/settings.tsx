@@ -56,6 +56,8 @@ function AccountsTab({ hidden }: { hidden: boolean }) {
 function CategoriesTab({ hidden }: { hidden: boolean }) {
   const { data, error, reload } = useLoad(() => api.categories(), []);
   const [name, setName] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [newName, setNewName] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   if (!data) return <Loading error={error} />;
   const groups = [...new Set(data.items.map((c) => c.parent).filter((g): g is string => g !== null))].sort();
@@ -93,10 +95,32 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
       {c.custom && <span class="badge info">sua</span>}
       <span class="muted">{c.count} transações</span>
       <span>{brl(c.amount, hidden)}</span>
+      <button class="link" onClick={() => { setEditing(editing === c.name ? null : c.name); setNewName(c.name); }}>
+        Renomear
+      </button>
       {c.custom && (
         <button class="link" onClick={() => void run(() => api.deleteCategory(c.name))}>
           Excluir
         </button>
+      )}
+      {editing === c.name && (
+        <form
+          class="recat"
+          style="flex-basis: 100%"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              await api.renameCategory(c.name, newName);
+              setEditing(null);
+            });
+          }}
+        >
+          <input list="category-names" aria-label={`Novo nome de ${c.name}`} value={newName} maxLength={60} onInput={(e) => setNewName((e.currentTarget as HTMLInputElement).value)} />
+          <button class="primary" disabled={newName.trim() === '' || newName.trim() === c.name}>
+            {data.items.some((x) => x.name === newName.trim()) ? 'Juntar nessa' : 'Renomear'}
+          </button>
+          <span class="muted">Escolher o nome de outra categoria junta as duas.</span>
+        </form>
       )}
     </li>
   );
@@ -154,6 +178,28 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
           <ul class="rows">{[...byGroup.get(group)!].sort((a, b) => b.amount - a.amount).map(row)}</ul>
         </section>
       ))}
+      <datalist id="category-names">
+        {data.items.map((x) => (
+          <option key={x.name} value={x.name} />
+        ))}
+      </datalist>
+      {data.aliases.length > 0 && (
+        <section class="panel">
+          <h2>Renomeadas ({data.aliases.length})</h2>
+          <ul class="rows">
+            {data.aliases.map((a) => (
+              <li key={a.from}>
+                <span class="grow clip">
+                  {a.from} agora aparece como {a.to}
+                </span>
+                <button class="link" onClick={() => void run(() => api.undoRenameCategory(a.from))}>
+                  Desfazer
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {unused.length > 0 && (
         <details class="panel">
           <summary>Sem transações ({unused.length})</summary>

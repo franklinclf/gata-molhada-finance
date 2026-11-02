@@ -3,7 +3,7 @@ import { runReconciliation } from '../reconcile/run.ts';
 import type { Store } from '../store/store.ts';
 import { isManualId, manualNumber } from './manual.ts';
 import { categoryParents } from './category-groups.ts';
-import { effectiveTransactions, ruleKey } from './scope.ts';
+import { effectiveTransactions, resolveAlias, ruleKey } from './scope.ts';
 
 export type MutationResult = { ok: true } | { ok: false; status: number; error: string };
 
@@ -74,7 +74,47 @@ export function listCategories(store: Store): CategoryRow[] {
   }
   for (const name of custom) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: true, builtin: false, fromSource: false, amount: 0, parent: parents.get(name) ?? null });
   for (const name of CATEGORY_NAMES) if (!rows.has(name)) rows.set(name, { name, count: 0, custom: false, builtin: true, fromSource: false, amount: 0, parent: parents.get(name) ?? null });
-  return [...rows.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  // A category renamed or merged into another no longer exists under its old name.
+  const aliases = store.listCategoryAliases();
+  return [...rows.values()].filter((r) => !aliases.has(r.name)).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+const FIXED_NAMES = new Set(['Pagamento de fatura', 'Transferência entre minhas contas', 'Investimentos']);
+
+/**
+ * Renames a category, or merges it into another one when the new name already exists. Built-in, custom and source
+ * categories can all be renamed: the old name is replaced by the new one on every transaction, rule, budget and group,
+ * and "Desfazer" brings it back. The three that mean a role (card payment, move between your accounts, investment) keep their names.
+ */
+export function renameCategory(store: Store, from: unknown, to: unknown, now: Date): MutationResult {
+  const oldName = cleanCategoryName(from);
+  const newName = cleanCategoryName(to);
+  if (oldName === null || newName === null) return { ok: false, status: 400, error: `names must be text of 1 to ${MAX_NAME} characters` };
+  if (oldName === newName) return { ok: false, status: 400, error: 'the new name is the same' };
+  const listed = listCategories(store);
+  if (!listed.some((c) => c.name === oldName)) return { ok: false, status: 404, error: 'not_found' };
+  if (FIXED_NAMES.has(oldName) || FIXED_NAMES.has(newName)) return { ok: false, status: 400, error: 'this name means card payment, move between your accounts or investment, and stays as it is' };
+  const parents = categoryParents(store);
+  if ([...parents.values()].includes(oldName) || [...parents.values()].includes(newName)) return { ok: false, status: 400, error: 'this name is a group that holds other categories' };
+  if (resolveAlias(store.listCategoryAliases(), newName) === oldName) return { ok: false, status: 400, error: 'that would make a loop' };
+  const at = now.toISOString();
+  const target = resolveAlias(store.listCategoryAliases(), newName);
+  if (!listed.some((c) => c.name === target)) store.addCustomCategory(target, at);
+  store.setCategoryAlias(oldName, target, at);
+  // The new name keeps the group the old one was in, unless it already has its own.
+  const parent = parents.get(oldName);
+  if (parent && !parents.has(target)) store.setCategoryParent(target, parent, at);
+  store.renameBudgetCategory(oldName, target);
+  if (store.listCustomCategories().includes(oldName)) store.deleteCustomCategory(oldName);
+  return { ok: true };
+}
+
+/** Brings back a category that was renamed or merged: its old name shows again. */
+export function undoRename(store: Store, from: unknown): MutationResult {
+  const name = cleanCategoryName(from);
+  if (name === null || !store.listCategoryAliases().has(name)) return { ok: false, status: 404, error: 'not_found' };
+  store.setCategoryAlias(name, null, new Date().toISOString());
+  return { ok: true };
 }
 
 export function addCategory(store: Store, name: unknown, now: Date): MutationResult {
