@@ -36,5 +36,6 @@ test('bank charges are named the same way, and a shop keeps its cleaned name', (
   assert.equal(titleOf(t({ description: 'MULTA CONTRATUAL DE ATRAS' })), 'Multa por atraso');
   assert.equal(titleOf(t({ description: 'ESTORNO AUTOMATICO MULTA', amount: 443 })), 'Estorno de multa');
   assert.equal(titleOf(t({ description: 'DL*UberRidesSao PauloBRA' })), 'Uber');
+  assert.equal(titleOf(t({ description: 'Lucro', amount: 236 })), 'Rendimento');
   assert.equal(titleOf(t({ description: 'IFD*PIZZARIA DO ZE' })), 'iFood');
 });
