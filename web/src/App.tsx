@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api, setUnauthorizedHandler } from './api.ts';
 import { Dashboard } from './Dashboard.tsx';
 import { TransactionDrawer } from './Drawer.tsx';
@@ -40,7 +40,7 @@ const MORE: Array<[string, string]> = [
   ['settings', 'Ajustes'],
 ];
 
-/** The sections kept in the top bar of a wide screen; the others sit under "Mais". */
+/** Every section of the top bar of a wide screen, in order. Those that do not fit the width move under "Mais". */
 const NAV: Array<[string, string]> = [
   ['', 'Painel'],
   ['transactions', 'Transações'],
@@ -49,8 +49,6 @@ const NAV: Array<[string, string]> = [
   ['budgets', 'Orçamento'],
   ['accounts', 'Contas'],
   ['chat', 'Analista'],
-];
-const NAV_MORE: Array<[string, string]> = [
   ['networth', 'Patrimônio'],
   ['goals', 'Metas'],
   ['calendar', 'Calendário'],
@@ -58,6 +56,39 @@ const NAV_MORE: Array<[string, string]> = [
   ['status', 'Fontes e conferência'],
   ['settings', 'Ajustes'],
 ];
+
+const NAV_GAP = 4;
+
+/** How many of the top bar links fit in the bar's width. `all` means no "Mais" button is needed. */
+function useFittingCount(total: number) {
+  const bar = useRef<HTMLElement>(null);
+  const probe = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(total);
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (!bar.current || !probe.current) return;
+      const available = bar.current.clientWidth;
+      const kids = [...probe.current.children] as HTMLElement[];
+      const more = kids.pop()?.offsetWidth ?? 0;
+      const widths = kids.map((k) => k.offsetWidth);
+      const all = widths.reduce((s, w) => s + w + NAV_GAP, 0) - NAV_GAP;
+      if (available <= 0 || all <= available) return setFit(total);
+      let used = more;
+      let count = 0;
+      for (const w of widths) {
+        if (used + NAV_GAP + w > available) break;
+        used += NAV_GAP + w;
+        count++;
+      }
+      setFit(count);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (bar.current) observer.observe(bar.current);
+    return () => observer.disconnect();
+  }, [total]);
+  return { bar, probe, fit };
+}
 
 export function App() {
   const [phase, setPhase] = useState<Phase>('checking');
@@ -67,6 +98,7 @@ export function App() {
   const [more, setMore] = useState(false);
   const [menu, setMenu] = useState(false);
   const route = useRoute();
+  const { bar, probe, fit } = useFittingCount(NAV.length);
 
   useEffect(() => {
     setUnauthorizedHandler(() => setPhase('out'));
@@ -151,26 +183,36 @@ export function App() {
   return (
     <>
       <header class="topbar">
-        <h1>Gata Molhada</h1>
-        <nav aria-label="Seções">
-          {NAV.map(([id, label]) => (
+        <h1>
+          <a class="brand" href={hrefFor('')}>Gata Molhada</a>
+        </h1>
+        <nav aria-label="Seções" ref={bar}>
+          {NAV.slice(0, fit).map(([id, label]) => (
             <a key={id} class={route.page === id ? 'navlink on' : 'navlink'} href={hrefFor(id)}>
               {label}
             </a>
           ))}
-          <div class="nav-more">
-            <button class={NAV_MORE.some(([id]) => id === route.page) ? 'navlink on' : 'navlink'} aria-expanded={menu} onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>
-              Mais ▾
-            </button>
-            {menu && (
-              <div class="nav-menu" role="menu">
-                {NAV_MORE.map(([id, label]) => (
-                  <a key={id} role="menuitem" class={route.page === id ? 'navlink on' : 'navlink'} href={hrefFor(id)} onClick={() => setMenu(false)}>
-                    {label}
-                  </a>
-                ))}
-              </div>
-            )}
+          {fit < NAV.length && (
+            <div class="nav-more">
+              <button class={NAV.slice(fit).some(([id]) => id === route.page) ? 'navlink on' : 'navlink'} aria-expanded={menu} onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>
+                Mais ▾
+              </button>
+              {menu && (
+                <div class="nav-menu" role="menu">
+                  {NAV.slice(fit).map(([id, label]) => (
+                    <a key={id} role="menuitem" class={route.page === id ? 'navlink on' : 'navlink'} href={hrefFor(id)} onClick={() => setMenu(false)}>
+                      {label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <div class="nav-probe" ref={probe} aria-hidden="true">
+            {NAV.map(([id, label]) => (
+              <span key={id} class="navlink">{label}</span>
+            ))}
+            <span class="navlink">Mais ▾</span>
           </div>
         </nav>
         <div class="topbar-actions">
