@@ -5,6 +5,7 @@ import { localDay } from '../core/time.ts';
 import type { ForeignAmount, Parties } from '../core/parties.ts';
 import { categoryForMcc } from './mcc.ts';
 import { categoryFromRules, sortRules, type RuleSubject } from './rules-engine.ts';
+import { titleOf } from '../core/title.ts';
 import { merchantOf } from '../core/merchant.ts';
 import { counterpartyOf, evidenceRole, ownerNames, roleOf, slipBillPayments, type Role } from './roles.ts';
 import type { Store } from '../store/store.ts';
@@ -32,6 +33,8 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   operation: string | null;
   /** The original amount of a purchase made in another currency (the transaction amount is in reais). */
   foreign: ForeignAmount | null;
+  /** The standard name shown on screen ("Pix enviado · Maria", "Pagamento de fatura", "Uber"). `description` stays what the bank wrote. */
+  title: string;
   /** Card bill (due month, YYYY-MM) the owner moved the transaction to; null when it follows its date. */
   billCycle: string | null;
   /** The owner set the status by hand. */
@@ -152,7 +155,7 @@ export function effectiveTransactions(
       const word = txOverrides.get(t.id);
       const status = word?.status ?? t.status;
       const revived = word?.status === 'posted' && t.state === 'stale_pending';
-      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, billCycle: word?.cycleKey ?? null, statusByUser: word?.status != null };
+      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, billCycle: word?.cycleKey ?? null, statusByUser: word?.status != null, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
     });
 }
 
