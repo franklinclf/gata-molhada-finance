@@ -88,6 +88,7 @@ export function StatusBadge({ status }: { status: string }) {
   const labels: Record<string, [string, string]> = {
     open: ['Em aberto', 'info'],
     paid: ['Paga', 'good'],
+    rolled: ['Sobra rolou', 'warn'],
     partial: ['Paga em parte', 'warn'],
     unpaid: ['A pagar', 'warn'],
     overdue: ['Vencida', 'bad'],

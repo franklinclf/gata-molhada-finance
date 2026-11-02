@@ -172,10 +172,16 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
               <StatusBadge status={c.status} />
               {c.adjusted && (
                 <div class="muted">
-                  {brl(c.adjusted.amount, hidden)} da fatura não foi cobrado
-                  {c.adjusted.by === 'auto' ? ' (ajuste automático: as faturas seguintes foram pagas por inteiro)' : ' (você marcou como quitada)'}{' '}
+                  {c.adjusted.by === 'auto'
+                    ? `${brl(c.adjusted.amount, hidden)} desta fatura não foi pago e provavelmente rolou para a fatura seguinte (o banco soma o que sobrou no próximo extrato, com juros), que foi paga por inteiro. Não conto de novo como devido.`
+                    : `${brl(c.adjusted.amount, hidden)} da fatura não foi cobrado (você marcou como quitada)`}{' '}
+                  {c.adjusted.by === 'auto' && (
+                    <button class="link" onClick={() => void settle(c.key, true)}>
+                      Marcar como quitada
+                    </button>
+                  )}{' '}
                   <button class="link" onClick={() => void settle(c.key, c.adjusted?.by === 'auto' ? false : null)}>
-                    {c.adjusted.by === 'auto' ? 'Não está certo' : 'Desfazer'}
+                    {c.adjusted.by === 'auto' ? 'Ainda devo' : 'Desfazer'}
                   </button>
                 </div>
               )}
@@ -252,7 +258,7 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
       ) : (
         <div class="muted">Este cartão não tem fatura com esse vencimento.</div>
       )}
-      {c?.adjusted && <div class="note">{brl(c.adjusted.amount, hidden)} desta fatura não foi cobrado, então ela conta como paga{c.adjusted.by === 'auto' ? ' (ajuste automático)' : ''}.</div>}
+      {c?.adjusted && <div class="note">{c.adjusted.by === 'auto' ? `${brl(c.adjusted.amount, hidden)} desta fatura não foi pago e provavelmente rolou para a fatura seguinte; não conta de novo como devido.` : `${brl(c.adjusted.amount, hidden)} desta fatura não foi cobrado, então ela conta como paga.`}</div>}
       {card.outstanding > 0 && <div class="badge warn">Fatura fechada em aberto: {brl(card.outstanding, hidden)} · vence {card.nextDueDate ? fullDay(card.nextDueDate) : ''}</div>}
       {card.creditLimit !== null && (
         <>

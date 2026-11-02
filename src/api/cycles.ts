@@ -7,7 +7,8 @@ import { sourcePriority } from '../reconcile/run.ts';
 import type { Store, StoredSourceBill } from '../store/store.ts';
 import type { EffectiveTransaction } from './scope.ts';
 
-export type CycleStatus = 'open' | 'paid' | 'partial' | 'unpaid' | 'overdue' | 'empty' | 'unknown';
+/** rolled: part of the bill was not paid and every later bill was paid in full, so the rest most likely rolled over into the next bill. */
+export type CycleStatus = 'open' | 'paid' | 'rolled' | 'partial' | 'unpaid' | 'overdue' | 'empty' | 'unknown';
 
 /** One billing cycle of one card: from the day after the previous closing to the closing day. */
 export interface Cycle {
@@ -29,8 +30,9 @@ export interface Cycle {
   outstanding: Cents;
   status: CycleStatus;
   /**
-   * Set when a leftover on a closed bill was written off: the issuer's total included something that was never
-   * charged (for example a purchase "under review" that dropped out). `by` says who decided.
+   * A leftover on a closed bill that is not counted as owed. `by: 'auto'`: the app guesses it rolled over into the next
+   * bill (the bank adds the unpaid part to the following statement), so counting it again would be a double count; the
+   * status is `rolled`, not `paid`. `by: 'manual'`: the owner called it settled, and the status is `paid`.
    */
   adjusted: { amount: Cents; by: 'auto' | 'manual' } | null;
 }
@@ -211,13 +213,14 @@ function settleLeftovers(store: Store, accountId: string, cycles: Cycle[], today
     let by: 'auto' | 'manual' | null = null;
     if (word === true) by = 'manual';
     else if (word === undefined) {
-      const later = cycles.slice(i + 1).filter((x) => x.billTotal !== null && x.status !== 'open' && x.status !== 'unknown' && x.status !== 'empty');
+      const later = cycles.slice(i + 1).filter((x) => x.billTotal !== null && x.status !== 'open' && x.status !== 'unknown' && x.status !== 'empty' && x.status !== 'rolled');
       if (c.dueDate < addDays(today, -WRITE_OFF_AFTER_DAYS) && c.outstanding <= c.billTotal * WRITE_OFF_MAX_SHARE && later.length >= 1 && later.every((x) => x.outstanding <= TOLERANCE)) by = 'auto';
     }
     if (by !== null) {
       c.adjusted = { amount: c.outstanding, by };
       c.outstanding = 0;
-      c.status = 'paid';
+      // A guess is not a payment: the leftover most likely rolled into the next bill, and the screens say so.
+      c.status = by === 'auto' ? 'rolled' : 'paid';
     }
   }
   return cycles;

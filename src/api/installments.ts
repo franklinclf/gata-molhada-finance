@@ -79,7 +79,7 @@ const monthIndex = (key: string) => Number(key.slice(0, 4)) * 12 + Number(key.sl
 function statusOf(cycle: Cycle | undefined): InstallmentStatus {
   if (!cycle) return 'paid';
   if (cycle.status === 'open') return 'open';
-  if (cycle.status === 'paid' || cycle.status === 'unknown' || cycle.status === 'empty') return 'paid';
+  if (cycle.status === 'paid' || cycle.status === 'rolled' || cycle.status === 'unknown' || cycle.status === 'empty') return 'paid';
   return 'billed';
 }
 
