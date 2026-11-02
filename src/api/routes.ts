@@ -17,7 +17,7 @@ import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rul
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck } from './bill-check.ts';
-import { addCategory, dismissSuggestion, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -367,6 +367,11 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (parts.length === 4 && id !== undefined && sub === 'candidates') {
         if (method !== 'GET') return methodNotAllowed();
         const candidates = joinCandidates(store, id);
+        return candidates ? { status: 200, body: { items: candidates } } : { status: 404, body: { error: 'not_found' } };
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'duplicates') {
+        if (method !== 'GET') return methodNotAllowed();
+        const candidates = duplicateCandidates(store, id);
         return candidates ? { status: 200, body: { items: candidates } } : { status: 404, body: { error: 'not_found' } };
       }
       if (parts.length === 4 && id !== undefined && sub === 'merge') {

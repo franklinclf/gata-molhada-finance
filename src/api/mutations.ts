@@ -189,6 +189,8 @@ export function dismissSuggestion(store: Store, findingId: string, now: Date): M
 
 export interface Candidate {
   id: string;
+  /** The standard name shown on screen. */
+  title: string;
   occurredAt: string;
   amount: number;
   description: string;
@@ -209,6 +211,7 @@ export function joinCandidates(store: Store, id: string): Candidate[] | null {
     .filter((t) => t.id !== id && t.accountId === target.accountId && t.state !== 'ignored' && !t.sourceIds.some((s) => target.sourceIds.includes(s)))
     .map((t) => ({
       id: t.id,
+      title: t.title,
       occurredAt: t.occurredAt,
       amount: t.amount,
       description: t.description,
@@ -219,6 +222,34 @@ export function joinCandidates(store: Store, id: string): Candidate[] | null {
     }))
     .filter((c) => c.daysApart <= 10)
     .sort((a, b) => (a.amount === target.amount ? 0 : 1) - (b.amount === target.amount ? 0 : 1) || a.daysApart - b.daysApart || Math.abs(a.amount - target.amount) - Math.abs(b.amount - target.amount))
+    .slice(0, 12);
+}
+
+/**
+ * Transactions on the same account with exactly the same amount within five days, from any source, that this one could be a
+ * copy of (the bank's pending debit and its posted twin, two texts for one card payment). Saying "this is the copy" is
+ * "ignore this one": it leaves the totals and the other one stays.
+ */
+export function duplicateCandidates(store: Store, id: string): Candidate[] | null {
+  const all = effectiveTransactions(store, { includeHidden: true, includeExcluded: true });
+  const target = all.find((t) => t.id === id);
+  if (!target) return null;
+  const day = 86_400_000;
+  return all
+    .filter((t) => t.id !== id && t.accountId === target.accountId && t.state !== 'ignored' && t.amount === target.amount)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      occurredAt: t.occurredAt,
+      amount: t.amount,
+      description: t.description,
+      status: t.status,
+      category: t.category,
+      sourceIds: t.sourceIds,
+      daysApart: Math.round(Math.abs(new Date(t.occurredAt).getTime() - new Date(target.occurredAt).getTime()) / day),
+    }))
+    .filter((c) => c.daysApart <= 5)
+    .sort((a, b) => a.daysApart - b.daysApart)
     .slice(0, 12);
 }
 

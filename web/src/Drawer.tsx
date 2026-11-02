@@ -126,9 +126,11 @@ function Corrections({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType
 
 function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onChange: (closes: boolean) => void }) {
   const [picking, setPicking] = useState(false);
+  const [dupes, setDupes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const candidates = useLoad(() => (picking ? api.candidates(id) : Promise.resolve(null)), [picking, id]);
+  const duplicates = useLoad(() => (dupes ? api.duplicates(id) : Promise.resolve(null)), [dupes, id]);
   // Joining or separating rebuilds the transaction under a new id, so the panel closes instead of showing a stale one.
   const run = async (work: () => Promise<unknown>, closes = false) => {
     setBusy(true);
@@ -136,6 +138,7 @@ function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: 
     try {
       await work();
       setPicking(false);
+      setDupes(false);
       onChange(closes);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Não foi possível concluir.');
@@ -161,10 +164,44 @@ function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: 
             {picking ? 'Cancelar' : 'Juntar com outra transação'}
           </button>
         )}
+        {!ignored && (
+          <button class="link" disabled={busy} onClick={() => setDupes(!dupes)}>
+            {dupes ? 'Cancelar' : 'É cópia de outra transação'}
+          </button>
+        )}
         <button class="link" disabled={busy} onClick={() => void run(() => api.setIgnored(id, !ignored))}>
           {ignored ? 'Voltar a considerar nos totais' : 'Ignorar (tirar dos totais)'}
         </button>
       </div>
+      {dupes && (
+        <div class="candidates">
+          {!duplicates.data ? (
+            <Loading error={duplicates.error} />
+          ) : duplicates.data.items.length === 0 ? (
+            <div class="muted">Nenhuma outra transação desta conta com o mesmo valor em até 5 dias.</div>
+          ) : (
+            <>
+              <div class="muted">Escolha a original. Esta transação sai dos totais e a escolhida continua.</div>
+              <ul class="rows">
+                {duplicates.data.items.map((c) => (
+                  <li key={c.id}>
+                    <div class="grow">
+                      <div class="clip">{c.description}</div>
+                      <div class="muted">
+                        {dayMonth(localDay(c.occurredAt))} · {c.status === 'pending' ? 'pendente' : 'lançada'} · {c.daysApart === 0 ? 'mesmo dia' : `${c.daysApart} dia(s) de diferença`}
+                      </div>
+                    </div>
+                    <strong>{brl(c.amount, hidden)}</strong>
+                    <button class="primary small" disabled={busy} onClick={() => void run(() => api.setIgnored(id, true))}>
+                      Esta é a cópia
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
       {picking && (
         <div class="candidates">
           {!candidates.data ? (

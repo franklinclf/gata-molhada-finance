@@ -29,7 +29,7 @@ function CheckTab({ hidden }: { hidden: boolean }) {
     }
   };
   if (!check.data) return <Loading error={check.error} />;
-  const { items, setAside } = check.data;
+  const { items, setAside, duplicatePayments } = check.data;
   return (
     <>
       <p class="muted">
@@ -79,6 +79,38 @@ function CheckTab({ hidden }: { hidden: boolean }) {
                 </li>
               );
             })}
+          </ul>
+        )}
+      </section>
+      <section class="panel">
+        <h2>Pagamentos de fatura repetidos ({duplicatePayments.length})</h2>
+        <div class="muted">O banco lista o mesmo pagamento mais de uma vez (a cópia pendente e a lançada, ou dois textos para um pagamento só). Os totais da fatura já contam uma vez; ignore as cópias para a lista também mostrar uma.</div>
+        {duplicatePayments.length === 0 ? (
+          <div class="empty">Nenhum.</div>
+        ) : (
+          <ul class="rows tall">
+            {duplicatePayments.map((g) => (
+              <li key={g.members.map((m) => m.id).join('|')} class="suggestion">
+                <div class="grow">
+                  <div>
+                    {g.institution}
+                    {g.last4 ? ` •••• ${g.last4}` : ''} · {brl(g.amount, hidden)}
+                  </div>
+                  <ul class="rows">
+                    {g.members.map((m) => (
+                      <li key={m.id}>
+                        <button class="link grow clip" onClick={() => patchParams({ tx: m.id })}>
+                          {fullDay(m.day)} · {m.description} <span class="muted">({m.status === 'pending' ? 'pendente' : 'lançada'})</span>
+                        </button>
+                        <button class="link" disabled={busy === m.id} onClick={() => void apply(m.id, () => api.setIgnored(m.id, true))}>
+                          Ignorar esta
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </li>
+            ))}
           </ul>
         )}
       </section>
