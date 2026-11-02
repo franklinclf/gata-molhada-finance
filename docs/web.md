@@ -265,6 +265,18 @@ Na interface, o período de cobrança de um cartão é sempre "fatura" ("Fatura 
 
 É a soma, por cartão, do saldo que o Open Finance informa para a conta de cartão (`balance`), que é o limite usado: limite menos limite disponível. Inclui a fatura aberta, as faturas fechadas não pagas e todas as parcelas a vencer, e por isso não é o valor da fatura. Cartões com o mesmo limite (os dois Bradesco) informam o mesmo número e entram uma vez. A fatura aberta de um cartão sem fatura publicada é estimada por esse saldo menos as faturas fechadas não pagas e menos as parcelas futuras. O Meu Pluggy lista as parcelas que ainda vão vencer como cobranças pendentes com data no futuro (por exemplo as quatro parcelas restantes da Amazon no Nubank); elas contam como parcelas futuras, e não como pagas, senão a estimativa da fatura aberta ficava maior que a real.
 
+## Assinaturas e recorrentes, marcadas por você
+
+No painel de uma transação, "Assinatura ou recorrente" diz o que são as cobranças daquele estabelecimento: assinatura (streaming, app, plano), conta recorrente (aluguel, internet, mensalidade), não é recorrente, ou "como o app decide". A palavra vale para todas as cobranças do mesmo estabelecimento e entrada/saída (`recurring_marks`, chave igual à dos itens detectados) e, marcada, o item entra no calendário e na lista de recorrentes desde a primeira cobrança, com o mesmo dia do mês e valor típico (o app, sozinho, exige 3 cobranças em 3 meses). "Não é recorrente" é o mesmo botão que já existia no calendário. Cobranças da categoria "Assinaturas e streaming" aparecem como assinatura mesmo sem marca. Em Transações, o filtro "Recorrência" mostra só assinaturas, só as outras recorrentes ou ambas.
+
+## Parcelas da fatura aberta que o banco ainda não listou
+
+O banco só lista uma parcela como cobrança quando ela entra na fatura que ele mostra, e as parcelas de compras antigas que vencem na fatura aberta muitas vezes ainda não aparecem. O app já conhecia essas parcelas pelo plano de parcelas (conta os meses a partir das que viu), mas o total do cartão contava só as cobranças listadas. Agora o total da fatura aberta soma também as parcelas do plano que cabem nela e não vieram como cobrança (`plannedInstallments`, linha "Parcelas desta fatura ainda não listadas"), e o total estimado de um limite compartilhado nunca fica abaixo disso. O saldo devedor do emissor continua sendo o limite usado, que inclui o que o app não conhece.
+
+## Categorias novas
+
+Academia, Aluguel, Utensílios para casa, Dentista e Presentes são categorias padrão (a IA as conhece, prompt-v6, e a tabela da fonte manda `Gyms and fitness centers`, `Rent`, `Houseware` e `Dentist` para elas). Moradia ficou para condomínio, luz, água, gás e IPTU, e Casa e utilidades para móveis, eletrodomésticos e reparos.
+
 ## Pendentes antigas
 
 Uma transação pendente vista por uma única fonte há mais de 7 dias é posta de lado ("stale") só em conta bancária. Em cartão ela continua valendo, porque o Meu Pluggy deixa toda compra da fatura aberta como pendente até a fatura fechar. A regra antiga valia para cartões porque o Pierre também marcava as compras e a coincidência das duas fontes as confirmava; com uma fonte só, ela derrubava compras reais do ciclo aberto dos totais (73 transações em 30/10/2026, logo depois de remover o Pierre).

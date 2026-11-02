@@ -818,6 +818,15 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return new Set((db.prepare('SELECT key FROM recurring_ignored').all() as Array<{ key: string }>).map((r) => r.key));
     },
 
+    listRecurringMarks(): Map<string, 'subscription' | 'recurring'> {
+      return new Map((db.prepare('SELECT key, label FROM recurring_marks').all() as Array<{ key: string; label: 'subscription' | 'recurring' }>).map((r) => [r.key, r.label]));
+    },
+
+    setRecurringMark(key: string, label: 'subscription' | 'recurring' | null, now: string): void {
+      if (label === null) db.prepare('DELETE FROM recurring_marks WHERE key = ?').run(key);
+      else db.prepare('INSERT INTO recurring_marks (key, label, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET label = excluded.label, updated_at = excluded.updated_at').run(key, label, now);
+    },
+
     setRecurringIgnored(key: string, ignored: boolean, now: string): void {
       if (ignored) db.prepare('INSERT OR IGNORE INTO recurring_ignored (key, created_at) VALUES (?, ?)').run(key, now);
       else db.prepare('DELETE FROM recurring_ignored WHERE key = ?').run(key);

@@ -24,6 +24,10 @@ export interface RecurringItem {
   category: string | null;
   /** Where it mostly happens: a card charge is inside the card bill and not a separate payment from the bank. */
   account: 'bank' | 'card';
+  /** What the owner called it, or `Assinaturas e streaming` charges: a subscription, another recurring charge, or neither said. */
+  label: 'subscription' | 'recurring' | null;
+  /** True when the owner marked it, so it is listed even before the app has enough charges to detect it. */
+  manual: boolean;
 }
 
 const DAY = 86_400_000;
@@ -66,20 +70,28 @@ export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {})
     const day = localDay(t.occurredAt);
     groups.set(key, [...(groups.get(key) ?? []), { day: dayNumber(day), amount: Math.abs(t.amount), category: t.category, name, month: day.slice(0, 7), card: cardIds.has(t.accountId) }]);
   }
+  const marks = store.listRecurringMarks();
   const items: RecurringItem[] = [];
   for (const [key, list] of groups) {
-    if (ignored.has(key) || list.length < MIN_OCCURRENCES || new Set(list.map((o) => o.month)).size < MIN_OCCURRENCES) continue;
+    const mark = marks.get(key) ?? null;
+    if (ignored.has(key) && mark === null) continue;
     const sorted = [...list].sort((a, b) => a.day - b.day);
     const gaps = sorted.slice(1).map((o, i) => o.day - sorted[i]!.day).filter((g) => g > 0);
-    if (gaps.length < MIN_OCCURRENCES - 1) continue;
-    const regular = gaps.filter((g) => g >= INTERVAL.low && g <= INTERVAL.high).length / gaps.length;
-    const interval = median(gaps);
-    if (regular < 0.7 || interval < INTERVAL.low || interval > INTERVAL.high) continue;
     const amounts = sorted.map((o) => o.amount);
     const typical = median(amounts);
     const near = (band: number) => amounts.filter((a) => Math.abs(a - typical) <= typical * band).length / amounts.length;
-    const kind = near(0.1) >= 0.7 ? 'fixed' : near(0.45) >= 0.8 ? 'variable' : null;
-    if (kind === null) continue;
+    let interval = gaps.length > 0 ? median(gaps) : 30;
+    let kind: 'fixed' | 'variable' | null = near(0.1) >= 0.7 ? 'fixed' : near(0.45) >= 0.8 ? 'variable' : null;
+    if (mark === null) {
+      // Detected from the charges alone.
+      if (list.length < MIN_OCCURRENCES || new Set(list.map((o) => o.month)).size < MIN_OCCURRENCES || gaps.length < MIN_OCCURRENCES - 1) continue;
+      const regular = gaps.filter((g) => g >= INTERVAL.low && g <= INTERVAL.high).length / gaps.length;
+      if (regular < 0.7 || interval < INTERVAL.low || interval > INTERVAL.high || kind === null) continue;
+    } else {
+      // The owner said it is recurring: it is listed from the first charge, assumed monthly unless the gaps say otherwise.
+      if (interval < INTERVAL.low || interval > INTERVAL.high) interval = 30;
+      kind ??= 'variable';
+    }
     const last = sorted.at(-1)!;
     if (dayNumber(today) - last.day > interval * 2.2) continue;
     const dayOfMonth = median(sorted.map((o) => Number(dayString(o.day).slice(8, 10))));
@@ -90,8 +102,24 @@ export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {})
       month = nextMonth(month);
       next = dayInMonth(month, dayOfMonth);
     }
-    const name = sorted.at(-1)!.name;
-    items.push({ key, name, direction: key.startsWith('out') ? 'out' : 'in', amount: typical, kind, dayOfMonth, occurrences: sorted.length, lastDay: dayString(last.day), nextDay: next, late: dayNumber(today) - dayNumber(next) > LATE_AFTER_DAYS, category: last.category, account: sorted.filter((o) => o.card).length > sorted.length / 2 ? 'card' : 'bank' });
+    const category = [...sorted].reverse().find((o) => o.category !== null)?.category ?? null;
+    const label = mark ?? (category === 'Assinaturas e streaming' ? 'subscription' : null);
+    items.push({
+      key,
+      name: last.name,
+      direction: key.startsWith('out') ? 'out' : 'in',
+      amount: typical,
+      kind,
+      dayOfMonth,
+      occurrences: sorted.length,
+      lastDay: dayString(last.day),
+      nextDay: next,
+      late: sorted.length >= 2 && dayNumber(today) - dayNumber(next) > LATE_AFTER_DAYS,
+      category,
+      account: sorted.filter((o) => o.card).length > sorted.length / 2 ? 'card' : 'bank',
+      label,
+      manual: mark !== null,
+    });
   }
   return items.sort((a, b) => a.nextDay.localeCompare(b.nextDay) || a.name.localeCompare(b.name));
 }
@@ -102,5 +130,23 @@ export function ignoreRecurring(store: Store, key: unknown, ignored: unknown, no
   if (typeof key !== 'string' || !/^(in|out)\|.{1,120}$/.test(key)) return { ok: false, status: 400, error: 'key is not a recurring item key' };
   if (typeof ignored !== 'boolean') return { ok: false, status: 400, error: 'ignored must be true or false' };
   store.setRecurringIgnored(key, ignored, now.toISOString());
+  return { ok: true };
+}
+
+/** The key a charge has among recurring items: direction and merchant. */
+export function recurringKeyOf(t: { amount: number; description: string; counterparty?: { name: string | null } | null; sourceLabels?: string[]; mcc?: string | null; operation?: string | null }): string {
+  return `${t.amount < 0 ? 'out' : 'in'}|${merchantOf(t as Parameters<typeof merchantOf>[0]).toLowerCase()}`;
+}
+
+/**
+ * The owner says what a merchant's charges are: `subscription`, `recurring` (rent, a utility, a fee), `none` (not
+ * recurring: the same as "Não é recorrente"), or null to go back to what the app detects.
+ */
+export function markRecurring(store: Store, key: unknown, label: unknown, now: Date): RecurringResult {
+  if (typeof key !== 'string' || !/^(in|out)\|.{1,120}$/.test(key)) return { ok: false, status: 400, error: 'key is not a recurring item key' };
+  if (label !== 'subscription' && label !== 'recurring' && label !== 'none' && label !== null) return { ok: false, status: 400, error: 'label must be subscription, recurring, none or null' };
+  const at = now.toISOString();
+  store.setRecurringMark(key, label === 'subscription' || label === 'recurring' ? label : null, at);
+  store.setRecurringIgnored(key, label === 'none', at);
   return { ok: true };
 }

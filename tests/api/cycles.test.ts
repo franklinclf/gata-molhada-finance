@@ -393,3 +393,17 @@ test('two payments of the same amount on the same day from one source are two pa
   store.replaceCanonicalTransactions([tx('start', 'two', '2026-08-01', -100), tx('buy', 'two', '2026-09-02', -100000), ...pays], links, NOW.toISOString());
   assert.equal(cyclesFor(store, two, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-09')?.paid, 100000);
 });
+
+test('the open bill of a card includes installments of earlier purchases that the bank has not listed yet', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', ['2026-08', '2026-09', '2026-10'].map((m, i) => ({ externalId: `b${i}`, accountExternalId: 'ext-pl', dueDate: `${m}-15`, closingDate: `${m}-08`, total: 20000, minimumPayment: null })), NOW.toISOString());
+  const pl = account('pl', { balance: 55000, availableLimit: 445000, refs: [{ sourceId: 'pluggy', externalId: 'ext-pl', role: 'member' }] });
+  const inst = (id: string, day: string, n: number) => ({ ...tx(id, 'pl', day, -20000), description: 'TV', installment: { number: n, total: 4 } });
+  // 4 x 200,00: installments 1 and 2 were billed (August and September). The third belongs to the open bill, which the bank has not listed yet.
+  store.replaceCanonicalAccounts([pl], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('start', 'pl', '2026-07-01', -100), inst('i1', '2026-08-02', 1), inst('i2', '2026-09-02', 2), tx('coffee', 'pl', '2026-10-12', -1500)], [], NOW.toISOString());
+  const row = cards(store, NOW).cards.find((c) => c.id === 'pl')!;
+  assert.deepEqual([row.posted, row.plannedInstallments], [1500, 20000]);
+  assert.ok(row.total >= 21500, 'the open total counts the third installment');
+});

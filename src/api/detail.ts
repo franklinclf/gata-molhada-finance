@@ -2,6 +2,7 @@ import type { Cents } from '../core/money.ts';
 import { localDay } from '../core/time.ts';
 import type { Store, StoredFinding } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
+import { detectRecurring, recurringKeyOf } from './recurring.ts';
 import { seriesDescription } from './installments.ts';
 import { effectiveTransactions, ruleKey, type EffectiveTransaction } from './scope.ts';
 
@@ -33,6 +34,8 @@ export interface TransactionDetail {
   merchant: { key: string; count: number; total: Cents; firstDay: string | null; lastDay: string | null; recent: Array<{ id: string; day: string; amount: Cents; category: string | null }> };
   /** Billing cycle the transaction falls in, for card transactions. */
   cycle: { key: string; from: string; to: string; dueDate: string; status: string } | null;
+  /** What the app and the owner say about this merchant's charges coming back: its key, the owner's word, and whether the app detected it. */
+  recurrence: { key: string; name: string; label: 'subscription' | 'recurring' | 'none' | null; detected: boolean; detectedLabel: 'subscription' | 'recurring' | null };
   /** The bills of this card the charge can be moved to, newest first. Empty for anything but a card charge. */
   cycleOptions: Array<{ key: string; from: string; to: string; dueDate: string; status: string }>;
   /** The owner moved the charge to this bill, or set its status by hand. */
@@ -117,6 +120,7 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
       recent: same.slice(0, 6).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, category: t.category })),
     },
     cycle,
+    recurrence: recurrenceOf(store, transaction, now),
     cycleOptions,
     cycleByUser: transaction.billCycle !== null,
     statusByUser: transaction.statusByUser,
@@ -126,4 +130,12 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
     joinedBy: store.manualLinkMadeBy(id),
     installmentByUser: store.listInstallmentOverrides().has(id),
   };
+}
+
+function recurrenceOf(store: Store, t: Parameters<typeof recurringKeyOf>[0], now: Date): TransactionDetail['recurrence'] {
+  const key = recurringKeyOf(t);
+  const mark = store.listRecurringMarks().get(key) ?? null;
+  const ignored = store.listRecurringIgnored().has(key);
+  const found = detectRecurring(store, now, { includeHidden: true }).find((i) => i.key === key);
+  return { key, name: key.slice(key.indexOf('|') + 1), label: mark ?? (ignored ? 'none' : null), detected: found !== undefined && !found.manual, detectedLabel: found && !found.manual ? found.label : null };
 }

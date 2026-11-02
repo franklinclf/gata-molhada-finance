@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { calendar } from '../../src/api/calendar.ts';
-import { dayInMonth, detectRecurring, ignoreRecurring } from '../../src/api/recurring.ts';
+import { dayInMonth, detectRecurring, ignoreRecurring, markRecurring } from '../../src/api/recurring.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
@@ -95,4 +95,37 @@ test('an open card bill is projected on its due day, and the routes answer', () 
   assert.equal(call('/api/calendar', 'month=2026-13')?.status, 400);
   assert.equal(call('/api/recurring')?.status, 200);
   assert.equal(apiRoute('POST', '/api/recurring/ignore', new URLSearchParams(), store, NOW, JSON.stringify({ key: 'out|x', ignored: true }))?.status, 200);
+});
+
+test('a merchant the owner marks is listed from its first charge, with the word the owner chose', () => {
+  const store = seeded([tx('r1', 'JOSE ALUGUEIS', '2026-10-05', -150000), tx('s1', 'ACADEMIA XYZ', '2026-10-08', -9900)]);
+  assert.deepEqual(detectRecurring(store, NOW), [], 'one charge is not enough for the app to detect anything');
+  assert.deepEqual(markRecurring(store, 'out|jose alugueis', 'recurring', NOW), { ok: true });
+  assert.deepEqual(markRecurring(store, 'out|academia xyz', 'subscription', NOW), { ok: true });
+  const items = detectRecurring(store, NOW);
+  assert.deepEqual(items.map((i) => [i.name, i.label, i.manual, i.occurrences, i.dayOfMonth, i.nextDay]), [
+    ['Jose Alugueis', 'recurring', true, 1, 5, '2026-11-05'],
+    ['Academia Xyz', 'subscription', true, 1, 8, '2026-11-08'],
+  ]);
+  assert.equal(items[1]?.amount, 9900);
+});
+
+test('"none" hides a detected item, and clearing the mark goes back to what the app decides', () => {
+  const store = seeded(monthly('Netflix', [-4490, -4490, -4490, -4490, -4490, -4490]));
+  assert.equal(detectRecurring(store, NOW).length, 1);
+  markRecurring(store, 'out|netflix', 'none', NOW);
+  assert.equal(detectRecurring(store, NOW).length, 0);
+  markRecurring(store, 'out|netflix', null, NOW);
+  assert.equal(detectRecurring(store, NOW).length, 1);
+  markRecurring(store, 'out|netflix', 'subscription', NOW);
+  const item = detectRecurring(store, NOW)[0]!;
+  assert.deepEqual([item.label, item.manual, item.occurrences], ['subscription', true, 6]);
+});
+
+test('a charge in the subscription category is called a subscription without the owner saying so, and the mark route checks its input', () => {
+  const store = seeded(monthly('Spotify', [-2390, -2390, -2390, -2390, -2390, -2390]).map((t) => ({ ...t, category: 'Assinaturas e streaming' })));
+  assert.deepEqual([detectRecurring(store, NOW)[0]?.label, detectRecurring(store, NOW)[0]?.manual], ['subscription', false]);
+  assert.equal(apiRoute('PUT', '/api/recurring/mark', new URLSearchParams(), store, NOW, JSON.stringify({ key: 'out|spotify', label: 'weird' }))?.status, 400);
+  assert.equal(apiRoute('PUT', '/api/recurring/mark', new URLSearchParams(), store, NOW, JSON.stringify({ key: 'nope', label: 'none' }))?.status, 400);
+  assert.equal(apiRoute('PUT', '/api/recurring/mark', new URLSearchParams(), store, NOW, JSON.stringify({ key: 'out|spotify', label: 'none' }))?.status, 200);
 });

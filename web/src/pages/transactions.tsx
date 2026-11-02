@@ -70,6 +70,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
     ...(p.get('status') ? [{ label: p.get('status') === 'pending' ? 'Só pendentes' : 'Só lançadas', remove: () => set({ status: null }) }] : []),
     ...(p.get('min') || p.get('max') ? [{ label: `Valor ${p.get('min') ? `de ${brl(Number(p.get('min')))}` : ''} ${p.get('max') ? `até ${brl(Number(p.get('max')))}` : ''}`.trim(), remove: () => set({ min: null, max: null }) }] : []),
     ...(p.get('spendingOnly') === 'true' ? [{ label: 'Só gastos reais', remove: () => set({ spendingOnly: null }) }] : []),
+    ...(p.get('recurrence') ? [{ label: p.get('recurrence') === 'subscription' ? 'Só assinaturas' : p.get('recurrence') === 'recurring' ? 'Só outras recorrentes' : 'Assinaturas e recorrentes', remove: () => set({ recurrence: null }) }] : []),
     ...(p.get('netSpending') === 'true' ? [{ label: 'Gastos (compras menos estornos)', remove: () => set({ netSpending: null }) }] : []),
     ...(p.get('hideOwnTransfers') === 'true' ? [{ label: 'Sem transferências entre suas contas', remove: () => set({ hideOwnTransfers: null }) }] : []),
   ];
@@ -87,6 +88,16 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         <label class="check">
           <input type="checkbox" checked={p.get('spendingOnly') === 'true'} onChange={(e) => set({ spendingOnly: (e.currentTarget as HTMLInputElement).checked ? 'true' : null })} />
           Só gastos reais (sem pagar fatura, transferir entre contas ou investir)
+        </label>
+        <label class="inline-field">
+          Recorrência
+          <Select
+            ariaLabel="Recorrência"
+            value={p.get('recurrence') ?? ''}
+            emptyLabel="Todas"
+            options={[{ value: 'any', label: 'Assinaturas e recorrentes' }, { value: 'subscription', label: 'Só assinaturas' }, { value: 'recurring', label: 'Só outras recorrentes (aluguel, contas)' }]}
+            onChange={(value) => set({ recurrence: value || null })}
+          />
         </label>
       </Section>
       <Section title="Categorias" active={categories.length} open>

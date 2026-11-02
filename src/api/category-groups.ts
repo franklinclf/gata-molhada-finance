@@ -4,9 +4,9 @@ import type { Store } from '../store/store.ts';
 const DEFAULT_GROUPS: Record<string, string[]> = {
   Alimentação: ['Supermercado', 'Restaurantes e bares', 'Delivery de comida'],
   Transporte: ['Transporte por aplicativo', 'Transporte público', 'Combustível e carro'],
-  'Saúde e bem-estar': ['Saúde', 'Farmácia', 'Cuidados pessoais'],
-  Casa: ['Moradia', 'Casa e utilidades', 'Telecomunicação'],
-  Compras: ['Compras online', 'Vestuário e acessórios', 'Eletrônicos', 'Crianças e brinquedos', 'Pets'],
+  'Saúde e bem-estar': ['Saúde', 'Dentista', 'Academia', 'Farmácia', 'Cuidados pessoais'],
+  Casa: ['Aluguel', 'Moradia', 'Casa e utilidades', 'Utensílios para casa', 'Telecomunicação'],
+  Compras: ['Compras online', 'Presentes', 'Vestuário e acessórios', 'Eletrônicos', 'Crianças e brinquedos', 'Pets'],
   Lazer: ['Assinaturas e streaming', 'Lazer e esportes', 'Jogos e apostas', 'Viagens'],
   Finanças: ['Seguros', 'Impostos e taxas', 'Empréstimos e financiamentos', 'Pensão e obrigações legais'],
 };

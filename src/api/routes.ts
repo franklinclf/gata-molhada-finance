@@ -8,7 +8,7 @@ import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
 import { createGoal, deleteGoal, listGoals, updateGoal, type GoalResult } from './goals.ts';
 import { calendar } from './calendar.ts';
-import { detectRecurring, ignoreRecurring } from './recurring.ts';
+import { detectRecurring, ignoreRecurring, markRecurring } from './recurring.ts';
 import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
 import { categoryTrend } from './trends.ts';
 import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type AssetResult } from './networth.ts';
@@ -103,6 +103,7 @@ export function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
       spendingOnly: params.get('spendingOnly') === 'true',
       netSpending: params.get('netSpending') === 'true',
       hideOwnTransfers: params.get('hideOwnTransfers') === 'true',
+      recurrence: ['any', 'subscription', 'recurring'].includes(params.get('recurrence') ?? '') ? (params.get('recurrence') as 'any' | 'subscription' | 'recurring') : undefined,
       sort,
       limit: (limit as { value: number }).value,
       offset: (offset as { value: number }).value,
@@ -177,6 +178,12 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
     }
     case 'recurring': {
       if (parts.length === 2) return method === 'GET' ? { status: 200, body: { items: detectRecurring(store, now, opts) } } : methodNotAllowed();
+      if (parts.length === 3 && id === 'mark') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input || !('label' in input)) return badRequest('body must be { key, label } with subscription, recurring, none or null');
+        return fromMutation(markRecurring(store, input.key, input.label, now));
+      }
       if (parts.length === 3 && id === 'ignore') {
         if (method !== 'POST') return methodNotAllowed();
         const input = parseBody(body);
