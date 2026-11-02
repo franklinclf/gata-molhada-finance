@@ -531,6 +531,11 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
                   <strong>{brl(data.totals.reportedByIssuer, hidden)}</strong>
                 </div>
               </div>
+              {data.totals.unexplained > 0 && (
+                <div class="note">
+                  Na fatura em aberto, {brl(data.totals.unexplained, hidden)} vêm do limite usado que o banco informa para o limite compartilhado e que nenhuma compra ou parcela listada explica. Por isso a soma dos cartões mostrados é menor que o total. Pode ser uma compra que o banco ainda não enviou; o que aparecer depois reduz esse valor.
+                </div>
+              )}
               <div class="note">
                 O saldo devedor é o limite usado que cada banco informa: a fatura aberta, as faturas fechadas não pagas e todas as parcelas que ainda vão vencer. Por isso é maior que a fatura aberta. Cartões que dividem o mesmo limite entram uma vez. A fatura aberta de cada cartão é a soma das compras do ciclo; quando o banco ainda não publicou a fatura, o app estima o valor pelo saldo menos as parcelas futuras e marca como estimado.
               </div>

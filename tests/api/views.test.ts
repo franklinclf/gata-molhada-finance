@@ -74,7 +74,8 @@ test('cards: a shared limit is counted once', () => {
   assert.equal(v.totals.creditLimit, 500000);
   assert.equal(v.totals.used, 100000);
   assert.equal(v.totals.available, 400000);
-  assert.deepEqual(v.limitGroups, [{ id: 'g1', institution: 'Bank A', creditLimit: 500000, used: 100000, available: 400000, cardIds: ['c1', 'c2'], openEstimate: 50000 }]);
+  assert.deepEqual(v.limitGroups, [{ id: 'g1', institution: 'Bank A', creditLimit: 500000, used: 100000, available: 400000, cardIds: ['c1', 'c2'], openEstimate: 50000, unexplained: 50000 }]);
+  assert.equal(v.totals.unexplained, 0, 'with published bills the total is the bills, so nothing is unexplained');
 });
 
 test('cash flow counts bank accounts only, keeps card bill payments, leaves out own transfers', () => {
