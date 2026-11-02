@@ -1059,7 +1059,13 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     },
 
     deleteSourceTransactionsBefore(instant: string): number {
-      return Number(db.prepare('DELETE FROM source_transactions WHERE occurred_at < ?').run(instant).changes);
+      // A card charge from before the start that the issuer billed on or after it stays: it is part of a bill we judge (an installment
+      // bought last year, for example), and without it that bill looks short.
+      return Number(
+        db
+          .prepare('DELETE FROM source_transactions WHERE occurred_at < ? AND NOT (bill_id IS NOT NULL AND bill_id IN (SELECT external_id FROM source_bills WHERE due_date >= substr(?, 1, 10)))')
+          .run(instant, instant).changes,
+      );
     },
 
     listCycleOverrides(): Map<string, boolean> {
