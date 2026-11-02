@@ -45,6 +45,8 @@ export interface AccountItem {
 export interface CategoriesResponse {
   items: CategoryRow[];
   rules: Array<{ match: string; category: string }>;
+  /** Categories renamed or merged by the owner: old name to new name. */
+  aliases: Array<{ from: string; to: string }>;
 }
 
 export interface FindingItem {
@@ -223,6 +225,9 @@ export const api = {
   addCategory: (name: string) => request<{ ok: true }>('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
   setCategoryParent: (name: string, parent: string | null) =>
     request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/parent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parent }) }),
+  renameCategory: (name: string, to: string) =>
+    request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to }) }),
+  undoRenameCategory: (name: string) => request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/rename`, { method: 'DELETE' }),
   deleteCategory: (name: string) => request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   deleteRule: (match: string) => request<{ ok: true }>(`/api/category-rules/${encodeURIComponent(match)}`, { method: 'DELETE' }),
   setCycleSettled: (accountId: string, cycleKey: string, settled: boolean | null) =>

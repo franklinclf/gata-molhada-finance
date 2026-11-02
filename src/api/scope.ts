@@ -52,6 +52,17 @@ export interface Counterparty {
   isOwner: boolean;
 }
 
+/** The name a category goes by now: follows renames and merges, with a bound so a loop cannot hang a screen. */
+export function resolveAlias(aliases: Map<string, string>, name: string): string {
+  let current = name;
+  for (let i = 0; i < 6; i++) {
+    const next = aliases.get(current);
+    if (next === undefined || next === current) return current;
+    current = next;
+  }
+  return current;
+}
+
 /** Key that a category rule matches on. */
 const ROLE_CATEGORY: Record<Role, string> = { card_payment: 'Pagamento de fatura', own_transfer: 'Transferência entre minhas contas', investment: 'Investimentos' };
 
@@ -108,6 +119,7 @@ export function effectiveTransactions(
   const ai = store.listAiCategories();
   const installmentOverrides = store.listInstallmentOverrides();
   const txOverrides = store.listTransactionOverrides();
+  const aliases = store.listCategoryAliases();
   // A set-aside pending entry the owner called posted is brought back, so it must be loaded even when excluded ones are not wanted.
   const loaded = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: true });
   const all = options.includeExcluded ? loaded : loaded.filter((t) => !t.excluded || (t.state === 'stale_pending' && txOverrides.get(t.id)?.status === 'posted'));
@@ -151,6 +163,8 @@ export function effectiveTransactions(
       const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: roleOrigin, owners, ownerDocument: counterparty?.isOwner === true && /^(pix|ted|transferencia)/i.test(parties?.operation ?? '') }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
       // What the source or the AI called it must agree with what it is for the arithmetic.
       if (role && (origin === 'source' || origin === 'ai' || engineHit)) category = ROLE_CATEGORY[role];
+      // The owner renamed or merged this category: the new name shows everywhere. A card payment, a move between your accounts and an investment keep their fixed names.
+      if (category !== null && !ROLE_CATEGORY_NAMES.has(category)) category = resolveAlias(aliases, category);
       // The owner's word about the status wins over the source's. Calling a set-aside pending entry posted brings it back into the totals.
       const word = txOverrides.get(t.id);
       const status = word?.status ?? t.status;
