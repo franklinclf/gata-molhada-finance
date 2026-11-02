@@ -461,3 +461,14 @@ test('a charge goes on the bill the issuer put it on, by id or by forecast, not 
   const byBank = effectiveTransactions(store).filter((t) => t.billByBank).map((t) => t.id).sort();
   assert.deepEqual(byBank, ['forecast', 'on-closing-day']);
 });
+
+test('a charge from before the data start that the issuer billed after it is kept, so that bill is not short', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-jan', accountExternalId: 'ext-bk', dueDate: '2026-01-15', closingDate: '2026-01-08', total: 5000, minimumPayment: null }], NOW.toISOString());
+  const parties = (billId: string | null) => (billId ? { operation: null, mcc: null, payer: null, receiver: null, billId } : undefined);
+  const row = (externalId: string, occurredAt: string, billId: string | null) => ({ externalId, accountExternalId: 'ext-bk', occurredAt, amount: -1000, description: externalId, descriptionRaw: null, status: 'posted' as const, installment: null, category: null, parties: parties(billId) });
+  store.upsertSourceTransactions('pluggy', [row('old-billed-later', '2025-11-28T15:00:00Z', 'b-jan'), row('old-unbilled', '2025-11-28T15:00:00Z', null), row('new', '2026-01-02T15:00:00Z', null)], NOW.toISOString());
+  assert.equal(store.deleteSourceTransactionsBefore('2026-01-01T03:00:00.000Z'), 1);
+  assert.deepEqual(store.listSourceTransactions('pluggy').map((t) => t.externalId).sort(), ['new', 'old-billed-later']);
+});
