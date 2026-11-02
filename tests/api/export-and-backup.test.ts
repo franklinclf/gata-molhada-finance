@@ -14,20 +14,20 @@ import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url));
 
 const row = (extra: Partial<ExplorerRow>): ExplorerRow =>
-  ({ id: 't', accountId: 'a', occurredAt: '2026-10-20T15:00:00Z', amount: -12345, description: 'Padaria; do "Zé"', descriptionRaw: null, status: 'posted', installment: { number: 2, total: 5 }, category: 'Supermercado', state: 'confirmed', sourceIds: [], excluded: false, account: { institution: 'Banco Alfa', name: 'Gold', last4: '1111', kind: 'credit_card' }, counterparty: null, ...extra }) as ExplorerRow;
+  ({ id: 't', accountId: 'a', occurredAt: '2026-10-20T15:00:00Z', amount: -12345, title: 'Padaria', description: 'Padaria; do "Zé"', descriptionRaw: null, status: 'posted', installment: { number: 2, total: 5 }, category: 'Supermercado', state: 'confirmed', sourceIds: [], excluded: false, account: { institution: 'Banco Alfa', name: 'Gold', last4: '1111', kind: 'credit_card' }, counterparty: null, ...extra }) as ExplorerRow;
 
 test('CSV: byte order mark, semicolons and decimal comma by default, quoting, and no formulas', () => {
-  const csv = transactionsCsv([row({}), row({ description: '=HYPERLINK("x")', amount: 500, category: null, status: 'pending' })], localDay);
-  assert.ok(csv.startsWith('﻿Data;Instituição;Conta;Descrição'));
+  const csv = transactionsCsv([row({}), row({ title: 'Boleto', description: '=HYPERLINK("x")', amount: 500, category: null, status: 'pending' })], localDay);
+  assert.ok(csv.startsWith('﻿Data;Instituição;Conta;Nome;Descrição do banco'));
   const lines = csv.trimEnd().split('\r\n');
-  assert.equal(lines[1], '2026-10-20;Banco Alfa;Gold 1111;"Padaria; do ""Zé""";Supermercado;-123,45;lançada;2/5;confirmada;');
+  assert.equal(lines[1], '2026-10-20;Banco Alfa;Gold 1111;Padaria;"Padaria; do ""Zé""";Supermercado;-123,45;lançada;2/5;confirmada;');
   assert.ok(lines[2]!.includes("\"'=HYPERLINK(\"\"x\"\")\""), 'a leading = gets an apostrophe');
   assert.ok(lines[2]!.includes(';5,00;pendente;'));
 });
 
 test('CSV in the international style uses commas and a decimal point', () => {
-  const csv = transactionsCsv([row({ description: 'Loja' })], localDay, 'intl');
-  assert.equal(csv.trimEnd().split('\r\n')[1], '2026-10-20,Banco Alfa,Gold 1111,Loja,Supermercado,-123.45,lançada,2/5,confirmada,');
+  const csv = transactionsCsv([row({ title: 'Loja', description: 'Loja' })], localDay, 'intl');
+  assert.equal(csv.trimEnd().split('\r\n')[1], '2026-10-20,Banco Alfa,Gold 1111,Loja,Loja,Supermercado,-123.45,lançada,2/5,confirmada,');
 });
 
 test('a backup opens only with the right passphrase and detects any change', () => {

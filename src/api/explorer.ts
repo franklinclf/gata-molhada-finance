@@ -120,7 +120,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
       if (t.billCycle ? t.billCycle !== range.dueDate.slice(0, 7) : day < range.from || day > range.to) return false;
     }
     if (text) {
-      const haystack = `${t.description} ${t.descriptionRaw ?? ''} ${t.category ?? ''}`.toLowerCase();
+      const haystack = `${t.title} ${t.description} ${t.descriptionRaw ?? ''} ${t.category ?? ''}`.toLowerCase();
       if (!haystack.includes(text)) return false;
     }
     return true;

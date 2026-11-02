@@ -21,12 +21,13 @@ const STATE: Record<string, string> = { confirmed: 'confirmada', single_source: 
 /** Rows as CSV with a byte order mark so Excel reads the accents. Brazilian style uses ";" and a decimal comma. */
 export function transactionsCsv(rows: ExplorerRow[], localDay: (iso: string) => string, style: CsvStyle = 'br'): string {
   const d = style === 'br' ? ';' : ',';
-  const header = ['Data', 'Instituição', 'Conta', 'Descrição', 'Categoria', 'Valor', 'Status', 'Parcela', 'Situação', 'Pessoa ou empresa'];
+  const header = ['Data', 'Instituição', 'Conta', 'Nome', 'Descrição do banco', 'Categoria', 'Valor', 'Status', 'Parcela', 'Situação', 'Pessoa ou empresa'];
   const lines = rows.map((t) =>
     [
       localDay(t.occurredAt),
       cell(t.account.institution, d),
       cell(`${t.account.name}${t.account.last4 ? ` ${t.account.last4}` : ''}`, d),
+      cell(t.title, d),
       cell(t.description, d),
       cell(t.category ?? '', d),
       money(t.amount, style),

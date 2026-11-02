@@ -241,9 +241,10 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
         ) : (
           <>
             <h2>
-              {d.transaction.description}
+              {d.transaction.title}
               <CopyButton value={d.transaction.description} label="Copiar descrição" />
             </h2>
+            {d.transaction.title !== d.transaction.description && <div class="muted clip">Banco: {d.transaction.description}</div>}
             <div class={d.transaction.amount >= 0 ? 'big good-text' : 'big'}>
               {brl(d.transaction.amount, hidden)}
               {!hidden && <CopyButton value={(Math.abs(d.transaction.amount) / 100).toFixed(2).replace('.', ',')} label="Copiar valor" />}

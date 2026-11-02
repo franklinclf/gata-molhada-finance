@@ -82,7 +82,7 @@ export function Palette({ hidden }: { hidden: boolean }) {
   const matches = q === '' ? actions.slice(0, 8) : actions.filter((a) => q.split(' ').every((w) => fold(`${a.label} ${a.words}`).includes(w))).slice(0, 8);
   const rows: Array<{ key: string; label: string; hint?: string; run: () => void }> = [
     ...matches.map((a) => ({ key: a.label, label: a.label, run: a.run })),
-    ...found.map((t) => ({ key: t.id, label: t.description, hint: `${dayMonth(localDay(t.occurredAt))} · ${hidden ? '••••' : brl(t.amount)}`, run: go(() => patchParams({ tx: t.id })) })),
+    ...found.map((t) => ({ key: t.id, label: t.title ?? t.description, hint: `${dayMonth(localDay(t.occurredAt))} · ${hidden ? '••••' : brl(t.amount)}`, run: go(() => patchParams({ tx: t.id })) })),
   ];
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'ArrowDown') {

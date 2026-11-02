@@ -275,6 +275,10 @@ Ajustes > Dados > "Reler tudo do Meu Pluggy" lê de novo, em segundo plano, toda
 
 - **Releitura:** como qualquer leitura, remove o que o Meu Pluggy não devolve mais, mas se sumisse mais da metade dos registros da janela ou das contas de uma vez, não remove nada e deixa um aviso (parece leitura ruim).
 - **Recomeço completo:** primeiro guarda uma cópia do banco em `backups/before-reset-<hora>.sqlite` e depois remove tudo que o Meu Pluggy não devolve, sem a trava. A remoção só acontece depois de uma leitura que deu certo; se a leitura falhar, nada é apagado.
+||||||| fe541d4
+## Nomes padronizados
+
+Cada transação tem um `title`, o nome mostrado nas listas, no painel, na busca rápida e no CSV ("Nome"), calculado de fatos e não de IA (`src/core/title.ts`): pagamento de fatura vira "Pagamento de fatura" qualquer que seja o texto do banco (`PAGTO. POR DEB EM C/C`, `Pagamento recebido`, `GASTOS CARTAO DE CREDITO`...); Pix, TED, DOC e boleto viram "Pix enviado · Maria", "Pix recebido · Empresa X", "TED recebida", "Pagamento de boleto · Receita Federal" (a operação vem da fonte, ou do texto quando ela não diz); transferência entre suas contas, aplicação, resgate e rendimento têm nomes fixos; IOF, multa por atraso, estorno de multa e anuidade também. O resto mantém o nome limpo do estabelecimento ("Uber", "iFood"). O texto original do banco continua em `description` e é o que as regras e os atalhos por descrição usam; o painel mostra "Banco: ..." abaixo do nome quando os dois diferem, e a busca acha pelos dois.
 
 ## Assinaturas e recorrentes, marcadas por você
 
