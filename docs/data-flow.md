@@ -93,6 +93,8 @@ O papel (pagamento de fatura, entre contas suas, investimento) vem de fatos da f
 
 ## 4. Ciclos de cartão
 
+Uma fatura que fechou há até 7 dias e ainda não foi publicada pelo banco continua sendo o ciclo aberto (as compras novas entram nele); depois disso o mês vira um ciclo fechado "não conferido".
+
 ```mermaid
 flowchart TD
   B["Faturas publicadas<br/>(fechamento e vencimento de cada uma)"] --> W["Janelas de ciclo:<br/>fechamento anterior + 1 dia até o fechamento"]

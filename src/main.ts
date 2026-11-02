@@ -6,7 +6,8 @@ import { Debounce } from './http/deploy-hook.ts';
 import { effectOf, recordAlert, type PluggyEvent } from './http/pluggy-hook.ts';
 import { encryptBackup } from './backup/backup.ts';
 import { ask } from './ai/analyst.ts';
-import { loadAiConfig, runCategorizerOnce, startAiLoop } from './ai/job.ts';
+import type { AiRunScope } from './ai/job.ts';
+import { loadAiConfig, runCategorizerNow, runCategorizerOnce, startAiLoop } from './ai/job.ts';
 import { openRouterClient } from './ai/openrouter.ts';
 import { refreshKeyUsage } from './ai/spend.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
@@ -127,7 +128,8 @@ const pluggyHook = pluggySecret
       },
     }
   : undefined;
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, resetter, backup, deployHook, pluggyHook, analyst, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
+const categorize = aiConfig.enabled && aiConfig.apiKey ? (scope: AiRunScope) => runCategorizerNow(store, aiConfig, () => new Date(), scope).finally(() => void refreshKeyUsage(store, aiConfig.apiKey!, new Date())) : undefined;
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, resetter, backup, deployHook, pluggyHook, analyst, categorize, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {

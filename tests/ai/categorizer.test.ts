@@ -5,7 +5,7 @@ import { acceptAll, acceptSuggestion, aiView, rejectSuggestion } from '../../src
 import { apiRoute } from '../../src/api/routes.ts';
 import { effectiveTransactions } from '../../src/api/scope.ts';
 import { categorizePending } from '../../src/ai/categorizer.ts';
-import { loadAiConfig, runCategorizerOnce } from '../../src/ai/job.ts';
+import { loadAiConfig, runCategorizerNow, runCategorizerOnce } from '../../src/ai/job.ts';
 import type { AiClient, ChatOptions } from '../../src/ai/openrouter.ts';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -334,4 +334,42 @@ test('the model cannot pick a category that facts decide, and an old answer with
   assert.ok(!allowed.includes('Transferência entre minhas contas') && !allowed.includes('Pagamento de fatura') && !allowed.includes('Investimentos'));
   store.saveAiCategory({ matchKey: 'mercado central', sample: 'MERCADO CENTRAL', category: 'Transferência entre minhas contas', confidence: 'high', status: 'applied', model: 'm1', taxonomy: 'x', decidedAt: NOW.toISOString() });
   assert.equal(effectiveTransactions(store, { includeHidden: true })[0]?.categoryOrigin, 'source');
+});
+
+test('asking about one transaction asks again even when it was answered, and the rejected answers and close habits go in the prompt', async () => {
+  const store = seeded([tx('t1', 'PADARIA SOL'), tx('t2', 'PADARIA LUA', -2000, null), tx('t3', 'MERCADO X')]);
+  const first = fake({ 'PADARIA SOL': ['Compras online', 'high'], 'PADARIA LUA': ['Restaurantes e bares', 'high'], 'MERCADO X': ['Supermercado', 'high'] });
+  await categorizePending(store, options(first.client));
+  store.setAiCategoryStatus('padaria sol', 'rejected');
+  const again = fake({ 'PADARIA SOL': ['Restaurantes e bares', 'high'] });
+  const result = await categorizePending(store, options(again.client, { only: 'padaria sol' }));
+  assert.equal(again.calls.length, 1);
+  assert.equal(JSON.parse(again.calls[0]!.options.user).length, 1, 'only that description is asked');
+  assert.deepEqual([result.entry?.category, result.entry?.status], ['Restaurantes e bares', 'applied']);
+  const unknown = await categorizePending(store, options(again.client, { only: 'nada disso' }));
+  assert.equal(unknown.skipped, 'unknown');
+});
+
+test('asking about one transaction leaves alone what the owner or a rule already decided', async () => {
+  const store = seeded([tx('t1', 'PADARIA SOL')]);
+  store.setCategoryRule('padaria sol', 'Restaurantes e bares', NOW.toISOString());
+  const { client, calls } = fake({});
+  const result = await categorizePending(store, options(client, { only: 'padaria sol' }));
+  assert.equal(calls.length, 0);
+  assert.equal(result.skipped, 'rule');
+});
+
+test('"all" forgets the model\'s answers, keeps the owner\'s, and asks again; "pending" asks only what is new', async () => {
+  const store = seeded([tx('t1', 'PADARIA SOL'), tx('t2', 'MERCADO X')]);
+  const config = { ...loadAiConfig({ AI_ENABLED: 'on', OPENROUTER_API_KEY: 'k' }) };
+  const one = fake({ 'PADARIA SOL': ['Compras online', 'high'], 'MERCADO X': ['Supermercado', 'high'] });
+  await categorizePending(store, options(one.client));
+  store.setAiCategoryStatus('mercado x', 'rejected');
+  const nothing = fake({});
+  assert.equal((await runCategorizerNow(store, config, () => NOW, { kind: 'pending' }, nothing.client)).asked, 0);
+  const second = fake({ 'PADARIA SOL': ['Restaurantes e bares', 'high'] });
+  const all = await runCategorizerNow(store, config, () => NOW, { kind: 'all' }, second.client);
+  assert.equal(all.asked, 1, 'the rejected one stays rejected and is not asked');
+  assert.equal(effectiveTransactions(store, { includeHidden: true }).find((t) => t.id === 't1')?.category, 'Restaurantes e bares');
+  await assert.rejects(runCategorizerNow(store, { ...config, enabled: false }, () => NOW, { kind: 'pending' }, second.client), RangeError);
 });

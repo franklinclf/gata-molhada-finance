@@ -91,6 +91,25 @@ function Corrections({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType
       setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
     }
   };
+  const [asking, setAsking] = useState(false);
+  const [aiNote, setAiNote] = useState<string | null>(null);
+  const ask = async () => {
+    setAsking(true);
+    setError(null);
+    try {
+      const r = await api.runAi({ scope: 'transaction', transactionId: id });
+      const why = { rule: 'Uma regra ou escolha sua já decide a categoria.', role: 'O tipo desta transação vem de fatos da fonte, sem IA.', person: 'Pix para pessoa é transferência, sem IA.', unknown: 'Descrição não encontrada.' };
+      if (r.entry) {
+        const level = { high: 'alta', medium: 'média', low: 'baixa' }[r.entry.confidence];
+        setAiNote(`IA: ${r.entry.category}, confiança ${level}. ${r.entry.status === 'applied' ? 'Aplicada.' : r.entry.status === 'suggested' ? 'Aceite em Ajustes, aba IA.' : 'Fraca demais para aplicar.'}`);
+        onSaved();
+      } else setAiNote(r.skipped ? why[r.skipped] : r.stoppedBy === 'budget' ? 'O orçamento de IA do mês acabou.' : 'A IA não respondeu. Tente de novo.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível perguntar à IA.');
+    } finally {
+      setAsking(false);
+    }
+  };
   const cycleLabel = (c: { key: string; from: string; to: string; dueDate: string }) => `Vence ${dayMonth(c.dueDate)}/${c.dueDate.slice(0, 4)} (${dayMonth(c.from)} a ${dayMonth(c.to)})`;
   return (
     <>
@@ -118,6 +137,12 @@ function Corrections({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType
             />
           </label>
         )}
+      </div>
+      <div class="row-head">
+        <span class="muted">{aiNote ?? 'Pergunta de novo à IA sobre a descrição desta transação.'}</span>
+        <button class="small" disabled={asking} onClick={() => void ask()}>
+          {asking ? 'Perguntando…' : 'Perguntar à IA'}
+        </button>
       </div>
       {error && <div class="error">{error}</div>}
     </>

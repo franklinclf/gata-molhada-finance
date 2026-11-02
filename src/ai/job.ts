@@ -1,5 +1,6 @@
 import type { Store } from '../store/store.ts';
-import { AI_JOB_KEY } from '../api/ai.ts';
+import { AI_JOB_KEY, resetDecisions } from '../api/ai.ts';
+import { effectiveTransactions, ruleKey } from '../api/scope.ts';
 import { runReconciliation } from '../reconcile/run.ts';
 import { categorizePending, type CategorizerResult } from './categorizer.ts';
 import { matchPending, type MatcherResult } from './matcher.ts';
@@ -68,4 +69,44 @@ export function startAiLoop(store: Store, config: AiConfig, signal: AbortSignal,
   setTimeout(() => void tick(), 30_000);
   const timer = setInterval(() => void tick(), intervalMs);
   signal.addEventListener('abort', () => clearInterval(timer));
+}
+
+export type AiRunScope = { kind: 'pending' } | { kind: 'all' } | { kind: 'transaction'; id: string };
+
+export interface AiRunReply extends CategorizerResult {
+  scope: AiRunScope['kind'];
+}
+
+/** Passes in one "all" run; each pass handles up to 200 descriptions, and the budget stops it sooner. */
+const MAX_PASSES = 5;
+
+/**
+ * Asks the model on demand. `pending`: what has no answer yet. `all`: forgets the answers the model gave and the
+ * ones it left to the owner (kept: what the owner accepted or rejected), then asks again. `transaction`: asks about
+ * the description of one transaction, again, even when it was answered before.
+ */
+export async function runCategorizerNow(store: Store, config: AiConfig, now: () => Date, scope: AiRunScope, client?: AiClient): Promise<AiRunReply> {
+  if (!config.enabled || (!config.apiKey && !client)) throw new RangeError('A IA está desligada');
+  const ai = client ?? openRouterClient(config.apiKey!);
+  const options = { client: ai, models: config.models, now, monthlyBudgetUsd: config.monthlyBudgetUsd };
+  if (scope.kind === 'transaction') {
+    const found = effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).find((t) => t.id === scope.id);
+    const key = found ? ruleKey(found.description) : '';
+    if (!found || key === '') throw new RangeError('Transação não encontrada');
+    return { ...(await categorizePending(store, { ...options, only: key })), scope: 'transaction' };
+  }
+  if (scope.kind === 'all') resetDecisions(store, ['applied', 'suggested', 'skipped'], now());
+  const total: AiRunReply = { scope: scope.kind, asked: 0, applied: 0, suggested: 0, dropped: 0, costUsd: 0, stoppedBy: null };
+  for (let pass = 0; pass < (scope.kind === 'all' ? MAX_PASSES : 1); pass++) {
+    const result = await categorizePending(store, options);
+    total.asked += result.asked;
+    total.applied += result.applied;
+    total.suggested += result.suggested;
+    total.dropped += result.dropped;
+    total.costUsd += result.costUsd;
+    total.stoppedBy = result.stoppedBy;
+    if (result.asked === 0 || result.stoppedBy) break;
+  }
+  store.setSetting(AI_JOB_KEY, JSON.stringify({ enabled: true, model: config.models[0], monthlyBudget: config.monthlyBudgetUsd, lastRunAt: now().toISOString(), lastResult: describe(total) }), now().toISOString());
+  return total;
 }
