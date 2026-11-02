@@ -1,12 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import { chmodSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Debounce } from './http/deploy-hook.ts';
 import { effectOf, recordAlert, type PluggyEvent } from './http/pluggy-hook.ts';
 import { encryptBackup } from './backup/backup.ts';
 import { ask } from './ai/analyst.ts';
-import { loadAiConfig, startAiLoop } from './ai/job.ts';
+import { loadAiConfig, runCategorizerOnce, startAiLoop } from './ai/job.ts';
 import { openRouterClient } from './ai/openrouter.ts';
 import { refreshKeyUsage } from './ai/spend.ts';
 import { AuthService, loadAuthConfig } from './auth/service.ts';
@@ -21,6 +21,7 @@ import { observedSources } from './scheduler/defaults.ts';
 import { formatObserverEvent } from './scheduler/events.ts';
 import { Observer } from './scheduler/observer.ts';
 import { createRefresher } from './scheduler/web-refresh.ts';
+import { createResetter } from './sync/reset.ts';
 import { reconcileAfterSync } from './scheduler/reconcile-after-sync.ts';
 import { openSqliteStore } from './store/sqlite-store.ts';
 import { buildAdapters } from './sync/adapters.ts';
@@ -61,6 +62,25 @@ const retired = store.retireSourcesExcept(adapters.map((a) => a.id));
 if (retired.length > 0) console.log(`retired sources, kept as saved history: ${retired.join(', ')}`);
 const refreshAdapter = adapters.find((a) => a.capabilities.refreshOnDemand);
 const refresher = refreshAdapter ? createRefresher({ store, adapter: refreshAdapter }) : undefined;
+const aiOn = (): boolean => aiConfig.enabled && aiConfig.apiKey !== null;
+const resetter = refreshAdapter
+  ? createResetter({
+      store,
+      adapter: refreshAdapter,
+      backup: () => {
+        const dir = join(dirname(config.dbPath), 'backups');
+        mkdirSync(dir, { recursive: true });
+        const file = join(dir, `before-reset-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`);
+        store.copyTo(file);
+        return file;
+      },
+      categorize: async () => {
+        if (!aiOn()) return null;
+        const result = await runCategorizerOnce(store, aiConfig, () => new Date());
+        return result ? `IA: ${result.asked} descrições perguntadas, ${result.applied} aplicadas, ${result.suggested} para você decidir` : null;
+      },
+    })
+  : undefined;
 const backup = (passphrase: string): Buffer => {
   // A consistent copy next to the database (same disk), read once and removed.
   const copy = join(dirname(config.dbPath), `.backup-${randomBytes(6).toString('hex')}.sqlite`);
@@ -107,7 +127,7 @@ const pluggyHook = pluggySecret
       },
     }
   : undefined;
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, backup, deployHook, pluggyHook, analyst, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, refresher, resetter, backup, deployHook, pluggyHook, analyst, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {

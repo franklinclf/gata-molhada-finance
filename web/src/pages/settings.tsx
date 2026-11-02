@@ -458,6 +458,49 @@ function AiTab({ hidden }: { hidden: boolean }) {
   );
 }
 
+/** Reads everything the source has again and runs it through categorization and conferência, in the background. */
+function ResetPanel() {
+  const state = useLoad(() => api.resetState(), [], 3_000);
+  const [message, setMessage] = useState<string | null>(null);
+  const running = state.data?.running === true;
+  const start = async (mode: 'soft' | 'hard') => {
+    const ok = window.confirm(
+      mode === 'hard'
+        ? 'Recomeço completo: guarda uma cópia do banco, lê tudo de novo e apaga o que o Meu Pluggy não tem mais. Suas escolhas (categorias, regras, parcelas, faturas movidas) ficam. Continuar?'
+        : 'Releitura: lê tudo de novo e refaz as contas, as conferências e as decisões da IA. Se o Meu Pluggy devolver bem menos que o salvo, nada é apagado (parece leitura ruim). Continuar?',
+    );
+    if (!ok) return;
+    setMessage(null);
+    try {
+      await api.startReset(mode);
+    } catch (e) {
+      setMessage(e instanceof ApiError && e.status === 403 ? 'Entre de novo com a senha ou a passkey (nos últimos 15 minutos) para fazer isso.' : e instanceof Error ? e.message : 'Não foi possível começar.');
+    }
+    state.reload();
+  };
+  if (state.data && !state.data.available) return null;
+  return (
+    <section class="panel">
+      <h2>Reler tudo do Meu Pluggy</h2>
+      <p class="muted">
+        Lê de novo todas as transações, contas e faturas desde o início dos dados, e passa tudo outra vez pela reconciliação, pela conferência de duplicatas e pela categorização. Na releitura, a IA refaz o que decidiu sozinha e some o que o Meu Pluggy não devolve mais, a não ser que sumisse mais da metade de uma vez (parece leitura ruim, e fica um aviso). No recomeço completo, depois de uma cópia do banco, some tudo o que ele não devolve, sem essa trava. Suas escolhas e regras ficam nos dois.
+      </p>
+      <div class="links">
+        <button class="icon small" disabled={running} onClick={() => void start('soft')}>
+          Reler tudo
+        </button>
+        <button class="icon small" disabled={running} onClick={() => void start('hard')}>
+          Recomeço completo
+        </button>
+      </div>
+      {message && <div class="error">{message}</div>}
+      {running && <div class="note" role="status">{state.data?.mode === 'hard' ? 'Recomeço completo' : 'Releitura'}: {state.data?.step ?? 'trabalhando'}...</div>}
+      {!running && state.data?.result === 'completed' && <div class="note">Concluído ({state.data.mode === 'hard' ? 'recomeço completo' : 'releitura'}): {state.data.summary}</div>}
+      {!running && state.data?.result === 'failed' && <div class="error">Falhou: {state.data.error}{state.data.summary ? ` (antes disso: ${state.data.summary})` : ''}</div>}
+    </section>
+  );
+}
+
 function DataTab() {
   const [passphrase, setPassphrase] = useState('');
   const [again, setAgain] = useState('');
@@ -536,6 +579,7 @@ function DataTab() {
           <Loading error={version.error} />
         )}
       </section>
+      <ResetPanel />
       <section class="panel">
         <h2>Backup</h2>
         <p class="muted">

@@ -1006,23 +1006,24 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return new Set((db.prepare('SELECT finding_id FROM dismissed_findings').all() as Array<{ finding_id: string }>).map((r) => r.finding_id));
     },
 
-    pruneUnseenSourceTransactions(sourceId: SourceId, from: string, to: string, seenAt: string): PruneResult {
+    pruneUnseenSourceTransactions(sourceId: SourceId, from: string, to: string, seenAt: string, force = false): PruneResult {
       const count = (extra: string, ...args: string[]) =>
         (db.prepare(`SELECT COUNT(*) AS n FROM source_transactions WHERE source_id = ? AND occurred_at >= ? AND occurred_at <= ? ${extra}`).get(sourceId, from, to, ...args) as { n: number }).n;
       const unseen = count('AND last_seen_at < ?', seenAt);
       if (unseen === 0) return { removed: 0, skipped: false };
       // More than half of a window gone at once is a failed or partial read, not a clean-up.
-      if (unseen > 5 && unseen > count('') / 2) return { removed: 0, skipped: true };
+      if (!force && unseen > 5 && unseen > count('') / 2) return { removed: 0, skipped: true };
       db.prepare('DELETE FROM source_transactions WHERE source_id = ? AND occurred_at >= ? AND occurred_at <= ? AND last_seen_at < ?').run(sourceId, from, to, seenAt);
       return { removed: unseen, skipped: false };
     },
 
-    pruneUnseenSourceAccounts(sourceId: SourceId, seenAt: string): PruneResult {
+    pruneUnseenSourceAccounts(sourceId: SourceId, seenAt: string, force = false): PruneResult {
       const total = (db.prepare('SELECT COUNT(*) AS n FROM source_accounts WHERE source_id = ?').get(sourceId) as { n: number }).n;
       const gone = db.prepare('SELECT external_id FROM source_accounts WHERE source_id = ? AND last_seen_at < ?').all(sourceId, seenAt) as Array<{ external_id: string }>;
       if (gone.length === 0) return { removed: 0, skipped: false };
       // Losing most accounts in one read means the read was incomplete (or every connection was swapped): leave them for a person to judge.
-      if (gone.length >= total / 2 || gone.length === total) return { removed: 0, skipped: true };
+      // Even a forced removal keeps at least one account: a read that lists none is a failed read.
+      if (gone.length === total || (!force && gone.length >= total / 2)) return { removed: 0, skipped: true };
       inTransaction(() => {
         for (const { external_id } of gone) {
           db.prepare('DELETE FROM source_transactions WHERE source_id = ? AND account_external_id = ?').run(sourceId, external_id);
