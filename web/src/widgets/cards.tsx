@@ -37,14 +37,14 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
               <Bars
                 hidden={hidden}
                 height={size === 'lg' ? 110 : 80}
-                selected={cycle}
-                onSelect={(key) => setConfig({ cycle: key })}
+                selected={cycle === 'open' ? (bills.data.bars.find((b) => b.current)?.key ?? 'open') : cycle}
+                onSelect={(key) => setConfig({ cycle: key === bills.data?.bars.find((b) => b.current)?.key ? 'open' : key })}
                 data={bills.data.bars.slice(size === 'lg' ? -12 : -6).map((b) => ({
                   key: b.key,
-                  label: b.open ? 'Aberta' : monthName(b.key).slice(0, 3),
+                  label: monthName(b.key).slice(0, 3),
                   value: b.total,
                   color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : 'var(--warn)',
-                  tip: `${b.open ? 'Fatura em aberto' : `Venc. ${monthName(b.key)}`}\n${hidden ? '••••' : brl(b.total)}`,
+                  tip: `Venc. ${monthName(b.key)}\n${hidden ? '••••' : brl(b.total)}${b.open ? ` · ${b.openCards} em aberto${b.closedCards > 0 ? `, ${b.closedCards} já fechada${b.closedCards === 1 ? '' : 's'}` : ''}` : ''}`,
                 }))}
               />
             )}
