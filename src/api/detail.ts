@@ -42,6 +42,9 @@ export interface TransactionDetail {
   cycleByUser: boolean;
   /** The issuer placed the charge on this bill (its id, or the month it expects), so the date does not decide. */
   cycleByBank: boolean;
+  /** The purchase or refund this one is paired with, and the opposite-sign transactions of the account it could be paired with instead. */
+  reversal: { side: 'charge' | 'refund'; byUser: boolean; partial: boolean; amount: Cents; other: { id: string; day: string; title: string; amount: Cents } | null } | null;
+  reversalCandidates: Array<{ id: string; day: string; title: string; amount: Cents }>;
   statusByUser: boolean;
   findings: StoredFinding[];
   /** The category rule that applies to this description, if there is one. */
@@ -57,6 +60,7 @@ export interface TransactionDetail {
 export function transactionDetail(store: Store, id: string, now: Date): TransactionDetail | null {
   const accounts = store.listCanonicalAccounts();
   const all = effectiveTransactions(store, { includeHidden: true, includeExcluded: true }, accounts);
+  const brief = (t: EffectiveTransaction | undefined) => (t ? { id: t.id, day: localDay(t.occurredAt), title: t.title, amount: t.amount } : null);
   const transaction = all.find((t) => t.id === id);
   if (!transaction) return null;
   const account = accounts.find((a) => a.id === transaction.accountId);
@@ -126,6 +130,14 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
     cycleOptions,
     cycleByUser: transaction.billCycle !== null && !transaction.billByBank,
     cycleByBank: transaction.billByBank,
+    reversal: transaction.reversal
+      ? { side: transaction.reversal.side, byUser: transaction.reversal.byUser, partial: transaction.reversal.partial, amount: transaction.reversal.amount, other: brief(all.find((t) => t.id === transaction.reversal!.otherId)) }
+      : null,
+    reversalCandidates: all
+      .filter((t) => t.accountId === transaction.accountId && t.id !== transaction.id && t.amount !== 0 && t.amount > 0 !== transaction.amount > 0 && !t.excluded && t.role === null && Math.abs(Date.parse(t.occurredAt) - Date.parse(transaction.occurredAt)) <= 180 * 86_400_000 && (transaction.amount < 0 ? t.occurredAt >= transaction.occurredAt : t.occurredAt <= transaction.occurredAt))
+      .sort((a, b) => Math.abs(Date.parse(a.occurredAt) - Date.parse(transaction.occurredAt)) - Math.abs(Date.parse(b.occurredAt) - Date.parse(transaction.occurredAt)))
+      .slice(0, 25)
+      .map((t) => brief(t)!),
     statusByUser: transaction.statusByUser,
     findings: store.listFindings({ includeResolved: false }).filter((f) => f.transactionId === id),
     rule: rule !== undefined ? { category: rule } : null,

@@ -17,7 +17,7 @@ import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rul
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck } from './bill-check.ts';
-import { addCategory, dismissSuggestion, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, renameCategory, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, renameCategory, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -392,6 +392,12 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const input = parseBody(body);
         if (!input || !('status' in input)) return badRequest('body must be { status } with pending, posted or null');
         return fromMutation(setTransactionStatus(store, id, input.status, now));
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'reversal') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input || !('otherId' in input)) return badRequest('body must be { otherId } with a transaction id or null');
+        return fromMutation(setReversal(store, id, input.otherId, now));
       }
       if (parts.length === 4 && id !== undefined && sub === 'cycle') {
         if (method !== 'PUT') return methodNotAllowed();

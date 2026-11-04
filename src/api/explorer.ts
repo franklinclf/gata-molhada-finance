@@ -104,7 +104,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     if (query.min !== undefined && size < query.min) return false;
     if (query.max !== undefined && size > query.max) return false;
     if (query.spendingOnly && isNonSpending(t)) return false;
-    if (query.netSpending && (isNonSpending(t) || (t.amount > 0 && account.kind !== 'credit_card'))) return false;
+    if (query.netSpending && (isNonSpending(t) || (t.amount > 0 && account.kind !== 'credit_card' && !t.reversal))) return false;
     if (query.hideOwnTransfers && t.role === 'own_transfer') return false;
     if (recurringKeys && query.recurrence) {
       const key = recurringKeyOf(t);
@@ -156,14 +156,17 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
   const sortFacets = (map: Map<string, Facet>) => [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const accountFacets = facet('account', (t) => t.accountId);
 
-  const items = matching.slice(query.offset, query.offset + query.limit).map((t) => {
+  // A refund is shown on the row of its purchase when both are in the result; the sums above still count both.
+  const inResult = new Set(matching.map((t) => t.id));
+  const shown = matching.filter((t) => !(t.reversal?.side === 'refund' && inResult.has(t.reversal.otherId)));
+  const items = shown.slice(query.offset, query.offset + query.limit).map((t) => {
     const a = byId.get(t.accountId)!;
     return { ...t, account: { institution: a.institution, name: a.name, last4: a.last4, kind: a.kind } };
   });
 
   return {
     ...stamp(accounts, now),
-    total: matching.length,
+    total: shown.length,
     items,
     sums: { count: matching.length, income, expense, net: income - expense },
     facets: {

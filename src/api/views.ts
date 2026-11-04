@@ -355,7 +355,8 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
   for (const t of liveTransactions(store, range, opts)) {
     if (isNonSpending(t)) continue;
     // Money coming into a bank account is income. Only card credits (refunds) reduce spending.
-    if (t.amount > 0 && bankIds.has(t.accountId)) continue;
+    // A refund paired with its purchase is not income: it returns what the purchase spent.
+    if (t.amount > 0 && bankIds.has(t.accountId) && !t.reversal) continue;
     const day = localDay(t.occurredAt);
     perDay.set(day, (perDay.get(day) ?? 0) - t.amount);
     const name = groupBy === 'category' ? (t.category ?? 'Sem categoria') : merchantOf(t);

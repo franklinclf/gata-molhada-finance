@@ -149,6 +149,50 @@ function Corrections({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType
   );
 }
 
+function Reversal({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const r = d.reversal;
+  const credit = d.transaction.amount > 0;
+  const save = async (otherId: string | null) => {
+    setError(null);
+    try {
+      await api.setReversal(id, otherId);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
+    }
+  };
+  if (!r && d.reversalCandidates.length === 0) return null;
+  return (
+    <>
+      <h3>Estorno</h3>
+      <div class="correct">
+        {r ? (
+          <div>
+            <span class="muted">
+              {r.side === 'charge' ? `${r.partial ? 'Estorno parcial' : 'Estornado'}: ` : 'Devolve a compra: '}
+              {r.other ? `${dayMonth(r.other.day)} · ${r.other.title} · ${brl(r.other.amount)}` : ''}
+              {r.byUser ? ' (definido por você)' : ' (o app achou sozinho)'}
+            </span>{' '}
+            <button class="small" onClick={() => void save(null)}>Não é estorno</button>
+          </div>
+        ) : null}
+        <label>
+          <span class="muted">{credit ? 'Este crédito é estorno de' : 'Esta compra foi estornada por'}</span>
+          <Select
+            ariaLabel="Estorno"
+            value={r?.other?.id ?? ''}
+            emptyLabel="Nenhum"
+            options={d.reversalCandidates.map((c) => ({ value: c.id, label: `${dayMonth(c.day)} · ${c.title} · ${brl(c.amount)}` }))}
+            onChange={(value) => void save(value === '' ? null : value)}
+          />
+        </label>
+      </div>
+      {error && <div class="error">{error}</div>}
+    </>
+  );
+}
+
 function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onChange: (closes: boolean) => void }) {
   const [picking, setPicking] = useState(false);
   const [dupes, setDupes] = useState(false);
@@ -368,6 +412,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
             </dl>
 
             {!manual && <Corrections id={id} d={d} onSaved={detail.reload} />}
+            {!manual && <Reversal id={id} d={d} onSaved={detail.reload} />}
             <Recurrence d={d} onSaved={detail.reload} />
 
             <h3>Categoria</h3>
