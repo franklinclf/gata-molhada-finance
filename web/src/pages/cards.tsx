@@ -461,6 +461,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
   const { data, error, loading } = useLoad(() => api.cards(cycle), [cycle]);
   const installments = useLoad(() => api.installments(), []);
   const bills = useLoad(() => api.bills(), []);
+  const currentBill = bills.data?.bars.find((b) => b.current)?.key;
 
   return (
     <div class="page-body">
@@ -478,18 +479,18 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
           <Bars
             hidden={hidden}
             height={150}
-            selected={cycle}
-            onSelect={(key) => patchParams({ cycle: key === 'open' ? null : key })}
+            selected={cycle === 'open' ? (currentBill ?? 'open') : cycle}
+            onSelect={(key) => patchParams({ cycle: key === currentBill ? null : key })}
             data={bills.data.bars.map((b) => ({
               key: b.key,
-              label: b.open ? 'Aberta' : monthName(b.key).slice(0, 3),
+              label: monthName(b.key).slice(0, 3),
               value: b.total,
               color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : 'var(--warn)',
-              tip: `${b.open ? 'Fatura em aberto' : `Venc. ${monthName(b.key)}`}\n${hidden ? '••••' : brl(b.total)}${b.open ? '' : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
+              tip: `Venc. ${monthName(b.key)}\n${hidden ? '••••' : brl(b.total)}${b.open ? ` · ${b.openCards} em aberto${b.closedCards > 0 ? `, ${b.closedCards} já fechada${b.closedCards === 1 ? '' : 's'}` : ''}` : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
             }))}
           />
           <div class="legend">
-            <span><i style={{ background: 'var(--accent)' }} /> em aberto</span>
+            <span><i style={{ background: 'var(--accent)' }} /> ainda abre cartão (os cartões fecham em dias diferentes)</span>
             <span><i style={{ background: 'var(--good)' }} /> paga</span>
             <span><i style={{ background: 'var(--warn)' }} /> a pagar</span>
             <span><i style={{ background: 'var(--bad)' }} /> vencida</span>

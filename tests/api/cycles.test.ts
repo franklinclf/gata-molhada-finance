@@ -156,9 +156,9 @@ test('hidden cards drop out of the totals and the limit', () => {
 test('bill bars: one per due month with the cards added, then the open cycle', () => {
   const { store } = setup();
   const v = cardBills(store, NOW);
-  assert.deepEqual(v.bars.map((b) => [b.key, b.status, b.total, b.outstanding]), [['2026-09', 'paid', 80000, 0], ['2026-10', 'paid', 68000, 0], ['open', 'open', 28090, 0]]);
+  assert.deepEqual(v.bars.map((b) => [b.key, b.status, b.total, b.outstanding]), [['2026-09', 'paid', 80000, 0], ['2026-10', 'paid', 68000, 0], ['2026-11', 'open', 28090, 0]]);
   const unpaid = setup({ payments: false });
-  assert.deepEqual(cardBills(unpaid.store, NOW).bars.map((b) => [b.key, b.status]), [['2026-09', 'overdue'], ['2026-10', 'overdue'], ['open', 'open']]);
+  assert.deepEqual(cardBills(unpaid.store, NOW).bars.map((b) => [b.key, b.status]), [['2026-09', 'overdue'], ['2026-10', 'overdue'], ['2026-11', 'open']]);
 });
 
 test('a leftover on an old bill is written off when every later bill was paid in full, and the user can overrule it', () => {
@@ -488,4 +488,35 @@ test('reconciliation uses a charge older than the data start when its bill is du
   ], at);
   runReconciliation(store, { now: () => NOW });
   assert.deepEqual(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => t.amount), [-27490]);
+});
+
+test('cards that close on different days: one bar per due month shows the closed bill and the card still adding to it', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  const bill = (id: string, ext: string, due: string, closing: string, total: number) => ({ externalId: id, accountExternalId: ext, dueDate: due, closingDate: closing, total, minimumPayment: null });
+  store.upsertSourceBills('pluggy', [
+    bill('a-oct', 'ext-ca', '2026-10-15', '2026-10-02', 20000), bill('a-nov', 'ext-ca', '2026-11-15', '2026-11-02', 11327),
+    bill('b-oct', 'ext-cb', '2026-10-15', '2026-10-08', 30000),
+  ], NOW.toISOString());
+  const ca = account('ca', { refs: [{ sourceId: 'pluggy', externalId: 'ext-ca', role: 'member' }], balance: 11327 });
+  const cb = account('cb', { refs: [{ sourceId: 'pluggy', externalId: 'ext-cb', role: 'member' }], balance: 5000 });
+  store.replaceCanonicalAccounts([ca, cb], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('a0', 'ca', '2026-09-20', -20000), tx('a1', 'ca', '2026-10-20', -11327), tx('b0', 'cb', '2026-09-20', -30000), tx('b1', 'cb', '2026-10-20', -5000)], [], NOW.toISOString());
+  const today = new Date('2026-11-04T15:00:00Z');
+  const nov = cardBills(store, today).bars.find((b) => b.key === '2026-11')!;
+  assert.deepEqual([nov.open, nov.closedCards, nov.openCards, nov.current], [true, 1, 1, true]);
+  assert.ok(nov.total > 11327, 'the card that has not closed adds its running total to the closed bill');
+});
+
+test('when the newest charges are already on the next bill by the issuer\'s word, the month before has closed even if the estimated closing day has not passed', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-oct', accountExternalId: 'ext-cc', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 5000, minimumPayment: null }], NOW.toISOString());
+  const cc = account('cc', { refs: [{ sourceId: 'pluggy', externalId: 'ext-cc', role: 'member' }] });
+  store.upsertSourceTransactions('pluggy', [{ externalId: 'late', accountExternalId: 'ext-cc', occurredAt: '2026-11-07T15:00:00Z', amount: -700, description: 'late', descriptionRaw: null, status: 'pending', installment: null, category: null, parties: { operation: null, mcc: null, payer: null, receiver: null, billForecast: '2026-12' } }], NOW.toISOString());
+  store.replaceCanonicalAccounts([cc], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('start', 'cc', '2026-09-20', -100), tx('late', 'cc', '2026-11-07', -700)], [{ sourceId: 'pluggy', externalId: 'late', transactionId: 'late', matchPass: 0 }], NOW.toISOString());
+  const cycles = cyclesFor(store, cc, effectiveTransactions(store), '2026-11-07');
+  assert.deepEqual(cycles.slice(-2).map((c) => [c.key, c.status]), [['2026-11', 'unknown'], ['2026-12', 'open']]);
+  assert.equal(cycles[2]!.charges, 700);
 });
