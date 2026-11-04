@@ -1,3 +1,4 @@
+import { invalidateData } from './invalidate.ts';
 import type { TransactionDetail } from '../../src/api/detail.ts';
 import type { Layout, LayoutItem, WidgetId } from '../../src/api/layout.ts';
 import type { AiRunReply } from '../../src/ai/job.ts';
@@ -79,10 +80,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (response.status === 401 && !path.startsWith('/api/auth/login')) onUnauthorized();
   const text = await response.text();
   const body = text ? (JSON.parse(text) as unknown) : null;
+  // A change made by the owner (not a login or a chat question) can alter any list on screen.
+  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && path !== '/api/layout';
   if (!response.ok) {
     const message = (body as { message?: string; error?: string } | null)?.message ?? (body as { error?: string } | null)?.error ?? response.statusText;
     throw new ApiError(response.status, message);
   }
+  if (changes) invalidateData();
   return body as T;
 }
 
