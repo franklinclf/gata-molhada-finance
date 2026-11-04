@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
+import { onInvalidate } from './invalidate.ts';
 
 export interface Loaded<T> {
   data: T | null;
@@ -34,6 +35,8 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], everyMs?: nu
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
+
+  useEffect(() => onInvalidate(() => setTick((n) => n + 1)), []);
 
   useEffect(() => {
     if (!everyMs) return;

@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { api } from './api.ts';
+import type { TransactionDetail } from './api.ts';
 import { brl, dayMonth, foreignMoney, localDay, monthName } from './format.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
@@ -7,193 +8,176 @@ import { CopyButton } from './copy.tsx';
 import { CategorySelect } from './CategorySelect.tsx';
 import { ManualForm } from './ManualForm.tsx';
 import { Select } from './Select.tsx';
-import { Loading, STATE_LABEL, StatusBadge } from './ui.tsx';
+import { Loading, StatusBadge } from './ui.tsx';
+import type { ComponentChildren } from 'preact';
 
-function InstallmentEditor({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
-  const [number, setNumber] = useState(String(d.transaction.installment?.number ?? ''));
-  const [total, setTotal] = useState(String(d.transaction.installment?.total ?? ''));
+type Detail = TransactionDetail;
+
+/** Runs a change, shows the one error place if it fails, and leaves the reload to the app (every change reloads what is on screen). */
+function useAction() {
   const [error, setError] = useState<string | null>(null);
-  const save = async (clear: boolean) => {
-    setError(null);
-    try {
-      await (clear ? api.setInstallment(id, null, null) : api.setInstallment(id, Number(number), Number(total)));
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
-    }
-  };
-  return (
-    <>
-      <h3>Parcelamento</h3>
-      <div class="muted">
-        {d.transaction.installment ? `Parcela ${d.transaction.installment.number} de ${d.transaction.installment.total}${d.installmentByUser ? ' (informada por você)' : ' (vinda da fonte)'}` : 'A fonte não diz se é parcelada. Se for, informe aqui: o app passa a contar as parcelas das próximas faturas e tira esse valor da fatura em aberto.'}
-      </div>
-      <div class="recat">
-        <input inputMode="numeric" placeholder="Parcela" aria-label="Número da parcela" value={number} onInput={(e) => setNumber((e.currentTarget as HTMLInputElement).value)} />
-        <span class="muted">de</span>
-        <input inputMode="numeric" placeholder="Total" aria-label="Total de parcelas" value={total} onInput={(e) => setTotal((e.currentTarget as HTMLInputElement).value)} />
-        <button class="primary" disabled={number === '' || total === ''} onClick={() => void save(false)}>
-          Salvar
-        </button>
-      </div>
-      {d.installmentByUser && (
-        <button class="link" onClick={() => void save(true)}>
-          Remover o que informei
-        </button>
-      )}
-      {error && <div class="error">{error}</div>}
-    </>
-  );
-}
-
-const RECURRENCE_LABEL: Record<string, string> = { subscription: 'assinatura', recurring: 'conta recorrente', none: 'não é recorrente' };
-
-/** Says whether this merchant's charges are a subscription, another recurring charge, or neither. It covers every charge of the merchant. */
-function Recurrence({ d, onSaved }: { d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const r = d.recurrence;
-  const detected = r.detected ? (r.detectedLabel === 'subscription' ? 'o app detectou: assinatura' : 'o app detectou: recorrente') : 'o app não detectou';
-  return (
-    <>
-      <h3>Assinatura ou recorrente</h3>
-      <label class="correct">
-        <Select
-          ariaLabel="Recorrência"
-          value={r.label ?? ''}
-          emptyLabel={`Como o app decide (${detected})`}
-          options={[{ value: 'subscription', label: 'Assinatura (streaming, app, plano)' }, { value: 'recurring', label: 'Conta recorrente (aluguel, internet, mensalidade)' }, { value: 'none', label: 'Não é recorrente' }]}
-          onChange={async (value) => {
-            setError(null);
-            try {
-              await api.markRecurring(r.key, value === '' ? null : (value as 'subscription' | 'recurring' | 'none'));
-              onSaved();
-            } catch (e) {
-              setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
-            }
-          }}
-        />
-      </label>
-      <div class="muted">Vale para todas as cobranças de “{r.name}”{r.label ? ` (agora: ${RECURRENCE_LABEL[r.label]})` : ''}. Marcada, ela entra no calendário e na previsão desde a primeira cobrança.</div>
-      {error && <div class="error">{error}</div>}
-    </>
-  );
-}
-
-/** Fixes what a source got wrong: whether the charge is pending or posted, and which card bill it belongs to. */
-function Corrections({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const save = async (work: () => Promise<unknown>) => {
+  const [busy, setBusy] = useState(false);
+  const run = async (work: () => Promise<unknown>, failure = 'Não foi possível salvar.'): Promise<boolean> => {
+    setBusy(true);
     setError(null);
     try {
       await work();
-      onSaved();
+      return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
-    }
-  };
-  const [asking, setAsking] = useState(false);
-  const [aiNote, setAiNote] = useState<string | null>(null);
-  const ask = async () => {
-    setAsking(true);
-    setError(null);
-    try {
-      const r = await api.runAi({ scope: 'transaction', transactionId: id });
-      const why = { rule: 'Uma regra ou escolha sua já decide a categoria.', role: 'O tipo desta transação vem de fatos da fonte, sem IA.', person: 'Pix para pessoa é transferência, sem IA.', unknown: 'Descrição não encontrada.' };
-      if (r.entry) {
-        const level = { high: 'alta', medium: 'média', low: 'baixa' }[r.entry.confidence];
-        setAiNote(`IA: ${r.entry.category}, confiança ${level}. ${r.entry.status === 'applied' ? 'Aplicada.' : r.entry.status === 'suggested' ? 'Aceite em Ajustes, aba IA.' : 'Fraca demais para aplicar.'}`);
-        onSaved();
-      } else setAiNote(r.skipped ? why[r.skipped] : r.stoppedBy === 'budget' ? 'O orçamento de IA do mês acabou.' : 'A IA não respondeu. Tente de novo.');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Não foi possível perguntar à IA.');
+      setError(e instanceof Error ? e.message : failure);
+      return false;
     } finally {
-      setAsking(false);
+      setBusy(false);
     }
   };
-  const cycleLabel = (c: { key: string; from: string; to: string; dueDate: string }) => `Vence ${dayMonth(c.dueDate)}/${c.dueDate.slice(0, 4)} (${dayMonth(c.from)} a ${dayMonth(c.to)})`;
+  return { error, busy, run };
+}
+type Act = ReturnType<typeof useAction>;
+
+/** A labelled control, the same in every section of the drawer. */
+function Field({ label, hint, children }: { label: string; hint?: string; children: ComponentChildren }) {
   return (
-    <>
+    <div class="field">
+      <span class="muted">{label}</span>
+      {children}
+      {hint && <span class="hint">{hint}</span>}
+    </div>
+  );
+}
+
+const RECURRENCE_LABEL: Record<string, string> = { subscription: 'assinatura', recurring: 'conta recorrente', none: 'não recorrente' };
+const ORIGIN: Record<string, string> = { source: 'da fonte', override: 'escolhida por você', rule: 'regra para esta descrição', ai: 'sugerida pela IA' };
+
+
+/** Installment of a card purchase, when the source does not say. */
+function InstallmentField({ id, d, act }: { id: string; d: Detail; act: Act }) {
+  const [number, setNumber] = useState(String(d.transaction.installment?.number ?? ''));
+  const [total, setTotal] = useState(String(d.transaction.installment?.total ?? ''));
+  const changed = number !== String(d.transaction.installment?.number ?? '') || total !== String(d.transaction.installment?.total ?? '');
+  return (
+    <Field label={`Parcela${d.installmentByUser ? ' (informada por você)' : ''}`} hint={d.transaction.installment ? undefined : 'Se for parcelada, informe: o app passa a contar as próximas faturas.'}>
+      <div class="inline-inputs">
+        <input inputMode="numeric" placeholder="Nº" aria-label="Número da parcela" value={number} onInput={(e) => setNumber((e.currentTarget as HTMLInputElement).value)} />
+        <span class="muted">de</span>
+        <input inputMode="numeric" placeholder="Total" aria-label="Total de parcelas" value={total} onInput={(e) => setTotal((e.currentTarget as HTMLInputElement).value)} />
+        {changed && number !== '' && total !== '' && (
+          <button class="primary small" disabled={act.busy} onClick={() => void act.run(() => api.setInstallment(id, Number(number), Number(total)))}>
+            Salvar
+          </button>
+        )}
+        {d.installmentByUser && !changed && (
+          <button class="link" disabled={act.busy} onClick={() => void act.run(() => api.setInstallment(id, null, null))}>
+            Remover
+          </button>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+/** Everything the owner can fix about this one transaction, as one grid of the same kind of control. */
+function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: boolean; act: Act }) {
+  const r = d.recurrence;
+  const detected = r.detected ? (r.detectedLabel === 'subscription' ? 'o app detectou assinatura' : 'o app detectou conta recorrente') : 'o app não detectou';
+  const cycleLabel = (c: { key: string; from: string; to: string; dueDate: string }) => `Vence ${dayMonth(c.dueDate)}/${c.dueDate.slice(0, 4)} (${dayMonth(c.from)} a ${dayMonth(c.to)})`;
+  const card = d.account.kind === 'credit_card';
+  const rev = d.reversal;
+  const credit = d.transaction.amount > 0;
+  return (
+    <div class="dsec">
       <h3>Corrigir</h3>
       <div class="correct">
-        <label>
-          <span class="muted">Status{d.statusByUser ? ' (definido por você)' : ''}</span>
-          <Select
-            ariaLabel="Status da transação"
-            value={d.statusByUser ? d.transaction.status : ''}
-            emptyLabel={`Como a fonte diz (${d.statusByUser ? '...' : d.transaction.status === 'pending' ? 'pendente' : 'lançada'})`}
-            options={[{ value: 'pending', label: 'Pendente' }, { value: 'posted', label: 'Lançada' }]}
-            onChange={(value) => void save(() => api.setStatus(id, value === '' ? null : (value as 'pending' | 'posted')))}
-          />
-        </label>
-        {d.cycleOptions.length > 0 && (
-          <label>
-            <span class="muted">Fatura{d.cycleByUser ? ' (movida por você)' : d.cycleByBank ? ' (definida pelo banco)' : ''}</span>
+        {!manual && (
+          <Field label={`Status${d.statusByUser ? ' (definido por você)' : ''}`}>
+            <Select
+              ariaLabel="Status da transação"
+              value={d.statusByUser ? d.transaction.status : ''}
+              emptyLabel={`Como a fonte diz (${d.statusByUser ? '...' : d.transaction.status === 'pending' ? 'pendente' : 'lançada'})`}
+              options={[{ value: 'pending', label: 'Pendente' }, { value: 'posted', label: 'Lançada' }]}
+              onChange={(value) => void act.run(() => api.setStatus(id, value === '' ? null : (value as 'pending' | 'posted')))}
+            />
+          </Field>
+        )}
+        {!manual && d.cycleOptions.length > 0 && (
+          <Field label={`Fatura${d.cycleByUser ? ' (movida por você)' : d.cycleByBank ? ' (definida pelo banco)' : ''}`}>
             <Select
               ariaLabel="Fatura da compra"
               value={d.cycleByUser && d.cycle ? d.cycle.key : ''}
               emptyLabel={d.cycleByBank ? 'Como o banco diz' : 'Pela data da compra'}
               options={d.cycleOptions.map((c) => ({ value: c.key, label: cycleLabel(c) }))}
-              onChange={(value) => void save(() => api.setCycle(id, value === '' ? null : value))}
+              onChange={(value) => void act.run(() => api.setCycle(id, value === '' ? null : value))}
             />
-          </label>
+          </Field>
         )}
+        <Field label="Assinatura ou recorrente" hint={`Vale para todas as cobranças de “${r.name}”.`}>
+          <Select
+            ariaLabel="Recorrência"
+            value={r.label ?? ''}
+            emptyLabel={`Como o app decide (${detected})`}
+            options={[{ value: 'subscription', label: 'Assinatura (streaming, app, plano)' }, { value: 'recurring', label: 'Conta recorrente (aluguel, internet)' }, { value: 'none', label: 'Não é recorrente' }]}
+            onChange={(value) => void act.run(() => api.markRecurring(r.key, value === '' ? null : (value as 'subscription' | 'recurring' | 'none')))}
+          />
+        </Field>
+        {!manual && (rev || d.reversalCandidates.length > 0) && (
+          <Field label={credit ? 'Este crédito é estorno de' : 'Esta compra foi estornada por'} hint={rev ? `${rev.byUser ? 'Definido por você' : 'O app achou sozinho'}${rev.partial ? ' · estorno parcial' : ''}` : undefined}>
+            <Select
+              ariaLabel="Estorno"
+              value={rev?.other?.id ?? ''}
+              emptyLabel={rev ? 'Não é estorno' : 'Nenhum'}
+              options={[...(rev?.other && !d.reversalCandidates.some((c) => c.id === rev.other!.id) ? [rev.other] : []), ...d.reversalCandidates].map((c) => ({ value: c.id, label: `${dayMonth(c.day)} · ${c.title} · ${brl(c.amount)}` }))}
+              onChange={(value) => void act.run(() => api.setReversal(id, value === '' ? null : value))}
+            />
+          </Field>
+        )}
+        {!manual && card && d.transaction.amount < 0 && <InstallmentField key={`${d.transaction.installment?.number}/${d.transaction.installment?.total}`} id={id} d={d} act={act} />}
       </div>
+    </div>
+  );
+}
+
+/** The category, set in one step: pick or create, and it is saved. */
+function CategorySection({ id, d, act }: { id: string; d: Detail; act: Act }) {
+  const categories = useLoad(() => api.categories(), []);
+  const [similar, setSimilar] = useState(false);
+  const [aiNote, setAiNote] = useState<string | null>(null);
+  const save = (category: string | null) => act.run(() => api.setCategory(id, category, similar));
+  const ask = async () => {
+    setAiNote(null);
+    await act.run(async () => {
+      const r = await api.runAi({ scope: 'transaction', transactionId: id });
+      const why = { rule: 'Uma regra ou escolha sua já decide a categoria.', role: 'O tipo desta transação vem de fatos da fonte, sem IA.', person: 'Pix para pessoa é transferência, sem IA.', unknown: 'Descrição não encontrada.' };
+      if (r.entry) setAiNote(`IA: ${r.entry.category} (confiança ${{ high: 'alta', medium: 'média', low: 'baixa' }[r.entry.confidence]}). ${r.entry.status === 'applied' ? 'Aplicada.' : r.entry.status === 'suggested' ? 'Aceite em Ajustes, aba IA.' : 'Fraca demais para aplicar.'}`);
+      else setAiNote(r.skipped ? why[r.skipped] : r.stoppedBy === 'budget' ? 'O orçamento de IA do mês acabou.' : 'A IA não respondeu. Tente de novo.');
+    }, 'Não foi possível perguntar à IA.');
+  };
+  return (
+    <div class="dsec">
+      <h3>Categoria</h3>
       <div class="row-head">
-        <span class="muted">{aiNote ?? 'Pergunta de novo à IA sobre a descrição desta transação.'}</span>
-        <button class="small" disabled={asking} onClick={() => void ask()}>
-          {asking ? 'Perguntando…' : 'Perguntar à IA'}
+        <span>
+          <strong>{d.transaction.category ?? 'Sem categoria'}</strong> <span class="muted">· {ORIGIN[d.transaction.categoryOrigin]}</span>
+        </span>
+        <button class="small" disabled={act.busy} onClick={() => void ask()} title="Pergunta de novo à IA sobre a descrição desta transação">
+          Perguntar à IA
         </button>
       </div>
-      {error && <div class="error">{error}</div>}
-    </>
+      {d.transaction.categoryOrigin !== 'source' && d.transaction.sourceCategory !== null && <div class="hint">A fonte diz: {d.transaction.sourceCategory}</div>}
+      {aiNote && <div class="hint" role="status">{aiNote}</div>}
+      <CategorySelect value="" onChange={(value) => value.trim() !== '' && void save(value)} categories={categories.data?.items} placeholder="Trocar a categoria..." />
+      <label class="check">
+        <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />
+        Valer para todas com a descrição “{d.transaction.description}” ({d.merchant.count})
+      </label>
+      {d.transaction.categoryOrigin !== 'source' && (
+        <button class="link" disabled={act.busy} onClick={() => void save(null)}>
+          Voltar à categoria da fonte
+        </button>
+      )}
+    </div>
   );
 }
 
-function Reversal({ id, d, onSaved }: { id: string; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onSaved: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const r = d.reversal;
-  const credit = d.transaction.amount > 0;
-  const save = async (otherId: string | null) => {
-    setError(null);
-    try {
-      await api.setReversal(id, otherId);
-      onSaved();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Não foi possível salvar.');
-    }
-  };
-  if (!r && d.reversalCandidates.length === 0) return null;
-  return (
-    <>
-      <h3>Estorno</h3>
-      <div class="correct">
-        {r ? (
-          <div>
-            <span class="muted">
-              {r.side === 'charge' ? `${r.partial ? 'Estorno parcial' : 'Estornado'}: ` : 'Devolve a compra: '}
-              {r.other ? `${dayMonth(r.other.day)} · ${r.other.title} · ${brl(r.other.amount)}` : ''}
-              {r.byUser ? ' (definido por você)' : ' (o app achou sozinho)'}
-            </span>{' '}
-            <button class="small" onClick={() => void save(null)}>Não é estorno</button>
-          </div>
-        ) : null}
-        <label>
-          <span class="muted">{credit ? 'Este crédito é estorno de' : 'Esta compra foi estornada por'}</span>
-          <Select
-            ariaLabel="Estorno"
-            value={r?.other?.id ?? ''}
-            emptyLabel="Nenhum"
-            options={d.reversalCandidates.map((c) => ({ value: c.id, label: `${dayMonth(c.day)} · ${c.title} · ${brl(c.amount)}` }))}
-            onChange={(value) => void save(value === '' ? null : value)}
-          />
-        </label>
-      </div>
-      {error && <div class="error">{error}</div>}
-    </>
-  );
-}
-
-function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: NonNullable<ReturnType<typeof useLoad<import('./api.ts').TransactionDetail>>['data']>; onChange: (closes: boolean) => void }) {
+function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: Detail; onChange: (closes: boolean) => void }) {
   const [picking, setPicking] = useState(false);
   const [dupes, setDupes] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -218,7 +202,6 @@ function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: 
   const ignored = d.transaction.state === 'ignored';
   return (
     <>
-      <h3>Mapeamento entre as fontes</h3>
       <div class="muted">
         {d.transaction.sourceIds.length > 1 ? `Vista no ${d.transaction.sourceIds.join(' e no ')}.` : `Só o ${d.transaction.sourceIds[0]} tem esta transação. Isso é normal e não afeta os totais.`}
       </div>
@@ -303,37 +286,36 @@ function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: 
   );
 }
 
-const ORIGIN: Record<string, string> = { source: 'definida pela fonte', override: 'escolhida por você', rule: 'regra para esta descrição', ai: 'sugerida pela IA' };
 
-/** Side panel with everything known about one transaction, and the controls to recategorize it. */
+function Chips({ d, manual }: { d: Detail; manual: boolean }) {
+  const t = d.transaction;
+  return (
+    <div class="chips">
+      <span class={`badge ${t.status === 'pending' ? 'warn' : 'muted'}`}>{t.status === 'pending' ? 'Pendente' : 'Lançada'}</span>
+      {t.installment && <span class="badge">Parcela {t.installment.number}/{t.installment.total}</span>}
+      {d.cycle && (
+        <span class="badge">
+          Fatura {dayMonth(d.cycle.dueDate)} <StatusBadge status={d.cycle.status} />
+        </span>
+      )}
+      {d.reversal && <span class="badge good">{d.reversal.side === 'charge' ? (d.reversal.partial ? 'Estorno parcial' : 'Estornada') : 'Estorno'}</span>}
+      {d.recurrence.label && d.recurrence.label !== 'none' && <span class="badge info">{RECURRENCE_LABEL[d.recurrence.label]}</span>}
+      {manual && <span class="badge">Digitada por você</span>}
+      {t.state === 'ignored' && <span class="badge bad">Ignorada</span>}
+      {t.excluded && t.state !== 'ignored' && <span class="badge bad" data-tip="Pendente antiga que só uma fonte vê">Fora dos totais</span>}
+      {t.state === 'conflict' && <span class="badge warn">Fontes discordam</span>}
+    </div>
+  );
+}
+
+/** Side panel with what is known about one transaction and the few things the owner may want to change. */
 export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean }) {
   const detail = useLoad(() => api.detail(id), [id]);
-  const categories = useLoad(() => api.categories(), []);
-  const [draft, setDraft] = useState('');
-  const [similar, setSimilar] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
+  const act = useAction();
+  const [editing, setEditing] = useState(false);
   const close = () => patchParams({ tx: null });
   const d = detail.data;
   const manual = /^man_\d+$/.test(id);
-  const [editing, setEditing] = useState(false);
-
-  async function save(category: string | null) {
-    setSaving(true);
-    setMessage(null);
-    try {
-      await api.setCategory(id, category, similar);
-      detail.reload();
-      categories.reload();
-      setDraft('');
-      setMessage(category === null ? 'Voltou à categoria da fonte.' : 'Categoria salva.');
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Não foi possível salvar.');
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <div class="overlay" onClick={close}>
@@ -346,27 +328,21 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
           <Loading error={detail.error} />
         ) : (
           <>
-            <h2>
-              {d.transaction.title}
-              <CopyButton value={d.transaction.description} label="Copiar descrição" />
-            </h2>
-            {d.transaction.title !== d.transaction.description && <div class="muted clip">Banco: {d.transaction.description}</div>}
-            <div class={d.transaction.amount >= 0 ? 'big good-text' : 'big'}>
+            <div>
+              <h2>
+                {d.transaction.title}
+                <CopyButton value={d.transaction.description} label="Copiar descrição" />
+              </h2>
+              {d.transaction.title !== d.transaction.description && <div class="muted clip">Banco: {d.transaction.description}</div>}
+            </div>
+            <div class={`big ${d.transaction.amount >= 0 ? 'good-text' : ''}${d.reversal?.side === 'charge' && !d.reversal.partial ? ' struck' : ''}`}>
               {brl(d.transaction.amount, hidden)}
               {!hidden && <CopyButton value={(Math.abs(d.transaction.amount) / 100).toFixed(2).replace('.', ',')} label="Copiar valor" />}
             </div>
+            <Chips d={d} manual={manual} />
             <dl class="facts">
               <dt>Data</dt>
               <dd>{dayMonth(localDay(d.transaction.occurredAt))}/{localDay(d.transaction.occurredAt).slice(0, 4)}</dd>
-              {d.transaction.foreign && (
-                <>
-                  <dt>Valor original</dt>
-                  <dd>
-                    {hidden ? '••••' : foreignMoney(d.transaction.foreign.amount, d.transaction.foreign.currency)}
-                    <span class="muted"> {d.transaction.foreign.converted ? '· o banco cobrou o valor acima em reais' : '· sem conversão: o valor mostrado é o número original'}</span>
-                  </dd>
-                </>
-              )}
               <dt>Conta</dt>
               <dd>
                 {d.account.institution} · {d.account.name}
@@ -378,72 +354,55 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
                   <dt>{d.transaction.amount < 0 ? 'Para' : 'De'}</dt>
                   <dd>
                     {d.transaction.counterparty.name ?? 'Nome não informado'}
-                    {d.transaction.counterparty.last4 ? ` · documento final ${d.transaction.counterparty.last4}` : ''}
+                    {d.transaction.counterparty.last4 ? ` · doc. final ${d.transaction.counterparty.last4}` : ''}
                     {d.transaction.counterparty.isOwner ? ' · você mesmo' : ''}
                   </dd>
                 </>
               )}
-              <dt>Status</dt>
-              <dd>{d.transaction.status === 'pending' ? 'Pendente' : 'Lançada'}</dd>
-              <dt>Fontes</dt>
-              <dd>{manual ? 'Digitada por você' : (STATE_LABEL[d.transaction.state] ?? d.transaction.state)}</dd>
-              {d.transaction.installment && (
+              {d.transaction.foreign && (
                 <>
-                  <dt>Parcela</dt>
+                  <dt>Valor original</dt>
                   <dd>
-                    {d.transaction.installment.number} de {d.transaction.installment.total}
+                    {hidden ? '••••' : foreignMoney(d.transaction.foreign.amount, d.transaction.foreign.currency)}
+                    <span class="hint"> {d.transaction.foreign.converted ? '· cobrado em reais pelo banco' : '· sem conversão'}</span>
                   </dd>
-                </>
-              )}
-              {d.cycle && (
-                <>
-                  <dt>Fatura</dt>
-                  <dd>
-                    Vence {dayMonth(d.cycle.dueDate)}/{d.cycle.dueDate.slice(0, 4)} <StatusBadge status={d.cycle.status} />
-                  </dd>
-                </>
-              )}
-              {d.transaction.excluded && (
-                <>
-                  <dt>Aviso</dt>
-                  <dd class="bad-text">Fica fora dos totais (pendente antiga que só uma fonte vê).</dd>
                 </>
               )}
             </dl>
+            {act.error && <div class="error" role="alert">{act.error}</div>}
 
-            {!manual && <Corrections id={id} d={d} onSaved={detail.reload} />}
-            {!manual && <Reversal id={id} d={d} onSaved={detail.reload} />}
-            <Recurrence d={d} onSaved={detail.reload} />
+            <CategorySection id={id} d={d} act={act} />
+            <Corrections id={id} d={d} manual={manual} act={act} />
 
-            <h3>Categoria</h3>
-            <div>
-              <strong>{d.transaction.category ?? 'Sem categoria'}</strong> <span class="muted">({ORIGIN[d.transaction.categoryOrigin]})</span>
-              {d.transaction.categoryOrigin !== 'source' && d.transaction.sourceCategory !== null && <div class="muted">A fonte diz: {d.transaction.sourceCategory}</div>}
-            </div>
-            <div class="recat">
-              <CategorySelect value={draft} onChange={setDraft} categories={categories.data?.items} placeholder="Escolha ou crie uma categoria" />
-              <button class="primary" disabled={saving || draft.trim() === ''} onClick={() => void save(draft)}>
-                Salvar
-              </button>
-            </div>
-            <label class="check">
-              <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />
-              Aplicar a todas com a descrição “{d.transaction.description}” ({d.merchant.count})
-            </label>
-            {d.transaction.categoryOrigin !== 'source' && (
-              <button class="link" disabled={saving} onClick={() => void save(null)}>
-                Voltar à categoria da fonte
-              </button>
+            {manual && (
+              <div class="dsec">
+                <h3>Digitada por você</h3>
+                {editing ? (
+                  <ManualForm
+                    now={new Date()}
+                    initial={{ id, accountId: d.account.id, day: localDay(d.transaction.occurredAt), amount: d.transaction.amount, description: d.transaction.description, category: d.transaction.category ?? '' }}
+                    onSaved={() => setEditing(false)}
+                    onCancel={() => setEditing(false)}
+                  />
+                ) : (
+                  <div class="links">
+                    <button class="link" onClick={() => setEditing(true)}>
+                      Editar
+                    </button>
+                    <button class="link" onClick={() => window.confirm('Excluir esta transação?') && void act.run(() => api.deleteManual(id).then(() => patchParams({ tx: null })), 'Não foi possível excluir.')}>
+                      Excluir
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
-            {d.rule && <div class="muted">Regra ativa: {d.rule.category}</div>}
-            {message && <div class="note" role="status">{message}</div>}
 
             {d.installments.length > 1 && (
-              <>
-                <h3>Parcelas desta compra</h3>
+              <details>
+                <summary>Parcelas desta compra ({d.installments.length})</summary>
                 <ul class="rows">
                   {d.installments.map((i) => (
-                    <li key={i.id}>
+                    <li key={i.id} class={i.id === id ? 'on' : ''}>
                       <span class="grow">
                         {i.number} de {i.total} · {dayMonth(i.day)}/{i.day.slice(0, 4)}
                       </span>
@@ -453,108 +412,80 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
                     </li>
                   ))}
                 </ul>
-              </>
+              </details>
             )}
 
-            <h3>Neste estabelecimento</h3>
-            <div class="muted">
-              {d.merchant.count} transações · {brl(d.merchant.total, hidden)} no total
-              {d.merchant.firstDay ? ` · de ${dayMonth(d.merchant.firstDay)}/${d.merchant.firstDay.slice(0, 4)} a ${dayMonth(d.merchant.lastDay!)}/${d.merchant.lastDay!.slice(0, 4)}` : ''}
-            </div>
-            <ul class="rows">
-              {d.merchant.recent.map((r) => (
-                <li key={r.id}>
-                  <span class="grow">
-                    {dayMonth(r.day)}/{r.day.slice(0, 4)} · {r.category ?? 'Sem categoria'}
-                  </span>
-                  <button class="link" onClick={() => patchParams({ tx: r.id })}>
-                    {brl(r.amount, hidden)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button
-              class="link"
-              onClick={() => {
-                patchParams({ tx: null });
-                navigate('transactions', { q: d.transaction.description });
-              }}
-            >
-              Ver todas deste estabelecimento
-            </button>
-
-            {manual && (
-              <>
-                <h3>Digitada por você</h3>
-                {editing ? (
-                  <ManualForm
-                    now={new Date()}
-                    initial={{ id, accountId: d.account.id, day: localDay(d.transaction.occurredAt), amount: d.transaction.amount, description: d.transaction.description, category: d.transaction.category ?? '' }}
-                    onSaved={() => { setEditing(false); detail.reload(); }}
-                    onCancel={() => setEditing(false)}
-                  />
-                ) : (
-                  <div class="links">
-                    <button class="link" onClick={() => setEditing(true)}>
-                      Editar
+            <details>
+              <summary>
+                Neste estabelecimento ({d.merchant.count} · {brl(d.merchant.total, hidden)})
+              </summary>
+              <div class="hint">{d.merchant.firstDay ? `De ${dayMonth(d.merchant.firstDay)}/${d.merchant.firstDay.slice(0, 4)} a ${dayMonth(d.merchant.lastDay!)}/${d.merchant.lastDay!.slice(0, 4)}` : ''}</div>
+              <ul class="rows">
+                {d.merchant.recent.map((r) => (
+                  <li key={r.id}>
+                    <span class="grow">
+                      {dayMonth(r.day)}/{r.day.slice(0, 4)} · {r.category ?? 'Sem categoria'}
+                    </span>
+                    <button class="link" onClick={() => patchParams({ tx: r.id })}>
+                      {brl(r.amount, hidden)}
                     </button>
-                    <button class="link" onClick={() => window.confirm('Excluir esta transação?') && void api.deleteManual(id).then(() => patchParams({ tx: null })).catch((e: unknown) => setMessage(e instanceof Error ? e.message : 'Não foi possível excluir.'))}>
-                      Excluir
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
+                  </li>
+                ))}
+              </ul>
+              <button
+                class="link"
+                onClick={() => {
+                  patchParams({ tx: null });
+                  navigate('transactions', { q: d.transaction.description });
+                }}
+              >
+                Ver todas deste estabelecimento
+              </button>
+            </details>
 
-            {!manual && d.account.kind === 'credit_card' && d.transaction.amount < 0 && <InstallmentEditor id={id} d={d} onSaved={() => detail.reload()} />}
-
-            {!manual && <Mapping id={id} hidden={hidden} d={d} onChange={(closes) => (closes ? patchParams({ tx: null }) : detail.reload())} />}
-
-            {!manual && <h3>O que cada fonte reporta</h3>}
-            {d.sources.map((s) => (
-              <div class="source" key={`${s.sourceId}${s.externalId}`}>
-                <strong>{s.sourceId}</strong>
-                {s.record ? (
-                  <dl class="facts">
-                    <dt>Descrição</dt>
-                    <dd>
-                      {s.record.description}
-                      <CopyButton value={s.record.description} label="Copiar descrição" />
-                    </dd>
-                    {s.record.descriptionRaw && s.record.descriptionRaw !== s.record.description && (
-                      <>
-                        <dt>Original</dt>
-                        <dd>
-                          {s.record.descriptionRaw}
-                          <CopyButton value={s.record.descriptionRaw} label="Copiar texto original" />
-                        </dd>
-                      </>
+            {!manual && (
+              <details>
+                <summary>Fontes e vínculos ({d.transaction.sourceIds.join(', ')})</summary>
+                <Mapping id={id} hidden={hidden} d={d} onChange={(closes) => closes && patchParams({ tx: null })} />
+                {d.sources.map((s) => (
+                  <div class="source" key={`${s.sourceId}${s.externalId}`}>
+                    <strong>{s.sourceId}</strong>
+                    {s.record ? (
+                      <dl class="facts">
+                        {s.record.descriptionRaw && s.record.descriptionRaw !== s.record.description && (
+                          <>
+                            <dt>Original</dt>
+                            <dd>
+                              {s.record.descriptionRaw}
+                              <CopyButton value={s.record.descriptionRaw} label="Copiar texto original" />
+                            </dd>
+                          </>
+                        )}
+                        <dt>Categoria</dt>
+                        <dd>{s.record.category ?? 'Sem categoria'}</dd>
+                        <dt>Valor</dt>
+                        <dd>{brl(s.record.amount, hidden)}</dd>
+                        <dt>Vista desde</dt>
+                        <dd>{s.record.firstSeenAt.slice(0, 10)}</dd>
+                      </dl>
+                    ) : (
+                      <div class="muted">Registro não está mais nos dados da fonte.</div>
                     )}
-                    <dt>Categoria</dt>
-                    <dd>{s.record.category ?? 'Sem categoria'}</dd>
-                    <dt>Status</dt>
-                    <dd>{s.record.status === 'pending' ? 'Pendente' : 'Lançada'}</dd>
-                    <dt>Valor</dt>
-                    <dd>{brl(s.record.amount, hidden)}</dd>
-                    <dt>Vista desde</dt>
-                    <dd>{s.record.firstSeenAt.slice(0, 10)}</dd>
-                  </dl>
-                ) : (
-                  <div class="muted">Registro não está mais nos dados da fonte.</div>
+                  </div>
+                ))}
+                {d.findings.length > 0 && (
+                  <>
+                    <h3>Divergências</h3>
+                    <ul class="rows">
+                      {d.findings.map((f) => (
+                        <li key={f.id}>{f.summary}</li>
+                      ))}
+                    </ul>
+                  </>
                 )}
-              </div>
-            ))}
-
-            {d.findings.length > 0 && (
-              <>
-                <h3>Divergências</h3>
-                <ul class="rows">
-                  {d.findings.map((f) => (
-                    <li key={f.id}>{f.summary}</li>
-                  ))}
-                </ul>
-              </>
+              </details>
             )}
+
             {d.cycle && (
               <button
                 class="link"
