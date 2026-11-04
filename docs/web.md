@@ -331,3 +331,9 @@ A fatura paga pela conta aparece lá como "GASTOS CARTAO DE CREDITO" (Bradesco) 
 ## Fotos das telas para revisar o visual
 
 `npm run shots` fotografa o app em quatro tamanhos (desktop 1440, notebook 1024, tablet 768 e celular 390) para 13 telas, com dados inventados e sem servidor nem login. Usa o Chrome sem tela (o `chrome-headless-shell` que o Playwright guarda em `~/Library/Caches/ms-playwright`, ou o Chrome em si via `CHROME=...`). As fotos vão para `shots/` (fora do git). `npm run shots -- painel --size phone` tira só uma. Não mostra hover, arrastar nem animação; serve para conferir layout, quebra de texto e responsividade.
+
+## Cartões que fecham em dias diferentes
+
+Cada cartão fecha no seu dia (hoje 02, 02, 08 e 08, e o Nubank já mudou de 14 para 08), então quase sempre há faturas de um mesmo mês de vencimento em estágios diferentes: uma já fechada e publicada, outras ainda crescendo. O gráfico "Faturas por mês de vencimento" tem uma barra por mês, com a fatura publicada dos cartões que já fecharam mais o total corrente dos que ainda não fecharam. A barra fica na cor de "em aberto" enquanto algum cartão não fechou, e a dica diz quantos estão abertos e quantos já fecharam. Não existe mais a barra separada "Aberta": a primeira barra em aberto é a que "Em aberto (atual)" mostra. Nessa visão cada cartão aparece no seu ciclo atual, por isso um cartão que já fechou o mês pode estar no mês seguinte enquanto os outros ainda estão no atual; a fatura fechada e ainda não vencida entra em "Fechadas e não pagas".
+
+O dia de fechamento estimado erra por alguns dias (o banco move para dia útil: 01/10, 02/11). O app não depende mais só dele: se as compras mais novas já estão, pela palavra do banco, na fatura do mês seguinte, o mês anterior é tratado como fechado. Sem essa informação, uma fatura que fechou há até 7 dias e ainda não foi publicada continua como a atual.

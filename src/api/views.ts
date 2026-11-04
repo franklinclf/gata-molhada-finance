@@ -110,7 +110,7 @@ export interface CardsView extends Stamped {
   cycle: string;
   /** Due months that exist for at least one card, newest first. */
   cycles: string[];
-  totals: { cycleTotal: Cents; /** Part of cycleTotal the issuer's balance implies but no listed charge explains (shared limits only). */ unexplained: Cents; outstanding: Cents; futureInstallments: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
+  totals: { cycleTotal: Cents; /** The same total split by due month: cards close on different days, so one view holds bills of more than one month. */ byMonth: Record<string, { total: Cents; cards: number }>; /** Part of cycleTotal the issuer's balance implies but no listed charge explains (shared limits only). */ unexplained: Cents; outstanding: Cents; futureInstallments: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
   cards: CardRow[];
   /** Cards that share one limit appear here once, so the limit is not counted twice. */
   limitGroups: Array<{ id: string; institution: string; creditLimit: Cents; used: Cents; available: Cents; cardIds: string[]; openEstimate: Cents; unexplained: Cents }>;
@@ -192,6 +192,12 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
 
   // A shared limit reports one balance for all its cards, so in the open cycle the group counts once.
   let cycleTotal = 0;
+  const byMonth: Record<string, { total: Cents; cards: number }> = {};
+  const addMonth = (key: string, amount: Cents) => {
+    const slot = (byMonth[key] ??= { total: 0, cards: 0 });
+    slot.total += amount;
+    slot.cards += 1;
+  };
   let unexplained = 0;
   const countedGroups = new Set<string>();
   for (const row of rows) {
@@ -200,8 +206,12 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       if (countedGroups.has(gid)) continue;
       countedGroups.add(gid);
       cycleTotal += limitGroups.find((g) => g.id === gid)?.openEstimate ?? 0;
+      addMonth(row.cycle.key, limitGroups.find((g) => g.id === gid)?.openEstimate ?? 0);
       unexplained += limitGroups.find((g) => g.id === gid)?.unexplained ?? 0;
-    } else cycleTotal += row.total;
+    } else {
+      cycleTotal += row.total;
+      if (row.cycle !== null) addMonth(row.cycle.key, row.total);
+    }
   }
   const summary = summarizeAccounts(accounts);
   const dues = rows.map((r) => r.nextDueDate).filter((d): d is string => d !== null).sort();
@@ -214,6 +224,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     cycles: [...months].sort().reverse(),
     totals: {
       cycleTotal,
+      byMonth,
       unexplained,
       outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
       futureInstallments: rows.reduce((s, r) => s + r.futureInstallments, 0),
@@ -230,13 +241,20 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
 
 // ---------- card bills over time ----------
 
+/** One due month for all the visible cards: the bills that are out, plus the running total of the cards that have not closed it yet. */
 export interface BillBar {
-  /** Cycle to select on the cards screen: `open` or a due month (YYYY-MM). */
+  /** Cycle to select on the cards screen: a due month (YYYY-MM). */
   key: string;
+  /** At least one card has not closed this month yet, so the total is still growing. */
   open: boolean;
+  /** The earliest month still open: what "Em aberto (atual)" on the cards screen starts from. */
+  current: boolean;
   total: Cents;
   paid: Cents;
   outstanding: Cents;
+  /** Cards that still add to this month, and cards that have it as a published bill. */
+  openCards: number;
+  closedCards: number;
   status: 'open' | 'paid' | 'partial' | 'unpaid' | 'overdue';
 }
 
@@ -244,28 +262,44 @@ export interface BillsView extends Stamped {
   bars: BillBar[];
 }
 
-/** One bar per due month with the bills of all visible cards added, plus the open cycle. This is what the bill chart draws. */
+/**
+ * One bar per due month with all visible cards added. Cards close on different days, so a month can hold bills that are
+ * out and cards still adding to theirs; the bar shows both and says how many of each.
+ */
 export function cardBills(store: Store, now: Date, opts: ViewOptions = {}, months = 12): BillsView {
   const accounts = visibleAccounts(store, opts);
   const cardAccounts = accounts.filter((a) => a.kind === 'credit_card');
   const transactions = effectiveTransactions(store, opts, accounts);
   const today = localDay(now.toISOString());
   const byKey = new Map<string, BillBar>();
+  const barOf = (key: string): BillBar => {
+    const bar = byKey.get(key) ?? { key, open: false, current: false, total: 0, paid: 0, outstanding: 0, openCards: 0, closedCards: 0, status: 'paid' as BillBar['status'] };
+    byKey.set(key, bar);
+    return bar;
+  };
   for (const account of cardAccounts) {
     for (const c of cyclesFor(store, account, transactions, today)) {
       if (c.status === 'open' || c.status === 'unknown' || c.billTotal === null) continue;
-      const bar = byKey.get(c.key) ?? { key: c.key, open: false, total: 0, paid: 0, outstanding: 0, status: 'paid' as BillBar['status'] };
+      const bar = barOf(c.key);
       bar.total += c.billTotal;
       bar.paid += c.paid;
       bar.outstanding += c.outstanding;
+      bar.closedCards += 1;
       if (c.status === 'overdue') bar.status = 'overdue';
       else if (c.outstanding > 0 && bar.status !== 'overdue') bar.status = c.paid > 0 ? 'partial' : 'unpaid';
-      byKey.set(c.key, bar);
     }
   }
-  const closed = [...byKey.values()].filter((b) => b.total > 0).sort((a, b) => a.key.localeCompare(b.key)).slice(-months);
   const open = cards(store, now, opts, 'open');
-  const bars: BillBar[] = [...closed, { key: 'open', open: true, total: open.totals.cycleTotal, paid: 0, outstanding: 0, status: 'open' }];
+  for (const [key, part] of Object.entries(open.totals.byMonth)) {
+    const bar = barOf(key);
+    bar.total += part.total;
+    bar.openCards += part.cards;
+    bar.open = true;
+    if (bar.status !== 'overdue') bar.status = 'open';
+  }
+  const bars = [...byKey.values()].filter((b) => b.total > 0).sort((a, b) => a.key.localeCompare(b.key)).slice(-months);
+  const current = bars.find((b) => b.open);
+  if (current) current.current = true;
   return { ...stamp(cardAccounts, now), bars };
 }
 

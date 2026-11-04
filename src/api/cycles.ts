@@ -162,6 +162,14 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     steps++;
     closing = addMonthsToDay(last.closing, steps);
   }
+  // The estimate of the closing day can be off by a few days (banks move it to a business day). The issuer's own word about where the
+  // newest charges go is better: when charges made by today already belong to the bill after this one, this one has closed.
+  const placedOn = (due: string) => own.some((t) => t.billByBank && t.billCycle === due.slice(0, 7) && !isCardPayment(t) && localDay(t.occurredAt) <= today);
+  while (placedOn(addMonthsToDay(last.due, steps + 1))) {
+    windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: false });
+    steps++;
+    closing = addMonthsToDay(last.closing, steps);
+  }
   windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing < today ? today : closing, due: addMonthsToDay(last.due, steps), total: null, open: true });
 
   const cycles: Cycle[] = windows.map((w, i) => {
