@@ -376,6 +376,10 @@ export interface Store {
   listTransactionOverrides(): Map<string, TransactionOverride>;
   /** Sets the given fields and leaves the others alone; `null` clears a field. */
   setTransactionOverride(transactionId: string, patch: Partial<TransactionOverride>, now: string): void;
+  /** The owner's word on which credit returned which purchase (linked), or that a guessed pair is wrong (not linked). */
+  listReversalLinks(): Array<{ chargeId: string; refundId: string; linked: boolean }>;
+  /** Links a purchase and its refund, marks the guess as wrong (false), or forgets the choice (null). False when a side has no source record (typed in by hand). */
+  setReversalLink(chargeId: string, refundId: string, linked: boolean | null, now: string): boolean;
   /** Restores pending transactions that a card bill proved real: they count again. */
   markTransactionsBilled(ids: string[]): void;
   getSetting(key: string): string | null;

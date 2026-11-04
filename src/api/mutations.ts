@@ -317,3 +317,26 @@ export function setTransactionInstallment(store: Store, transactionId: string, n
   store.setInstallmentOverride(transactionId, { number: number as number, total: total as number }, now.toISOString());
   return { ok: true };
 }
+
+/**
+ * Says which purchase a refund returned. `otherId` links this transaction with it (the credit is the refund, the debit is the
+ * purchase). `null` says this transaction is not a reversal: the pair the app guessed, or the one the owner made, is undone and
+ * the guess does not come back.
+ */
+export function setReversal(store: Store, id: string, otherId: unknown, now: Date): MutationResult {
+  if (otherId !== null && typeof otherId !== 'string') return { ok: false, status: 400, error: 'otherId must be a transaction id or null' };
+  const all = effectiveTransactions(store, { includeHidden: true, includeExcluded: true });
+  const me = all.find((t) => t.id === id);
+  if (!me) return { ok: false, status: 404, error: 'not_found' };
+  const iso = now.toISOString();
+  if (otherId === null) {
+    if (!me.reversal) return { ok: true };
+    const [chargeId, refundId] = me.reversal.side === 'charge' ? [me.id, me.reversal.otherId] : [me.reversal.otherId, me.id];
+    return store.setReversalLink(chargeId, refundId, false, iso) ? { ok: true } : { ok: false, status: 400, error: 'a transaction you typed in cannot be paired' };
+  }
+  const other = all.find((t) => t.id === otherId);
+  if (!other) return { ok: false, status: 404, error: 'not_found' };
+  if (other.id === me.id || other.amount === 0 || me.amount === 0 || other.amount > 0 === me.amount > 0) return { ok: false, status: 400, error: 'a purchase pairs with a credit, not with another purchase' };
+  const [charge, refund] = me.amount < 0 ? [me, other] : [other, me];
+  return store.setReversalLink(charge.id, refund.id, true, iso) ? { ok: true } : { ok: false, status: 400, error: 'a transaction you typed in cannot be paired' };
+}

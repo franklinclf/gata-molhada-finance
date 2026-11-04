@@ -758,6 +758,35 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       });
     },
 
+    listReversalLinks(): Array<{ chargeId: string; refundId: string; linked: boolean }> {
+      const rows = db
+        .prepare(
+          `SELECT DISTINCT lc.transaction_id AS charge_id, lr.transaction_id AS refund_id, r.linked AS linked
+             FROM reversal_links r
+             JOIN transaction_links lc ON lc.source_id = r.charge_source AND lc.external_id = r.charge_external
+             JOIN transaction_links lr ON lr.source_id = r.refund_source AND lr.external_id = r.refund_external
+            ORDER BY r.updated_at`,
+        )
+        .all() as Array<{ charge_id: string; refund_id: string; linked: number }>;
+      return rows.map((r) => ({ chargeId: r.charge_id, refundId: r.refund_id, linked: r.linked === 1 }));
+    },
+
+    setReversalLink(chargeId: string, refundId: string, linked: boolean | null, now: string): boolean {
+      const first = (id: string) => db.prepare('SELECT source_id, external_id FROM transaction_links WHERE transaction_id = ? ORDER BY source_id, external_id LIMIT 1').get(id) as { source_id: string; external_id: string } | undefined;
+      const charge = first(chargeId);
+      const refund = first(refundId);
+      if (!charge || !refund) return false;
+      inTransaction(() => {
+        // One refund returns one purchase: a new choice replaces the older links of either side.
+        if (linked === true) {
+          db.prepare('DELETE FROM reversal_links WHERE linked = 1 AND ((charge_source = ? AND charge_external = ?) OR (refund_source = ? AND refund_external = ?))').run(charge.source_id, charge.external_id, refund.source_id, refund.external_id);
+        }
+        if (linked === null) db.prepare('DELETE FROM reversal_links WHERE charge_source = ? AND charge_external = ? AND refund_source = ? AND refund_external = ?').run(charge.source_id, charge.external_id, refund.source_id, refund.external_id);
+        else db.prepare('INSERT INTO reversal_links (charge_source, charge_external, refund_source, refund_external, linked, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(charge_source, charge_external, refund_source, refund_external) DO UPDATE SET linked = excluded.linked, updated_at = excluded.updated_at').run(charge.source_id, charge.external_id, refund.source_id, refund.external_id, linked ? 1 : 0, now);
+      });
+      return true;
+    },
+
     listCategoryRules(): Map<string, string> {
       const rows = db.prepare('SELECT match_key, category FROM category_rules').all() as Array<{ match_key: string; category: string }>;
       return new Map(rows.map((r) => [r.match_key, r.category]));

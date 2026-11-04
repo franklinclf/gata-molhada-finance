@@ -131,6 +131,8 @@ export const api = {
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/ignore`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ignored }) }),
   setStatus: (id: string, status: 'pending' | 'posted' | null) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }),
+  setReversal: (id: string, otherId: string | null) =>
+    request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/reversal`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherId }) }),
   setCycle: (id: string, cycleKey: string | null) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/cycle`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cycleKey }) }),
   dismiss: (findingId: string) => request<{ ok: true }>(`/api/findings/${encodeURIComponent(findingId)}/dismiss`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),

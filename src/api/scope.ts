@@ -4,6 +4,7 @@ import { mapSourceCategory } from '../ai/source-map.ts';
 import { localDay } from '../core/time.ts';
 import type { ForeignAmount, Parties } from '../core/parties.ts';
 import { categoryForMcc } from './mcc.ts';
+import { pairReversals, type Reversal } from './reversals.ts';
 import { categoryFromRules, sortRules, type RuleSubject } from './rules-engine.ts';
 import { titleOf } from '../core/title.ts';
 import { merchantOf } from '../core/merchant.ts';
@@ -37,6 +38,8 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   title: string;
   /** Card bill (due month, YYYY-MM) the transaction belongs to when it is not simply the one its date falls in: the owner moved it, or the issuer placed it. */
   billCycle: string | null;
+  /** The purchase and the refund that returned it are one entry: this says which side this is and the other one. */
+  reversal: Reversal | null;
   /** `billCycle` comes from the issuer (the bill id or its forecast), not from the owner. */
   billByBank: boolean;
   /** The owner set the status by hand. */
@@ -145,7 +148,7 @@ export function effectiveTransactions(
     store.listCanonicalTransactions({ includeExcluded: false }).filter((t) => !cardIds.has(t.accountId)).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })),
     store.listSourceIds().flatMap((sourceId) => store.listSourceBills(sourceId)),
   );
-  return all
+  const rows: EffectiveTransaction[] = all
     .filter((t) => ids.has(t.accountId))
     .map((t) => {
       const labels = mergeLabels(t.category, labelsOf.get(t.id));
@@ -180,8 +183,19 @@ export function effectiveTransactions(
       const bankBill = role === 'card_payment' ? null : bankBillOf(parties, billMonth);
       const status = word?.status ?? t.status;
       const revived = word?.status === 'posted' && t.state === 'stale_pending';
-      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, billCycle: word?.cycleKey ?? bankBill, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
+      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, reversal: null, billCycle: word?.cycleKey ?? bankBill, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
     });
+  // A refund and the purchase it returned are one entry. The refund takes the category of the purchase (unless the owner chose its own),
+  // so the category's total is net of it instead of the credit landing in "Estorno" or in income.
+  const pairs = pairReversals(rows, store.listReversalLinks());
+  if (pairs.size === 0) return rows;
+  const byId = new Map(rows.map((t) => [t.id, t]));
+  return rows.map((t) => {
+    const reversal = pairs.get(t.id);
+    if (!reversal) return t;
+    const charge = reversal.side === 'refund' ? byId.get(reversal.otherId) : undefined;
+    return charge && t.categoryOrigin !== 'override' && charge.category !== null ? { ...t, reversal, category: charge.category } : { ...t, reversal };
+  });
 }
 
 /** Hash of the other side's document per transaction, for comparing two records without exposing it on screen. */
