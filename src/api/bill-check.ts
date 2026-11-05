@@ -4,6 +4,7 @@ import { normalizeName } from '../core/names.ts';
 import { localDay } from '../core/time.ts';
 import { cyclesFor, isCardPayment, type Cycle } from './cycles.ts';
 import { effectiveTransactions, type EffectiveTransaction } from './scope.ts';
+import { installments } from './installments.ts';
 import type { Store } from '../store/store.ts';
 
 /** How far from a closing day a charge can sit and still plausibly belong to the neighbouring bill. */
@@ -97,6 +98,9 @@ export function billCheck(store: Store, now: Date): BillCheckView {
   const all = effectiveTransactions(store, { includeHidden: true, includeExcluded: true });
   const live = all.filter((t) => !t.excluded);
   const today = localDay(now.toISOString());
+  // Installments the bank has not listed yet but will bill: they explain part of what a bill has over the charges.
+  const plan = installments(store, now);
+  const plannedIn = (accountId: string, key: string) => plan.purchases.filter((p) => p.accountId === accountId).reduce((s, p) => s + p.slots.filter((x) => x.cycle === key && x.inferred && x.status !== 'future').length * p.amount, 0);
   const items: BillCheckItem[] = [];
 
   for (const account of store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card')) {
@@ -110,7 +114,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
     cycles.forEach((cycle, i) => {
       if (cycle.billTotal === null || cycle.status === 'open' || cycle.status === 'unknown' || cycle.status === 'empty') return;
       if (cycle.dueDate < addDays(today, -400)) return;
-      const ours = cycle.charges - cycle.credits + (delta.get(cycle.key) ?? 0);
+      const ours = cycle.charges - cycle.credits + plannedIn(account.id, cycle.key) + (delta.get(cycle.key) ?? 0);
       const gap = ours - cycle.billTotal;
       if (Math.abs(gap) <= TOLERANCE) return;
       const previous = cycles[i - 1];
@@ -128,7 +132,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
       };
       // A neighbour with no published bill says nothing either way. One with a bill can take a charge only if it is short by
       // that much, and give one only if it has that much to spare; anything else would trade one gap for another.
-      const spare = (c: Cycle | undefined): Cents | null => (c && c.billTotal !== null && c.status !== 'unknown' && c.status !== 'open' ? c.charges - c.credits + (delta.get(c.key) ?? 0) - c.billTotal : null);
+      const spare = (c: Cycle | undefined): Cents | null => (c && c.billTotal !== null && c.status !== 'unknown' && c.status !== 'open' ? c.charges - c.credits + plannedIn(account.id, c.key) + (delta.get(c.key) ?? 0) - c.billTotal : null);
       const canTake = (c: Cycle | undefined, amount: Cents) => c !== undefined && (spare(c) === null || spare(c)! <= -amount + TOLERANCE);
       const canGive = (c: Cycle | undefined, amount: Cents) => c !== undefined && (spare(c) === null || spare(c)! >= amount - TOLERANCE);
       if (gap > 0) {
@@ -153,8 +157,8 @@ export function billCheck(store: Store, now: Date): BillCheckView {
         to: cycle.to,
         dueDate: cycle.dueDate,
         billTotal: cycle.billTotal,
-        ours: cycle.charges - cycle.credits,
-        gap: cycle.charges - cycle.credits - cycle.billTotal,
+        ours: cycle.charges - cycle.credits + plannedIn(account.id, cycle.key),
+        gap: cycle.charges - cycle.credits + plannedIn(account.id, cycle.key) - cycle.billTotal,
         suggestion: suggestion ?? (gap < 0 ? { kind: 'missing', amount: -gap } : { kind: 'extra', amount: gap }),
       });
     });
