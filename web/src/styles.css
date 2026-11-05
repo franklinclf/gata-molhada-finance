@@ -519,3 +519,5 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .mini-day .dot { position: absolute; left: 50%; bottom: 3px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--accent); }
 .mini-day .dot.soft { opacity: 0.45; }
 .correct { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.bill-editor { display: flex; flex-direction: column; gap: 10px; background: var(--card-2); border-radius: 14px; padding: 12px; }
+.bill-editor input { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 6px 10px; min-height: 36px; }

@@ -179,6 +179,14 @@ export interface TransactionOverride {
   cycleKey: string | null;
 }
 
+/** What the owner changed on a card bill. A null field follows the issuer and the app. */
+export interface BillEdit {
+  total: number | null;
+  closingDate: string | null;
+  dueDate: string | null;
+  status: 'paid' | 'unpaid' | null;
+}
+
 export interface PruneResult {
   removed: number;
   /** True when the removal was refused because it looked like a failed read. */
@@ -376,6 +384,10 @@ export interface Store {
   listTransactionOverrides(): Map<string, TransactionOverride>;
   /** Sets the given fields and leaves the others alone; `null` clears a field. */
   setTransactionOverride(transactionId: string, patch: Partial<TransactionOverride>, now: string): void;
+  /** Edits the owner made to card bills, by `accountId|cycleKey`. */
+  listBillEdits(): Map<string, BillEdit>;
+  /** Saves the edit of one bill; `null` forgets all of it. */
+  setBillEdit(accountId: string, cycleKey: string, edit: BillEdit | null, now: string): void;
   /** The owner's word on which credit returned which purchase (linked), or that a guessed pair is wrong (not linked). */
   listReversalLinks(): Array<{ chargeId: string; refundId: string; linked: boolean }>;
   /** Links a purchase and its refund, marks the guess as wrong (false), or forgets the choice (null). False when a side has no source record (typed in by hand). */

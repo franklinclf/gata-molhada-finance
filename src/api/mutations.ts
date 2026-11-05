@@ -4,6 +4,8 @@ import type { Store } from '../store/store.ts';
 import { isManualId, manualNumber } from './manual.ts';
 import { categoryParents } from './category-groups.ts';
 import { effectiveTransactions, resolveAlias, ruleKey } from './scope.ts';
+import { cyclesFor } from './cycles.ts';
+import { localDay } from '../core/time.ts';
 
 export type MutationResult = { ok: true } | { ok: false; status: number; error: string };
 
@@ -339,4 +341,44 @@ export function setReversal(store: Store, id: string, otherId: unknown, now: Dat
   if (other.id === me.id || other.amount === 0 || me.amount === 0 || other.amount > 0 === me.amount > 0) return { ok: false, status: 400, error: 'a purchase pairs with a credit, not with another purchase' };
   const [charge, refund] = me.amount < 0 ? [me, other] : [other, me];
   return store.setReversalLink(charge.id, refund.id, true, iso) ? { ok: true } : { ok: false, status: 400, error: 'a transaction you typed in cannot be paired' };
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The owner changes a card bill: its total, closing day, due day, or whether it is paid. A field left out keeps what it had, `null`
+ * clears that field, and `reset: true` forgets every edit of the bill. Only bills that have closed can be edited.
+ */
+export function editBill(store: Store, input: Record<string, unknown>, now: Date): MutationResult {
+  const { accountId, cycleKey } = input;
+  if (typeof accountId !== 'string' || typeof cycleKey !== 'string' || !/^\d{4}-\d{2}$/.test(cycleKey)) return { ok: false, status: 400, error: 'accountId and cycleKey (YYYY-MM) are required' };
+  const account = store.listCanonicalAccounts().find((a) => a.id === accountId && a.kind === 'credit_card');
+  if (!account) return { ok: false, status: 404, error: 'not_found' };
+  const iso = now.toISOString();
+  if (input.reset === true) {
+    store.setBillEdit(accountId, cycleKey, null, iso);
+    return { ok: true };
+  }
+  const before = store.listBillEdits().get(`${accountId}|${cycleKey}`) ?? { total: null, closingDate: null, dueDate: null, status: null };
+  const next = { ...before };
+  if ('total' in input) {
+    if (input.total !== null && (!Number.isInteger(input.total) || (input.total as number) < 0 || (input.total as number) > 100_000_000)) return { ok: false, status: 400, error: 'total must be a whole number of cents, 0 or more' };
+    next.total = input.total as number | null;
+  }
+  for (const [field, column] of [['closingDate', 'closingDate'], ['dueDate', 'dueDate']] as const) {
+    if (!(field in input)) continue;
+    const value = input[field];
+    if (value !== null && (typeof value !== 'string' || !DAY.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`)))) return { ok: false, status: 400, error: `${field} must be YYYY-MM-DD or null` };
+    next[column] = value as string | null;
+  }
+  if ('status' in input) {
+    if (input.status !== null && input.status !== 'paid' && input.status !== 'unpaid') return { ok: false, status: 400, error: 'status must be paid, unpaid or null' };
+    next.status = input.status as 'paid' | 'unpaid' | null;
+  }
+  const cycle = cyclesFor(store, account, effectiveTransactions(store, { includeHidden: true }), localDay(now.toISOString())).find((c) => c.key === cycleKey);
+  if (!cycle) return { ok: false, status: 404, error: 'not_found' };
+  if (cycle.status === 'open') return { ok: false, status: 400, error: 'a bill that has not closed cannot be edited' };
+  if (next.closingDate !== null && next.dueDate !== null && next.dueDate < next.closingDate) return { ok: false, status: 400, error: 'the due day cannot come before the closing day' };
+  store.setBillEdit(accountId, cycleKey, next, iso);
+  return { ok: true };
 }

@@ -230,6 +230,8 @@ export const api = {
   deleteRule: (match: string) => request<{ ok: true }>(`/api/category-rules/${encodeURIComponent(match)}`, { method: 'DELETE' }),
   setCycleSettled: (accountId: string, cycleKey: string, settled: boolean | null) =>
     request<{ ok: true }>('/api/cycles', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId, cycleKey, settled }) }),
+  editBill: (accountId: string, cycleKey: string, edit: { total?: number | null; closingDate?: string | null; dueDate?: string | null; status?: 'paid' | 'unpaid' | null } | { reset: true }) =>
+    request<{ ok: true }>('/api/cycles/edit', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId, cycleKey, ...edit }) }),
   cycles: (accountId: string) => request<{ accountId: string; cycles: Cycle[] }>(`/api/cycles${query({ accountId })}`),
   freshness: () => request<FreshnessView>('/api/freshness'),
   resetState: () => request<{ available: boolean; running?: boolean; mode?: 'soft' | 'hard' | null; step?: string | null; startedAt?: string | null; finishedAt?: string | null; result?: 'completed' | 'failed' | null; summary?: string | null; error?: string | null }>('/api/reset'),

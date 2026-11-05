@@ -7,6 +7,7 @@ import { effectiveTransactions } from '../../src/api/scope.ts';
 import { runReconciliation } from '../../src/reconcile/run.ts';
 import { account as sourceAccount, tx as sourceTx } from '../support/builders.ts';
 import { cardBills, cards } from '../../src/api/views.ts';
+import { editBill } from '../../src/api/mutations.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url));
@@ -519,4 +520,43 @@ test('when the newest charges are already on the next bill by the issuer\'s word
   const cycles = cyclesFor(store, cc, effectiveTransactions(store), '2026-11-07');
   assert.deepEqual(cycles.slice(-2).map((c) => [c.key, c.status]), [['2026-11', 'unknown'], ['2026-12', 'open']]);
   assert.equal(cycles[2]!.charges, 700);
+});
+
+test('a bill from before the first transaction of the card is proved paid by the payment that is seen, and stays unchecked when none is', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  const bill = (id: string, due: string, closing: string, total: number) => ({ externalId: id, accountExternalId: 'ext-cd', dueDate: due, closingDate: closing, total, minimumPayment: null });
+  store.upsertSourceBills('pluggy', [bill('b-aug', '2026-08-15', '2026-08-02', 5000), bill('b-sep', '2026-09-15', '2026-09-02', 6000), bill('b-oct', '2026-10-15', '2026-10-02', 7000)], NOW.toISOString());
+  const cd = account('cd', { refs: [{ sourceId: 'pluggy', externalId: 'ext-cd', role: 'member' }] });
+  store.replaceCanonicalAccounts([cd], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('first', 'cd', '2026-09-20', -100), tx('pay-sep', 'cd', '2026-09-14', 6000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const cycles = cyclesFor(store, cd, effectiveTransactions(store), '2026-10-27');
+  assert.deepEqual(cycles.filter((c) => c.key <= '2026-09').map((c) => [c.key, c.status]), [['2026-08', 'unknown'], ['2026-09', 'paid']]);
+});
+
+test('the owner can change a bill: total, closing and due day, and whether it is paid; reset goes back', () => {
+  const { store, card1 } = setup();
+  const read = () => cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-09')!;
+  assert.equal(read().status, 'paid');
+  assert.deepEqual(editBill(store, { accountId: 'card1', cycleKey: '2026-09', total: 200000 }, NOW), { ok: true });
+  assert.deepEqual([read().billTotal, read().edited?.total], [200000, true]);
+  assert.equal(read().status, 'overdue', 'the payment seen is 80.000, so the rest of the edited total is open past its due day');
+  editBill(store, { accountId: 'card1', cycleKey: '2026-09', status: 'paid' }, NOW);
+  assert.deepEqual([read().status, read().outstanding, read().adjusted?.by], ['paid', 0, 'manual']);
+  editBill(store, { accountId: 'card1', cycleKey: '2026-09', status: 'unpaid', total: null }, NOW);
+  assert.deepEqual([read().status, read().outstanding], ['overdue', 80000]);
+  assert.equal(editBill(store, { accountId: 'card1', cycleKey: '2026-09', closingDate: '2026-09-10' }, NOW).ok, true);
+  assert.equal(read().to, '2026-09-10');
+  assert.equal(editBill(store, { accountId: 'card1', cycleKey: '2026-09', dueDate: '2026-09-01' }, NOW).ok, false, 'due before closing');
+  assert.equal(editBill(store, { accountId: 'card1', cycleKey: '2026-11', total: 100 }, NOW).ok, false, 'an open bill is not edited');
+  editBill(store, { accountId: 'card1', cycleKey: '2026-09', reset: true }, NOW);
+  assert.deepEqual([read().status, read().billTotal, read().edited], ['paid', 80000, null]);
+});
+
+test('looking at one bill shows that bill only: what is owed on it and its due day, not the card\'s other bills', () => {
+  const { store } = setup({ payments: false });
+  const open = cards(store, NOW, {}, 'open');
+  assert.equal(open.cards[0]!.outstanding, 148000, 'open view: every closed bill still owed');
+  const sep = cards(store, NOW, {}, '2026-09');
+  assert.deepEqual([sep.cards[0]!.outstanding, sep.cards[0]!.nextDueDate, sep.totals.outstanding, sep.totals.nextDueDate, sep.cards[0]!.futureInstallments], [80000, '2026-09-15', 80000, '2026-09-15', 0]);
 });

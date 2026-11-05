@@ -93,7 +93,7 @@ export function StatusBadge({ status }: { status: string }) {
     unpaid: ['A pagar', 'warn'],
     overdue: ['Vencida', 'bad'],
     empty: ['Sem gastos', 'muted'],
-    unknown: ['Sem dados', 'muted'],
+    unknown: ['Pagamento não conferido', 'muted'],
   };
   const [text, tone] = labels[status] ?? [status, 'muted'];
   return <span class={`badge ${tone}`}>{text}</span>;
