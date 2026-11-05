@@ -8,6 +8,7 @@ import { runReconciliation } from '../../src/reconcile/run.ts';
 import { account as sourceAccount, tx as sourceTx } from '../support/builders.ts';
 import { cardBills, cards } from '../../src/api/views.ts';
 import { editBill } from '../../src/api/mutations.ts';
+import { billCheck } from '../../src/api/bill-check.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url));
@@ -559,4 +560,21 @@ test('looking at one bill shows that bill only: what is owed on it and its due d
   assert.equal(open.cards[0]!.outstanding, 148000, 'open view: every closed bill still owed');
   const sep = cards(store, NOW, {}, '2026-09');
   assert.deepEqual([sep.cards[0]!.outstanding, sep.cards[0]!.nextDueDate, sep.totals.outstanding, sep.totals.nextDueDate, sep.cards[0]!.futureInstallments], [80000, '2026-09-15', 80000, '2026-09-15', 0]);
+});
+
+test('the second installment the bank has not listed yet explains what its bill has over the charges', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  const today = new Date('2026-11-05T15:00:00Z');
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, today.toISOString());
+  store.upsertSourceBills('pluggy', [
+    { externalId: 'b-oct', accountExternalId: 'ext-ct', dueDate: '2026-10-15', closingDate: '2026-10-02', total: 14994, minimumPayment: null },
+    { externalId: 'b-nov', accountExternalId: 'ext-ct', dueDate: '2026-11-15', closingDate: '2026-11-04', total: 11293, minimumPayment: null },
+  ], today.toISOString());
+  const ct = account('ct', { refs: [{ sourceId: 'pluggy', externalId: 'ext-ct', role: 'member' }] });
+  const first = { ...tx('natal-1', 'ct', '2026-09-19', -4995), description: 'PG *NATAL EM DOBR', installment: { number: 1, total: 2 } };
+  store.replaceCanonicalAccounts([ct], [], today.toISOString());
+  store.replaceCanonicalTransactions([tx('start', 'ct', '2026-08-01', -100), first, tx('oct', 'ct', '2026-09-25', -9999), tx('nov', 'ct', '2026-10-20', -6298), tx('pay', 'ct', '2026-10-14', 14994, 'Pagamento de cartão de crédito')], [], today.toISOString());
+  const sep = cards(store, today, {}, '2026-11').cards[0]!;
+  assert.deepEqual([sep.total, sep.posted, sep.plannedInstallments], [11293, 6298, 4995]);
+  assert.deepEqual(billCheck(store, today).items.filter((i) => i.cycleKey === '2026-11'), [], 'the gap is the installment, so nothing is reported missing');
 });

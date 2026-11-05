@@ -129,7 +129,8 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
   const plan = installments(store, now, opts);
   // Installments of earlier purchases that belong to the open bill but that the bank has not listed as charges yet: the card
   // issuer bills them, and the plan knows them by counting months from the installments it did see.
-  const plannedOpenOf = (id: string) => plan.purchases.filter((p) => p.accountId === id).reduce((s, p) => s + p.slots.filter((x) => x.status === 'open' && x.inferred).length * p.amount, 0);
+  // Any bill, closed or open: an installment of this bill that the bank has not listed as a charge but will bill.
+  const plannedOf = (id: string, key: string) => plan.purchases.filter((p) => p.accountId === id).reduce((s, p) => s + p.slots.filter((x) => x.cycle === key && x.inferred && x.status !== 'future').length * p.amount, 0);
   const futureOf = (id: string) => plan.purchases.filter((p) => p.accountId === id).reduce((s, p) => s + p.slots.filter((x) => x.status === 'future').length * p.amount, 0);
 
   const outstandingOf = (id: string) => (allCycles.get(id) ?? []).reduce((s, c) => s + c.outstanding, 0);
@@ -145,7 +146,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     // Looking at one bill shows that bill only: what is owed on it and when it is due, not the card's other bills.
     const outstanding = cycleChoice === 'open' ? outstandingOf(a.id) : (cycle?.outstanding ?? 0);
     const posted = cycle ? cycle.charges - cycle.credits : 0;
-    const planned = cycle?.status === 'open' ? plannedOpenOf(a.id) : 0;
+    const planned = cycle ? plannedOf(a.id, cycle.key) : 0;
     // A card that has no bill in the chosen month (for example it did not exist yet) contributes nothing. Only a card
     // with no bills at all falls back to the balance the issuer reports.
     let total = list.length === 0 ? a.balance : 0;
@@ -153,7 +154,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     if (cycle) {
       if (cycle.billTotal !== null) total = cycle.billTotal;
       // A closed month the issuer published no bill for has no balance estimate: only the open cycle is priced from the balance.
-      else if (cycle.status !== 'open') total = posted;
+      else if (cycle.status !== 'open') total = posted + planned;
       else if (a.limitGroupId === null) {
         total = Math.max(a.balance - outstanding - futureOf(a.id), posted + planned);
         estimated = total !== posted + planned;
