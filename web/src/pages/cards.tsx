@@ -7,6 +7,7 @@ import { patchParams, type Route } from '../router.ts';
 import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
 import { Select } from '../Select.tsx';
+import { BillEditor } from '../BillEditor.tsx';
 import { patchParams as openParams } from '../router.ts';
 
 const fullDay = (day: string) => `${dayMonth(day)}/${day.slice(0, 4)}`;
@@ -138,6 +139,7 @@ function CheckTab({ hidden }: { hidden: boolean }) {
 
 function History({ accountId, hidden }: { accountId: string; hidden: boolean }) {
   const { data, error, reload } = useLoad(() => api.cycles(accountId), [accountId]);
+  const [editing, setEditing] = useState<string | null>(null);
   const settle = async (key: string, settled: boolean | null) => {
     await api.setCycleSettled(accountId, key, settled);
     reload();
@@ -153,10 +155,11 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
           <th>Fatura</th>
           <th>Paga</th>
           <th>Situação</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
-        {data.cycles.map((c) => (
+        {data.cycles.flatMap((c) => [
           <tr key={c.key}>
             <td>
               <Go page="transactions" params={{ accountId, cycle: c.key }}>
@@ -193,9 +196,27 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
                   </button>
                 </div>
               )}
+              {c.status === 'unknown' && c.billTotal !== null && <div class="muted">Este cartão não tem lançamentos suficientes antes desta fatura para saber se foi paga. Se foi, marque em Editar.</div>}
+              {c.edited && <div class="muted">editada por você</div>}
             </td>
-          </tr>
-        ))}
+            <td>
+              {c.status !== 'open' && (
+                <button class="link" onClick={() => setEditing(editing === c.key ? null : c.key)}>
+                  {editing === c.key ? 'Fechar' : 'Editar'}
+                </button>
+              )}
+            </td>
+          </tr>,
+          ...(editing === c.key
+            ? [
+                <tr key={`${c.key}-edit`}>
+                  <td colSpan={6}>
+                    <BillEditor accountId={accountId} cycle={c} onDone={() => { setEditing(null); reload(); }} />
+                  </td>
+                </tr>,
+              ]
+            : []),
+        ])}
       </tbody>
     </table>
     </div>
@@ -204,6 +225,8 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
 
 function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; cycle: string; hidden: boolean }) {
   const [history, setHistory] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const isOpen = cycle === 'open';
   const used = card.creditLimit ? 1 - (card.availableLimit ?? card.creditLimit - card.balance) / card.creditLimit : 0;
   const c = card.cycle;
   return (
@@ -231,14 +254,18 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
                 <dd>{brl(card.plannedInstallments, hidden)}</dd>
               </>
             )}
-            {card.futureInstallments > 0 && (
+            {isOpen && card.futureInstallments > 0 && (
               <>
                 <dt>Parcelas de faturas futuras</dt>
                 <dd>{brl(card.futureInstallments, hidden)}</dd>
               </>
             )}
-            <dt>Saldo devedor no emissor</dt>
-            <dd>{brl(card.balance, hidden)}</dd>
+            {isOpen && (
+              <>
+                <dt>Saldo devedor no emissor</dt>
+                <dd>{brl(card.balance, hidden)}</dd>
+              </>
+            )}
             {c.billTotal !== null && (
               <>
                 <dt>Pago</dt>
@@ -259,8 +286,8 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
         <div class="muted">Este cartão não tem fatura com esse vencimento.</div>
       )}
       {c?.adjusted && <div class="note">{c.adjusted.by === 'auto' ? `${brl(c.adjusted.amount, hidden)} desta fatura não foi pago e provavelmente rolou para a fatura seguinte; não conta de novo como devido.` : `${brl(c.adjusted.amount, hidden)} desta fatura não foi cobrado, então ela conta como paga.`}</div>}
-      {card.outstanding > 0 && <div class="badge warn">Fatura fechada em aberto: {brl(card.outstanding, hidden)} · vence {card.nextDueDate ? fullDay(card.nextDueDate) : ''}</div>}
-      {card.creditLimit !== null && (
+      {card.outstanding > 0 && <div class="badge warn">{isOpen ? 'Fatura fechada em aberto' : 'Falta pagar nesta fatura'}: {brl(card.outstanding, hidden)} · vence {card.nextDueDate ? fullDay(card.nextDueDate) : ''}</div>}
+      {isOpen && card.creditLimit !== null && (
         <>
           <Meter fraction={used} />
           <div class="muted">
@@ -273,10 +300,16 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
         <Go page="transactions" params={{ accountId: card.id, cycle: c ? (cycle === 'open' ? 'open' : c.key) : undefined }}>
           Ver transações da fatura
         </Go>
+        {c && c.status !== 'open' && (
+          <button class="link" onClick={() => setEditing(!editing)}>
+            {editing ? 'Fechar edição' : 'Editar esta fatura'}
+          </button>
+        )}
         <button class="link" onClick={() => setHistory(!history)}>
           {history ? 'Ocultar histórico' : 'Histórico de faturas'}
         </button>
       </div>
+      {editing && c && <BillEditor accountId={card.id} cycle={c} onDone={() => setEditing(false)} />}
       {history && <History accountId={card.id} hidden={hidden} />}
     </section>
   );
@@ -485,7 +518,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
               key: b.key,
               label: monthName(b.key).slice(0, 3),
               value: b.total,
-              color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : 'var(--warn)',
+              color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : b.status === 'unknown' ? 'var(--muted)' : 'var(--warn)',
               tip: `Venc. ${monthName(b.key)}\n${hidden ? '••••' : brl(b.total)}${b.open ? ` · ${b.openCards} em aberto${b.closedCards > 0 ? `, ${b.closedCards} já fechada${b.closedCards === 1 ? '' : 's'}` : ''}` : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
             }))}
           />
@@ -493,6 +526,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
             <span><i style={{ background: 'var(--accent)' }} /> ainda abre cartão (os cartões fecham em dias diferentes)</span>
             <span><i style={{ background: 'var(--good)' }} /> paga</span>
             <span><i style={{ background: 'var(--warn)' }} /> a pagar</span>
+            <span><i style={{ background: 'var(--muted)' }} /> pagamento não conferido</span>
             <span><i style={{ background: 'var(--bad)' }} /> vencida</span>
           </div>
         </div>
@@ -516,30 +550,38 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
                   <strong>{brl(data.totals.cycleTotal, hidden)}</strong>
                 </div>
                 <div>
-                  <span class="muted">Fechadas e não pagas</span>
+                  <span class="muted">{cycle === 'open' ? 'Fechadas e não pagas' : 'Falta pagar nesta fatura'}</span>
                   <strong class={data.totals.outstanding > 0 ? 'bad-text' : ''}>{brl(data.totals.outstanding, hidden)}</strong>
                 </div>
                 <div>
-                  <span class="muted">Próximo vencimento</span>
+                  <span class="muted">{cycle === 'open' ? 'Próximo vencimento' : 'Vencimento'}</span>
                   <strong>{data.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'}</strong>
                 </div>
-                <div>
-                  <span class="muted">Parcelas de faturas futuras</span>
-                  <strong>{brl(data.totals.futureInstallments, hidden)}</strong>
-                </div>
-                <div>
-                  <span class="muted">Saldo devedor nos emissores</span>
-                  <strong>{brl(data.totals.reportedByIssuer, hidden)}</strong>
-                </div>
+                {cycle === 'open' && (
+                  <>
+                    <div>
+                      <span class="muted">Parcelas de faturas futuras</span>
+                      <strong>{brl(data.totals.futureInstallments, hidden)}</strong>
+                    </div>
+                    <div>
+                      <span class="muted">Saldo devedor nos emissores</span>
+                      <strong>{brl(data.totals.reportedByIssuer, hidden)}</strong>
+                    </div>
+                  </>
+                )}
               </div>
-              {data.totals.unexplained > 0 && (
+              {data.totals.unexplained > 0 && cycle === 'open' && (
                 <div class="note">
                   Na fatura em aberto, {brl(data.totals.unexplained, hidden)} vêm do limite usado que o banco informa para o limite compartilhado e que nenhuma compra ou parcela listada explica. Por isso a soma dos cartões mostrados é menor que o total. Pode ser uma compra que o banco ainda não enviou; o que aparecer depois reduz esse valor.
                 </div>
               )}
-              <div class="note">
-                O saldo devedor é o limite usado que cada banco informa: a fatura aberta, as faturas fechadas não pagas e todas as parcelas que ainda vão vencer. Por isso é maior que a fatura aberta. Cartões que dividem o mesmo limite entram uma vez. A fatura aberta de cada cartão é a soma das compras do ciclo; quando o banco ainda não publicou a fatura, o app estima o valor pelo saldo menos as parcelas futuras e marca como estimado.
-              </div>
+              {cycle === 'open' ? (
+                <div class="note">
+                  O saldo devedor é o limite usado que cada banco informa: a fatura aberta, as faturas fechadas não pagas e todas as parcelas que ainda vão vencer. Por isso é maior que a fatura aberta. Cartões que dividem o mesmo limite entram uma vez. A fatura aberta de cada cartão é a soma das compras do ciclo; quando o banco ainda não publicou a fatura, o app estima o valor pelo saldo menos as parcelas futuras e marca como estimado. Cada cartão fecha num dia, então cada um aparece no seu ciclo atual.
+                </div>
+              ) : (
+                <div class="note">Esta tela mostra só as faturas com vencimento em {monthName(cycle)}: o total, o que falta pagar e o vencimento são destas faturas. Limite, saldo do emissor e outras faturas ficam de fora.</div>
+              )}
               <div class="cards-grid">
                 {data.cards.map((card) => (
                   <CardBlock key={card.id} card={card} cycle={cycle} hidden={hidden} />

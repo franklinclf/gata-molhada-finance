@@ -29,10 +29,10 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
             <div class="big">{brl(data.totals.cycleTotal, hidden)}</div>
             <div class="muted">
               {cycle === 'open' ? 'Fatura em aberto' : `Faturas com vencimento em ${monthName(cycle)}`}
-              {data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(data.totals.nextDueDate)}` : ''}
+              {data.totals.nextDueDate ? ` · ${cycle === 'open' ? 'próximo vencimento' : 'vencimento'} ${dayMonth(data.totals.nextDueDate)}` : ''}
             </div>
             {cycle === 'open' && data.totals.futureInstallments > 0 && <div class="muted">fora desse valor: {brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras · saldo devedor total {brl(data.totals.reportedByIssuer, hidden)}</div>}
-            {data.totals.outstanding > 0 && <div class="badge warn">Fechadas e não pagas: {brl(data.totals.outstanding, hidden)}</div>}
+            {data.totals.outstanding > 0 && <div class="badge warn">{cycle === 'open' ? 'Fechadas e não pagas' : 'Falta pagar nesta fatura'}: {brl(data.totals.outstanding, hidden)}</div>}
             {size !== 'sm' && bills.data && (
               <Bars
                 hidden={hidden}
@@ -43,7 +43,7 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
                   key: b.key,
                   label: monthName(b.key).slice(0, 3),
                   value: b.total,
-                  color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : 'var(--warn)',
+                  color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : b.status === 'unknown' ? 'var(--muted)' : 'var(--warn)',
                   tip: `Venc. ${monthName(b.key)}\n${hidden ? '••••' : brl(b.total)}${b.open ? ` · ${b.openCards} em aberto${b.closedCards > 0 ? `, ${b.closedCards} já fechada${b.closedCards === 1 ? '' : 's'}` : ''}` : ''}`,
                 }))}
               />
@@ -54,7 +54,7 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
     >
       {data && size !== 'sm' && (
         <>
-          {size === 'lg' && (
+          {size === 'lg' && cycle === 'open' && (
             <div class="split">
               <Ring size={100} segments={[{ value: data.totals.used, color: 'var(--accent)', tip: `Usado ${hidden ? '••••' : brl(data.totals.used)}` }, { value: data.totals.available, color: 'transparent' }]}>
                 <span class="muted">limite usado</span>
@@ -75,7 +75,7 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
                     {c.institution} {c.name}
                     {c.last4 ? ` •••• ${c.last4}` : ''}
                   </Go>
-                  <Meter fraction={c.creditLimit ? 1 - (c.availableLimit ?? c.creditLimit - c.balance) / c.creditLimit : 0} tip="Limite usado" />
+                  {cycle === 'open' && <Meter fraction={c.creditLimit ? 1 - (c.availableLimit ?? c.creditLimit - c.balance) / c.creditLimit : 0} tip="Limite usado" />}
                   <div class="muted">
                     {c.cycle ? <StatusBadge status={c.cycle.status} /> : null} {c.nextDueDate ? `vence ${dayMonth(c.nextDueDate)}` : ''}
                     {c.cycle?.adjusted ? (c.cycle.adjusted.by === 'auto' ? ' · sobra rolou' : ' · ajustada') : ''}

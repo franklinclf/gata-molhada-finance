@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
+import type { BillEdit, BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -756,6 +756,16 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
           else db.prepare('INSERT INTO transaction_overrides (source_id, external_id, status, cycle_key, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET status = excluded.status, cycle_key = excluded.cycle_key, updated_at = excluded.updated_at').run(l.source_id, l.external_id, status, cycleKey, now);
         }
       });
+    },
+
+    listBillEdits(): Map<string, BillEdit> {
+      const rows = db.prepare('SELECT account_id, cycle_key, total, closing_date, due_date, status FROM bill_edits').all() as Array<{ account_id: string; cycle_key: string; total: number | null; closing_date: string | null; due_date: string | null; status: 'paid' | 'unpaid' | null }>;
+      return new Map(rows.map((r) => [`${r.account_id}|${r.cycle_key}`, { total: r.total, closingDate: r.closing_date, dueDate: r.due_date, status: r.status }]));
+    },
+
+    setBillEdit(accountId: string, cycleKey: string, edit: BillEdit | null, now: string): void {
+      if (edit === null || (edit.total === null && edit.closingDate === null && edit.dueDate === null && edit.status === null)) db.prepare('DELETE FROM bill_edits WHERE account_id = ? AND cycle_key = ?').run(accountId, cycleKey);
+      else db.prepare('INSERT INTO bill_edits (account_id, cycle_key, total, closing_date, due_date, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(account_id, cycle_key) DO UPDATE SET total = excluded.total, closing_date = excluded.closing_date, due_date = excluded.due_date, status = excluded.status, updated_at = excluded.updated_at').run(accountId, cycleKey, edit.total, edit.closingDate, edit.dueDate, edit.status, now);
     },
 
     listReversalLinks(): Array<{ chargeId: string; refundId: string; linked: boolean }> {

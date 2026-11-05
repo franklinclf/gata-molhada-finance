@@ -17,7 +17,7 @@ import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rul
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck } from './bill-check.ts';
-import { addCategory, dismissSuggestion, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, renameCategory, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, renameCategory, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -311,6 +311,12 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (parts.length !== 2) return null;
       return method === 'GET' ? { status: 200, body: billCheck(store, now) } : methodNotAllowed();
     case 'cycles': {
+      if (parts.length === 3 && id === 'edit') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { accountId, cycleKey, total?, closingDate?, dueDate?, status? } or { accountId, cycleKey, reset: true }');
+        return fromMutation(editBill(store, input, now));
+      }
       if (parts.length !== 2) return null;
       if (method === 'PUT') {
         const input = parseBody(body);

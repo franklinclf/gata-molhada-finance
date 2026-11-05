@@ -35,6 +35,8 @@ export interface Cycle {
    * status is `rolled`, not `paid`. `by: 'manual'`: the owner called it settled, and the status is `paid`.
    */
   adjusted: { amount: Cents; by: 'auto' | 'manual' } | null;
+  /** What the owner changed on this bill (the screens say so, and let it go back). Null when nothing. */
+  edited: { total: boolean; closing: boolean; due: boolean; status: boolean } | null;
 }
 
 export const isCardPayment = (t: { role: string | null }): boolean => t.role === 'card_payment';
@@ -139,7 +141,8 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
   }, null);
   const payments = paymentsOf(own);
 
-  const windows: Array<{ from: string; to: string; due: string; total: Cents | null; open: boolean }> = [];
+  const windows: Array<{ key: string; from: string; to: string; due: string; total: Cents | null; open: boolean }> = [];
+  const edits = store.listBillEdits();
   bills.forEach((bill, i) => {
     const previous = bills[i - 1];
     // A month the issuer published no bill for (the list skips it, or the bill is not out yet) still closed on the same
@@ -148,17 +151,17 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
       const months = monthsBetween(previous.closing, bill.closing);
       for (let k = 1; k < months; k++) {
         const closing = addMonthsToDay(previous.closing, k);
-        windows.push({ from: addDays(addMonthsToDay(previous.closing, k - 1), 1), to: closing, due: addMonthsToDay(previous.due, k), total: null, open: false });
+        windows.push({ key: '', from: addDays(addMonthsToDay(previous.closing, k - 1), 1), to: closing, due: addMonthsToDay(previous.due, k), total: null, open: false });
       }
     }
-    windows.push({ from: previous ? addDays(windows[windows.length - 1]!.to, 1) : addDays(addMonthsToDay(bill.closing, -1), 1), to: bill.closing, due: bill.due, total: bill.total, open: false });
+    windows.push({ key: '', from: previous ? addDays(windows[windows.length - 1]!.to, 1) : addDays(addMonthsToDay(bill.closing, -1), 1), to: bill.closing, due: bill.due, total: bill.total, open: false });
   });
   const last = bills[bills.length - 1]!;
   let steps = 1;
   let closing = addMonthsToDay(last.closing, steps);
   // The bank publishes a bill a few days after it closes. Until then (or until the grace passes) that month stays the open cycle.
   while (addDays(closing, PUBLISH_GRACE_DAYS) < today) {
-    windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: false });
+    windows.push({ key: '', from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: false });
     steps++;
     closing = addMonthsToDay(last.closing, steps);
   }
@@ -166,20 +169,35 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
   // newest charges go is better: when charges made by today already belong to the bill after this one, this one has closed.
   const placedOn = (due: string) => own.some((t) => t.billByBank && t.billCycle === due.slice(0, 7) && !isCardPayment(t) && localDay(t.occurredAt) <= today);
   while (placedOn(addMonthsToDay(last.due, steps + 1))) {
-    windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: false });
+    windows.push({ key: '', from: addDays(windows[windows.length - 1]!.to, 1), to: closing, due: addMonthsToDay(last.due, steps), total: null, open: false });
     steps++;
     closing = addMonthsToDay(last.closing, steps);
   }
-  windows.push({ from: addDays(windows[windows.length - 1]!.to, 1), to: closing < today ? today : closing, due: addMonthsToDay(last.due, steps), total: null, open: true });
+  windows.push({ key: '', from: addDays(windows[windows.length - 1]!.to, 1), to: closing < today ? today : closing, due: addMonthsToDay(last.due, steps), total: null, open: true });
+
+  // The owner's edits. A window keeps the due month it was made for as its key, so an edited due date does not detach the edit.
+  for (const w of windows) w.key = w.due.slice(0, 7);
+  windows.forEach((w, i) => {
+    const edit = edits.get(`${account.id}|${w.key}`);
+    if (!edit || w.open) return;
+    if (edit.total !== null) w.total = edit.total;
+    if (edit.dueDate !== null) w.due = edit.dueDate;
+    if (edit.closingDate !== null) {
+      w.to = edit.closingDate;
+      const next = windows[i + 1];
+      if (next) next.from = addDays(edit.closingDate, 1);
+    }
+  });
 
   const cycles: Cycle[] = windows.map((w, i) => {
+    const edit = w.open ? undefined : edits.get(`${account.id}|${w.key}`);
     let charges = 0;
     let credits = 0;
     for (const t of own) {
       const day = localDay(t.occurredAt);
       if (isCardPayment(t)) continue;
       // The owner can move a charge to another bill; otherwise it follows its date.
-      if (t.billCycle ? t.billCycle !== w.due.slice(0, 7) : day < w.from || day > w.to) continue;
+      if (t.billCycle ? t.billCycle !== w.key : day < w.from || day > w.to) continue;
       if (t.amount < 0) charges += -t.amount;
       else credits += t.amount;
     }
@@ -189,7 +207,11 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     let outstanding = 0;
     if (w.open) status = 'open';
     // A closed month with no published bill cannot be judged: the payments are shown, the amount owed is not guessed.
-    else if (w.total === null || coverageStart === null || w.from < coverageStart) status = 'unknown';
+    // A bill of zero needs no payment to be judged.
+    else if (w.total === 0) status = 'empty';
+    else if (w.total === null || coverageStart === null) status = 'unknown';
+    // Before the first transaction of this card the payments cannot all be seen. What is seen can still prove a bill paid; it cannot prove it unpaid.
+    else if (w.from < coverageStart && paid < w.total - TOLERANCE) status = 'unknown';
     else {
       outstanding = Math.max(w.total - paid, 0);
       if (w.total === 0) status = 'empty';
@@ -197,7 +219,20 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
       else status = w.due < today ? 'overdue' : paid > 0 ? 'partial' : 'unpaid';
       if (status === 'paid') outstanding = 0;
     }
-    return { key: w.due.slice(0, 7), accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, status, adjusted: null };
+    let adjusted: Cycle['adjusted'] = null;
+    // The owner's word on payment: paid whatever the payments say, or not paid whatever they say.
+    if (edit?.status && w.total !== null && w.total > 0) {
+      if (edit.status === 'paid') {
+        if (outstanding > 0) adjusted = { amount: outstanding, by: 'manual' };
+        outstanding = 0;
+        status = 'paid';
+      } else {
+        outstanding = w.total;
+        status = w.due < today ? 'overdue' : 'unpaid';
+      }
+    }
+    const edited = edit ? { total: edit.total !== null, closing: edit.closingDate !== null, due: edit.dueDate !== null, status: edit.status !== null } : null;
+    return { key: w.key, accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, status, adjusted, edited };
   });
   return settleLeftovers(store, account.id, cycles, today);
 }
@@ -220,6 +255,8 @@ function settleLeftovers(store: Store, accountId: string, cycles: Cycle[], today
   for (let i = cycles.length - 1; i >= 0; i--) {
     const c = cycles[i]!;
     if (c.billTotal === null || c.outstanding <= 0 || (c.status !== 'overdue' && c.status !== 'unpaid' && c.status !== 'partial')) continue;
+    // The owner said whether this bill is paid; the guess has nothing to add.
+    if (store.listBillEdits().get(`${accountId}|${c.key}`)?.status) continue;
     const word = overrides.get(`${accountId}|${c.key}`);
     let by: 'auto' | 'manual' | null = null;
     if (word === true) by = 'manual';

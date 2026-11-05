@@ -142,7 +142,8 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
   const rows: CardRow[] = cardAccounts.map((a) => {
     const list = allCycles.get(a.id) ?? [];
     const cycle = (cycleChoice === 'open' ? list.find((c) => c.status === 'open') : list.find((c) => c.key === cycleChoice)) ?? null;
-    const outstanding = outstandingOf(a.id);
+    // Looking at one bill shows that bill only: what is owed on it and when it is due, not the card's other bills.
+    const outstanding = cycleChoice === 'open' ? outstandingOf(a.id) : (cycle?.outstanding ?? 0);
     const posted = cycle ? cycle.charges - cycle.credits : 0;
     const planned = cycle?.status === 'open' ? plannedOpenOf(a.id) : 0;
     // A card that has no bill in the chosen month (for example it did not exist yet) contributes nothing. Only a card
@@ -173,9 +174,9 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       posted,
       plannedInstallments: planned,
       estimated,
-      futureInstallments: futureOf(a.id),
+      futureInstallments: cycleChoice === 'open' ? futureOf(a.id) : 0,
       outstanding,
-      nextDueDate: nextDueOf(a.id) ?? a.dueDate,
+      nextDueDate: cycleChoice === 'open' ? (nextDueOf(a.id) ?? a.dueDate) : (cycle?.dueDate ?? null),
       minimumPayment: a.minimumPayment,
     };
   });
@@ -255,7 +256,7 @@ export interface BillBar {
   /** Cards that still add to this month, and cards that have it as a published bill. */
   openCards: number;
   closedCards: number;
-  status: 'open' | 'paid' | 'partial' | 'unpaid' | 'overdue';
+  status: 'open' | 'paid' | 'partial' | 'unpaid' | 'overdue' | 'unknown';
 }
 
 export interface BillsView extends Stamped {
@@ -279,7 +280,7 @@ export function cardBills(store: Store, now: Date, opts: ViewOptions = {}, month
   };
   for (const account of cardAccounts) {
     for (const c of cyclesFor(store, account, transactions, today)) {
-      if (c.status === 'open' || c.status === 'unknown' || c.billTotal === null) continue;
+      if (c.status === 'open' || c.billTotal === null) continue;
       const bar = barOf(c.key);
       bar.total += c.billTotal;
       bar.paid += c.paid;
@@ -287,6 +288,8 @@ export function cardBills(store: Store, now: Date, opts: ViewOptions = {}, month
       bar.closedCards += 1;
       if (c.status === 'overdue') bar.status = 'overdue';
       else if (c.outstanding > 0 && bar.status !== 'overdue') bar.status = c.paid > 0 ? 'partial' : 'unpaid';
+      // A bill whose payment cannot be checked is still a bill: it counts in the total and only dims the colour.
+      else if (c.status === 'unknown' && bar.status === 'paid') bar.status = 'unknown';
     }
   }
   const open = cards(store, now, opts, 'open');
