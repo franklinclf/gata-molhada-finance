@@ -35,10 +35,12 @@ function seeded() {
 test('the forecast splits each coming bill into installments, repeating charges and the usual spending', () => {
   const v = forecast(seeded(), NOW);
   assert.deepEqual(v.months.map((m) => m.key), ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04']);
-  assert.deepEqual(v.months.slice(0, 3).map((m) => [m.installments, m.recurring, m.variable, m.total]), [
-    [10000, 3990, 36010, 50000],
-    [10000, 3990, 36010, 50000],
-    [0, 3990, 36010, 40000],
+  // certain = installments + repeating charges; estimated adds the average of the usual spending.
+  assert.deepEqual(v.months.slice(0, 3).map((m) => [m.installments, m.recurring, m.variable, m.certain, m.estimated]), [
+    // The open bill already holds 500,00 by the issuer's balance, which is above installments plus repeating charges.
+    [10000, 3990, 36010, 50000, 50000],
+    [10000, 3990, 36010, 13990, 50000],
+    [0, 3990, 36010, 3990, 40000],
   ]);
   assert.equal(v.months[0]!.open, true);
   assert.equal(v.months[1]!.open, false);
@@ -52,7 +54,30 @@ test('the open bill is never forecast below what it already holds', () => {
   store.replaceCanonicalAccounts([{ ...card, balance: 200000 }], [], NOW.toISOString());
   const open = forecast(store, NOW).months[0]!;
   assert.ok(open.known >= 90000);
-  assert.ok(open.total >= open.known);
+  assert.ok(open.estimated >= open.known);
+  assert.ok(open.certain >= open.known, 'the sure part of the open bill is never below what it already holds');
+});
+
+test('a card whose bill for the first month is already published uses that bill instead of an estimate', () => {
+  const store = seeded();
+  // A second card closes on the 25th and is due on the 5th: on the 28th its November bill is closed and published, while the first card still has November open.
+  const other: CanonicalAccount = { ...card, id: 'c2', name: 'Other', last4: '5678', refs: [{ sourceId: 'pierre', externalId: 'ext-c2', role: 'member' }] };
+  store.upsertSourceBills('pierre', [
+    { externalId: 'o1', accountExternalId: 'ext-c2', dueDate: '2026-10-05', closingDate: '2026-09-25', total: 15000, minimumPayment: null },
+    { externalId: 'o2', accountExternalId: 'ext-c2', dueDate: '2026-11-05', closingDate: '2026-10-25', total: 20000, minimumPayment: null },
+  ], NOW.toISOString());
+  store.replaceCanonicalAccounts([card, other], [], NOW.toISOString());
+  const v = forecast(store, NOW);
+  const november = v.months[0]!;
+  assert.equal(november.key, '2026-11');
+  const closed = november.cards.find((c) => c.id === 'c2')!;
+  assert.deepEqual([closed.state, closed.certain, closed.estimated, closed.recurring, closed.variable], ['closed', 20000, 20000, 0, 0]);
+  assert.equal(november.cards.find((c) => c.id === 'c1')!.state, 'open');
+  assert.equal(november.open, true, 'the month still has an open bill');
+  assert.equal(november.certain, november.cards.reduce((s, c) => s + c.certain, 0));
+  assert.ok(november.known >= 20000);
+  // December is the open month of the second card: estimated from its own history, not from the published bill.
+  assert.equal(v.months[1]!.cards.find((c) => c.id === 'c2')!.state, 'open');
 });
 
 test('a charge that appears in fewer than three months, or changes amount, is not treated as repeating', () => {
@@ -75,5 +100,5 @@ test('the forecast answers over the API and skips hidden cards', () => {
   assert.equal(res?.status, 200);
   assert.equal((res?.body as { months: unknown[] }).months.length, 6);
   store.setAccountHidden('c1', true, NOW.toISOString());
-  assert.deepEqual(forecast(store, NOW).months.map((m) => m.total), [0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(forecast(store, NOW).months.map((m) => m.estimated), [0, 0, 0, 0, 0, 0]);
 });

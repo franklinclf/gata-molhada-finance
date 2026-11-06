@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api, type CardsView } from '../api.ts';
 import { Bars, Meter, StackedBars } from '../charts.tsx';
-import { brl, dayMonth, monthName } from '../format.ts';
+import { brl, dayMonth, localDay, monthName } from '../format.ts';
 import { useLoad, useStoredFlag } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { Button } from '../ds.tsx';
@@ -14,6 +14,13 @@ import { patchParams as openParams } from '../router.ts';
 
 const brlText = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 const fullDay = (day: string) => `${dayMonth(day)}/${day.slice(0, 4)}`;
+
+/** Moves the charges to their new bills, one call per destination bill so a bill never ends up half moved. */
+async function moveAll(moves: Array<{ transactionId: string; toCycleKey: string }>) {
+  const byBill = new Map<string, string[]>();
+  for (const m of moves) byBill.set(m.toCycleKey, [...(byBill.get(m.toCycleKey) ?? []), m.transactionId]);
+  for (const [cycleKey, ids] of byBill) await api.bulkEdit(ids, { cycleKey });
+}
 
 /** Closed bills whose published total differs from what the app adds up, each with the likeliest cause and a way to fix it. */
 function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
@@ -38,7 +45,7 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
   return (
     <>
       <p class="muted">
-        Compara o total de cada fatura fechada que o banco publicou com a soma das compras da fatura. Quando uma compra perto do fechamento explica a diferença dos dois lados, a sugestão é movê-la para a fatura vizinha. O que nenhuma compra explica é algo que o banco não mandou (lance à mão em “+ Nova”) ou que ele não cobra (ignore a transação).
+        Compara o total de cada fatura fechada que o banco publicou com a soma das compras da fatura. Quando uma compra perto do fechamento explica a diferença dos dois lados, a sugestão é movê-la para a fatura vizinha. O que nenhuma compra explica é algo que o banco não mandou (use “Lançar a diferença”) ou que ele não cobra (ignore a transação).
       </p>
       {message && <div class="error">{message}</div>}
       <section class="panel">
@@ -73,14 +80,21 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
                         ))}
                       </ul>
                     )}
-                    {s.kind === 'missing' && <div class="muted">O banco cobra {brl(s.amount, hidden)} que nenhuma compra perto do fechamento explica. Provavelmente uma compra, juros ou IOF que não chegaram: lance à mão em “+ Nova”.</div>}
+                    {s.kind === 'missing' && s.unlisted && (
+                      <div class="muted">
+                        O banco cobra {brl(s.amount, hidden)} a mais, e o valor bate com {s.unlisted.length === 1 ? 'uma parcela que o banco não listou' : 'duas parcelas que o banco não listou'}:{' '}
+                        {s.unlisted.map((u) => `${u.number}/${u.total} de ${u.description}, que o app contou na fatura de ${monthName(u.cycleKey)}`).join(' e ')}. Confira se {s.unlisted.length === 1 ? 'ela foi cobrada' : 'elas foram cobradas'} nesta fatura antes de lançar a diferença.
+                      </div>
+                    )}
+                    {s.kind === 'missing' && !s.unlisted && <div class="muted">O banco cobra {brl(s.amount, hidden)} que nenhuma compra perto do fechamento explica. Provavelmente uma compra, juros ou IOF que não chegaram: use “Lançar a diferença”.</div>}
                     {s.kind === 'extra' && <div class="muted">O app soma {brl(s.amount, hidden)} a mais do que o banco cobrou e nenhuma compra perto do fechamento explica. Pode ser uma pendente que o banco nunca lançou: abra a compra suspeita e ignore ou mude o status.</div>}
                   </div>
                   <div class="actions">
                     <Button size="sm" onClick={() => navigate('chat', { q: `A fatura do ${item.institution}${item.last4 ? ` final ${item.last4}` : ''} com vencimento em ${item.dueDate} veio ${brlText(item.billTotal)} no banco e o app soma ${brlText(item.ours)} (período ${item.from} a ${item.to}). O que pode explicar a diferença de ${brlText(item.gap)}? Consulte as transações do período e as parcelas.` })}>
                       Perguntar à IA
                     </Button>
-                    {s.kind !== 'move' && item.gap > 0 && (
+                    {/* Only a bill larger than the app's sum is fixed by adding a charge; with a smaller bill it would double the gap. */}
+                    {s.kind === 'missing' && (
                       <Button size="sm" onClick={() => setManual(manual === key ? null : key)}>
                         Lançar a diferença
                       </Button>
@@ -98,7 +112,7 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
                     />
                   )}
                   {s.kind === 'move' && (
-                    <button class="primary small" disabled={busy === key} onClick={() => void apply(key, async () => { for (const m of s.moves) await api.setCycle(m.transactionId, m.toCycleKey); })}>
+                    <button class="primary small" disabled={busy === key} onClick={() => void apply(key, () => moveAll(s.moves))}>
                       {busy === key ? 'Movendo...' : s.moves.length === 1 ? 'Mover a compra' : `Mover ${s.moves.length} compras`}
                     </button>
                   )}
@@ -165,13 +179,20 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
 function History({ accountId, hidden }: { accountId: string; hidden: boolean }) {
   const { data, error, reload } = useLoad(() => api.cycles(accountId), [accountId]);
   const [editing, setEditing] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const settle = async (key: string, settled: boolean | null) => {
-    await api.setCycleSettled(accountId, key, settled);
-    reload();
+    setMessage(null);
+    try {
+      await api.setCycleSettled(accountId, key, settled);
+      reload();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Não foi possível salvar.');
+    }
   };
   if (!data) return <Loading error={error} />;
   return (
     <div class="scroll-x">
+    {message && <div class="error">{message}</div>}
     <table class="table">
       <thead>
         <tr>
@@ -195,7 +216,10 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
               {dayMonth(c.from)} a {dayMonth(c.to)}
             </td>
             <td>{c.billTotal === null ? `${brl(c.charges - c.credits, hidden)} lançado` : brl(c.billTotal, hidden)}</td>
-            <td>{c.billTotal === null ? '' : brl(c.paid, hidden)}</td>
+            <td>
+              {c.billTotal === null ? '' : brl(c.paid, hidden)}
+              {c.overpaid > 0 && <div class="bad-text">pago a mais {brl(c.overpaid, hidden)}</div>}
+            </td>
             <td>
               <StatusBadge status={c.status} />
               {c.adjusted && (
@@ -248,20 +272,24 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
   );
 }
 
+/** Limit still free on a card: what the issuer reports, else the limit minus the balance owed. The same rule on every screen. */
+const availableOf = (c: { creditLimit: number | null; availableLimit: number | null; balance: number }): number => c.availableLimit ?? (c.creditLimit ?? 0) - c.balance;
+
 /** One row per limit: cards that share a limit count once, and the bar fills with what is used, as the numbers say. */
 function limitRows(data: CardsView): Array<{ key: string; name: string; shared: boolean; limit: number; used: number }> {
   const label = (id: string) => { const c = data.cards.find((x) => x.id === id); return c ? `${c.institution} ${c.name}${c.last4 ? ` •••• ${c.last4}` : ''}` : id; };
   const groups = data.limitGroups.map((g) => ({ key: g.id, name: g.cardIds.map(label).join(' + '), shared: g.cardIds.length > 1, limit: g.creditLimit, used: g.used }));
-  const singles = data.cards.filter((c) => c.creditLimit !== null && !data.limitGroups.some((g) => g.cardIds.includes(c.id))).map((c) => ({ key: c.id, name: label(c.id), shared: false, limit: c.creditLimit ?? 0, used: (c.creditLimit ?? 0) - (c.availableLimit ?? 0) }));
+  const singles = data.cards.filter((c) => c.creditLimit !== null && !data.limitGroups.some((g) => g.cardIds.includes(c.id))).map((c) => ({ key: c.id, name: label(c.id), shared: false, limit: c.creditLimit ?? 0, used: (c.creditLimit ?? 0) - availableOf(c) }));
   return [...groups, ...singles];
 }
 
-function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; cycle: string; hidden: boolean }) {
+function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][number]; cycle: string; hidden: boolean; today: string }) {
   const [history, setHistory] = useState(false);
   const [editing, setEditing] = useState(false);
   const isOpen = cycle === 'open';
-  const used = card.creditLimit ? 1 - (card.availableLimit ?? card.creditLimit - card.balance) / card.creditLimit : 0;
+  const used = card.creditLimit ? 1 - availableOf(card) / card.creditLimit : 0;
   const c = card.cycle;
+  const late = card.nextDueDate !== null && card.nextDueDate < today;
   return (
     <section class="panel">
       <div class="row-head">
@@ -273,7 +301,7 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
       </div>
       {c ? (
         <>
-          <div class="big">{brl(card.total, hidden)}</div>
+          {c.status === 'open' && card.total === 0 ? <div class="big-empty">Sem compras neste ciclo ainda</div> : <div class="big">{brl(card.total, hidden)}</div>}
           <div class="muted">
             Fatura de {dayMonth(c.from)} a {dayMonth(c.to)} · vence {fullDay(c.dueDate)}
             {card.estimated ? ' · estimado: saldo do emissor menos as parcelas de faturas futuras' : ''}
@@ -319,12 +347,19 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
         <div class="muted">Este cartão não tem fatura com esse vencimento.</div>
       )}
       {c?.adjusted && <div class="note">{c.adjusted.by === 'auto' ? `${brl(c.adjusted.amount, hidden)} desta fatura não foi pago e provavelmente rolou para a fatura seguinte; não conta de novo como devido.` : `${brl(c.adjusted.amount, hidden)} desta fatura não foi cobrado, então ela conta como paga.`}</div>}
-      {card.outstanding > 0 && <div class="badge warn">{isOpen ? 'Fatura fechada em aberto' : 'Falta pagar nesta fatura'}: {brl(card.outstanding, hidden)} · vence {card.nextDueDate ? fullDay(card.nextDueDate) : ''}</div>}
+      {c && c.overpaid > 0 && <div class="note">Pago a mais: {brl(c.overpaid, hidden)}. Os pagamentos desta janela passam do total da fatura. Pode ser pagamento em dobro, ou o pagamento atrasado de uma fatura anterior.</div>}
+      {card.outstanding > 0 && (
+        <div class={late ? 'badge bad' : 'badge warn'}>
+          {/* A closed month already shows "Falta pagar" above, so the badge only adds the due date. */}
+          {isOpen ? `Fatura fechada em aberto: ${brl(card.outstanding, hidden)} · ` : ''}
+          {late ? 'venceu em' : 'vence'} {card.nextDueDate ? fullDay(card.nextDueDate) : ''}
+        </div>
+      )}
       {isOpen && card.creditLimit !== null && (
         <>
           <Meter fraction={used} />
           <div class="muted">
-            Limite {brl(card.creditLimit, hidden)} · disponível {brl(card.availableLimit ?? 0, hidden)}
+            Limite {brl(card.creditLimit, hidden)} · disponível {brl(availableOf(card), hidden)}
             {card.limitGroupId ? ' · limite compartilhado' : ''}
           </div>
         </>
@@ -383,7 +418,7 @@ function IncomePanel({ months, hidden }: { months: Array<{ key: string; income: 
               <span class="grow clip">{i.name} <span class="muted">dia {i.dayOfMonth}</span></span>
               <strong>{brl(i.amount, hidden)}</strong>
               <button class="link" onClick={() => setForm({ id: i.id, name: i.name, amount: String(i.amount / 100).replace('.', ','), day: String(i.dayOfMonth) })}>Editar</button>
-              <button class="link" onClick={() => void run(() => api.deleteIncome(i.id))}>Remover</button>
+              <button class="link" onClick={() => window.confirm(`Remover a renda “${i.name}”? A previsão deixa de contar esse valor.`) && void run(() => api.deleteIncome(i.id))}>Remover</button>
             </li>
           ))}
         </ul>
@@ -434,11 +469,8 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
   const [guess, setGuess] = useStoredFlag('gmf-forecast-average', false);
   if (!data) return <Loading error={error} />;
   const chosen = data.months.find((m) => m.key === open) ?? null;
-  const totalOf = (m: { open?: boolean; known?: number; installments: number; recurring: number; variable: number; total: number }) => {
-    const sure = m.installments + m.recurring + (guess ? m.variable : 0);
-    return m.open ? Math.max(m.known ?? 0, sure) : sure;
-  };
-  const cardTotal = (c: { installments: number; recurring: number; variable: number }) => c.installments + c.recurring + (guess ? c.variable : 0);
+  // The server works the totals out: `certain` is what is sure, `estimated` adds the average. The screen only picks one.
+  const totalOf = (m: { certain: number; estimated: number }) => (guess ? m.estimated : m.certain);
   return (
     <>
       <label class="check">
@@ -458,6 +490,7 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
             parts: [
               { value: m.installments, color: 'var(--good)', label: 'parcelas já compradas' },
               { value: m.recurring, color: 'var(--accent)', label: 'cobranças que se repetem' },
+              { value: m.certain - m.installments - m.recurring, color: 'var(--muted)', label: 'já na fatura (compras lançadas ou fatura publicada)' },
               ...(guess ? [{ value: m.variable, color: 'var(--track)', label: 'gasto de costume (estimativa)' }] : []),
             ],
           }))}
@@ -465,6 +498,7 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
         <div class="legend">
           <span><i style={{ background: 'var(--good)' }} /> parcelas já compradas (certo)</span>
           <span><i style={{ background: 'var(--accent)' }} /> cobranças que se repetem (provável)</span>
+          <span><i style={{ background: 'var(--muted)' }} /> já na fatura (compras lançadas ou fatura publicada)</span>
           {guess && <span><i style={{ background: 'var(--track)' }} /> gasto de costume (chute pela média)</span>}
         </div>
       </div>
@@ -491,7 +525,7 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
                 {guess && <td>{brl(m.variable, hidden)}</td>}
                 <td>
                   <strong>{brl(totalOf(m), hidden)}</strong>
-                  {m.open && m.known > 0 && <div class="muted">já tem {brl(m.known, hidden)}</div>}
+                  {m.known > 0 && <div class="muted">já tem {brl(m.known, hidden)}</div>}
                 </td>
               </tr>
             ))}
@@ -504,10 +538,12 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
                 <div class="grow">
                   <div>{c.label}</div>
                   <div class="muted">
-                    parcelas {brl(c.installments, hidden)} · repetem {brl(c.recurring, hidden)}{guess ? ` · de costume ${brl(c.variable, hidden)}` : ''}
+                    {c.state === 'closed'
+                      ? `fatura fechada, o banco já informou o valor (parcelas ${brl(c.installments, hidden)})`
+                      : `${c.state === 'open' ? 'fatura em aberto · ' : ''}parcelas ${brl(c.installments, hidden)} · repetem ${brl(c.recurring, hidden)}${guess ? ` · de costume ${brl(c.variable, hidden)}` : ''}`}
                   </div>
                 </div>
-                <strong>{brl(cardTotal(c), hidden)}</strong>
+                <strong>{brl(totalOf(c), hidden)}</strong>
               </li>
             ))}
           </ul>
@@ -519,7 +555,7 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
       <div class="panel">
         <h3>Como foi calculado</h3>
         <div class="muted">
-          Parcelas já compradas vêm do plano de parcelas e são certas. As cobranças que se repetem são as que apareceram em pelo menos 3 meses, com valor estável (até 10% de variação), e entram todo mês pelo último valor. O gasto de costume é uma média das últimas faturas fechadas depois de tirar parcelas e repetidas: é um chute e cai ou sobe conforme o seu mês. A fatura em aberto nunca é estimada abaixo do que já tem.
+          Parcelas já compradas vêm do plano de parcelas e são certas. As cobranças que se repetem são as que apareceram em pelo menos 3 meses, com valor estável (até 10% de variação), e entram todo mês pelo último valor. O gasto de costume é uma média das últimas faturas fechadas depois de tirar parcelas e repetidas: é um chute e cai ou sobe conforme o seu mês. A fatura em aberto nunca é estimada abaixo do que já tem. Quando o banco já publicou a fatura de um cartão naquele mês, vale o valor publicado, sem somar nada por cima. “Previsto” é o que é certo (parcelas, cobranças que se repetem e faturas publicadas); “Estimado” soma a média do gasto de costume.
         </div>
         <ul class="rows">
           {data.basis.map((b) => (
@@ -658,6 +694,9 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
   const installments = useLoad(() => api.installments(), []);
   const bills = useLoad(() => api.bills(), []);
   const currentBill = bills.data?.bars.find((b) => b.current)?.key;
+  const today = localDay(now.toISOString());
+  // The date shown is the oldest bill still owing; once it has passed, "next" would be a lie.
+  const overdue = !!data?.totals.nextDueDate && data.totals.nextDueDate < today && data.totals.outstanding > 0;
 
   return (
     <div class="page-body">
@@ -712,13 +751,21 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
                   <span class="muted">{cycle === 'open' ? 'A pagar' : `A pagar com venc. ${monthName(cycle)}`}</span>
                   <strong>{brl(data.totals.toPay, hidden)}</strong>
                 </div>
+                {cycle === 'open' && (
+                  <>
+                    <div>
+                      <span class="muted">Fatura aberta</span>
+                      <strong>{brl(data.totals.toPay - data.totals.outstanding, hidden)}</strong>
+                    </div>
+                    <div>
+                      <span class="muted">Fechadas não pagas</span>
+                      <strong>{brl(data.totals.outstanding, hidden)}</strong>
+                    </div>
+                  </>
+                )}
                 <div>
-                  <span class="muted">Fatura aberta / fechadas não pagas</span>
-                  <strong>{brl(data.totals.toPay - data.totals.outstanding, hidden)} / {brl(data.totals.outstanding, hidden)}</strong>
-                </div>
-                <div>
-                  <span class="muted">{cycle === 'open' ? 'Próximo vencimento' : 'Vencimento'}</span>
-                  <strong>{data.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'}</strong>
+                  <span class="muted">{overdue ? 'Vencimento mais antigo em atraso' : cycle === 'open' ? 'Próximo vencimento' : 'Vencimento'}</span>
+                  <strong class={overdue ? 'bad-text' : ''}>{data.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'}</strong>
                 </div>
                 {cycle === 'open' && (
                   <>
@@ -746,10 +793,11 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
                 <div class="note">Esta tela mostra só as faturas com vencimento em {monthName(cycle)}: o total, o que falta pagar e o vencimento são destas faturas. Limite, saldo do emissor e outras faturas ficam de fora.</div>
               )}
               <div class="cards-grid">
-                {data.cards.filter((card) => card.toPay > 0 || cycle === 'open').map((card) => (
-                  <CardBlock key={card.id} card={card} cycle={cycle} hidden={hidden} />
+                {data.cards.filter((card) => cycle === 'open' || card.cycle !== null).map((card) => (
+                  <CardBlock key={card.id} card={card} cycle={cycle} hidden={hidden} today={today} />
                 ))}
               </div>
+              {cycle !== 'open' && !data.cards.some((card) => card.cycle !== null) && <div class="empty">Nenhum cartão tem fatura com vencimento em {monthName(cycle)}.</div>}
               <h2 class="section-title">Limites</h2>
               <LimitsPanel data={data} hidden={hidden} />
             </>

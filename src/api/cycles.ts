@@ -28,6 +28,12 @@ export interface Cycle {
   paid: Cents;
   /** What is still owed on a closed cycle. */
   outstanding: Cents;
+  /**
+   * What the payments in this cycle's window add up to beyond the bill (zero within a real of it). It is a warning only: the
+   * excess is not moved to another bill. Typical causes are a bill paid twice, or a late payment of an older bill that fell
+   * after this bill closed and so was counted here.
+   */
+  overpaid: Cents;
   status: CycleStatus;
   /**
    * A leftover on a closed bill that is not counted as owed. `by: 'auto'`: the app guesses it rolled over into the next
@@ -205,6 +211,7 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     const paid = w.open ? 0 : payments.filter((p) => p.day >= w.to && (next === undefined || p.day < next.to)).reduce((s, p) => s + p.amount, 0);
     let status: CycleStatus;
     let outstanding = 0;
+    let overpaid = 0;
     if (w.open) status = 'open';
     // A closed month with no published bill cannot be judged: the payments are shown, the amount owed is not guessed.
     // A bill of zero needs no payment to be judged.
@@ -214,6 +221,7 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     else if (w.from < coverageStart && paid < w.total - TOLERANCE) status = 'unknown';
     else {
       outstanding = Math.max(w.total - paid, 0);
+      if (paid - w.total > TOLERANCE) overpaid = paid - w.total;
       if (w.total === 0) status = 'empty';
       else if (outstanding <= TOLERANCE) status = 'paid';
       else status = w.due < today ? 'overdue' : paid > 0 ? 'partial' : 'unpaid';
@@ -228,11 +236,12 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
         status = 'paid';
       } else {
         outstanding = w.total;
+        overpaid = 0;
         status = w.due < today ? 'overdue' : 'unpaid';
       }
     }
     const edited = edit ? { total: edit.total !== null, closing: edit.closingDate !== null, due: edit.dueDate !== null, status: edit.status !== null } : null;
-    return { key: w.key, accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, status, adjusted, edited };
+    return { key: w.key, accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, overpaid, status, adjusted, edited };
   });
   return settleLeftovers(store, account.id, cycles, today);
 }

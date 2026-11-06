@@ -565,3 +565,7 @@ body.wide .main { max-width: none; }
 
 .topbar-actions { align-items: center; margin-left: auto; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 7px 9px; }
+
+/* ---------- faturas e previsão ---------- */
+/* Open bill with no purchases yet: a sentence in place of a big zero. */
+.big-empty { font-size: 18px; font-weight: 600; color: var(--muted); }

@@ -1,11 +1,11 @@
 import type { CanonicalAccount, CanonicalTransaction } from '../core/canonical.ts';
-import type { Cents } from '../core/money.ts';
+import { formatBRL, type Cents } from '../core/money.ts';
 import { institutionKey } from '../core/names.ts';
 import { categoryParents } from './category-groups.ts';
 import { merchantOf } from '../core/merchant.ts';
 import { localDay } from '../core/time.ts';
 import { summarizeAccounts } from '../reconcile/accounts.ts';
-import { cyclesFor, type Cycle } from './cycles.ts';
+import { addDays, cyclesFor, type Cycle } from './cycles.ts';
 import { installments } from './installments.ts';
 import { quotaReport } from '../scheduler/quota.ts';
 import type { Store } from '../store/store.ts';
@@ -402,6 +402,16 @@ export function dataHealth(store: Store, now: Date): HealthIssue[] {
     if (row.total < 0 || row.posted < -100) issues.push({ id: `negative-${row.id}`, message: `O ciclo em aberto do cartão ${row.institution}${row.last4 ? ` ${row.last4}` : ''} deu negativo. Provavelmente há créditos (pagamentos, estornos) lidos como compras ou o contrário.` });
     if (row.creditLimit !== null && row.outstanding > row.creditLimit) issues.push({ id: `owed-${row.id}`, message: `As faturas em aberto do cartão ${row.institution}${row.last4 ? ` ${row.last4}` : ''} somam mais que o limite dele. Confira se os pagamentos estão sendo reconhecidos.` });
   }
+  // Payments beyond a bill: a bill paid twice, or a late payment of an older bill counted in this window. Shown, never moved.
+  const today = localDay(now.toISOString());
+  const visible = visibleAccounts(store);
+  const transactions = effectiveTransactions(store, {}, visible);
+  for (const account of visible.filter((a) => a.kind === 'credit_card')) {
+    for (const c of cyclesFor(store, account, transactions, today)) {
+      if (c.overpaid <= 0 || c.dueDate < addDays(today, -OVERPAID_LOOKBACK_DAYS)) continue;
+      issues.push({ id: `overpaid-${account.id}-${c.key}`, message: `Os pagamentos do cartão ${account.institution}${account.last4 ? ` ${account.last4}` : ''} somam ${formatBRL(c.overpaid)} a mais que a fatura com vencimento em ${c.dueDate.split('-').reverse().join('/')}. Pode ser pagamento em dobro, ou pagamento de uma fatura anterior feito depois do fechamento desta.` });
+    }
+  }
   if (view.totals.outstanding > view.totals.creditLimit && view.totals.creditLimit > 0) issues.push({ id: 'owed-total', message: 'O total de faturas fechadas e não pagas passa do limite somado dos cartões. Isso indica pagamentos não reconhecidos.' });
   // A consent that ends makes the provider return empty reads without an error, so the owner is told ahead of time.
   for (const f of store.listFreshness()) {
@@ -412,6 +422,9 @@ export function dataHealth(store: Store, now: Date): HealthIssue[] {
   }
   return issues;
 }
+
+/** Overpaid bills older than this are history, not a warning. */
+const OVERPAID_LOOKBACK_DAYS = 240;
 
 /** How long before a consent ends the owner is warned. */
 const CONSENT_WARNING_DAYS = 30;
