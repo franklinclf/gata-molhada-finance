@@ -1,6 +1,6 @@
 import type { FunctionComponent } from 'preact';
 import type { LayoutItem, WidgetId } from '../api.ts';
-import type { SizeClass } from '../grid.ts';
+import type { Pixels, SizeClass } from '../grid.ts';
 import { BalancesWidget } from './balances.tsx';
 import { BudgetWidget } from './budget.tsx';
 import { CardsWidget } from './cards.tsx';
@@ -24,6 +24,8 @@ export interface WidgetProps {
   now: Date;
   hidden: boolean;
   size: SizeClass;
+  /** The widget's size on screen, to give a chart the height it has room for. Unknown on the phone stack. */
+  pixels?: Pixels | undefined;
   /** Settings of this widget instance, saved with the layout. */
   config: Record<string, string>;
   setConfig: (patch: Record<string, string>) => void;

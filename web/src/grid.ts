@@ -108,3 +108,21 @@ export function reflow<T extends Box>(items: T[], columns: number): T[] {
 export function rowsFit(h: number, reserved = 3): number {
   return Math.max(Math.floor((h - reserved) * 1.6), 0);
 }
+
+/** A widget's size on screen, in pixels. Unknown where the widget is as tall as its content (the phone stack). */
+export interface Pixels {
+  width: number;
+  height: number;
+}
+
+/** Height for a chart that takes the room left after `reserved` px of other content, kept between `min` and `max`. Without a known size it keeps `min`. */
+export function chartHeight(pixels: Pixels | undefined, reserved: number, min: number, max: number): number {
+  if (!pixels) return min;
+  return Math.round(Math.min(max, Math.max(min, pixels.height - reserved)));
+}
+
+/** "<1%" for a positive share that rounds to nothing, so a real amount never sits beside "0%". */
+export function shareLabel(fraction: number): string {
+  if (fraction > 0 && fraction < 0.005) return '<1%';
+  return `${Math.round(fraction * 100)}%`;
+}

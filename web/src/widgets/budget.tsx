@@ -1,15 +1,22 @@
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
-import { brl, localDay, percent } from '../format.ts';
+import { brl, localDay } from '../format.ts';
+import { shareLabel } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { Go } from '../ui.tsx';
-import { Widget } from '../Widget.tsx';
+import { FitList, Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
-export function BudgetWidget({ now, hidden, size }: WidgetProps) {
+export function BudgetWidget({ now, hidden, size, pixels }: WidgetProps) {
   const month = localDay(now.toISOString()).slice(0, 7);
   const { data, error, loading } = useLoad(() => api.budgets(month), [month], 120_000);
-  const budgeted = data?.lines.filter((l) => l.budget !== null) ?? [];
+  // Most used first, so the lines that went over lead the list.
+  const budgeted = (data?.lines.filter((l) => l.budget !== null) ?? []).sort((a, b) => (b.used ?? 0) - (a.used ?? 0));
+  // The total can hide a line that went over behind others that have room, so the figure is summed per line.
+  const overAmount = budgeted.reduce((sum, l) => sum + Math.max(0, l.actual - (l.budget ?? 0)), 0);
+  const remaining = budgeted.reduce((sum, l) => sum + Math.max(0, (l.budget ?? 0) - l.actual), 0);
+  const over = budgeted.filter((l) => l.actual > (l.budget ?? 0)).length;
+  const detailed = size === 'lg' || (pixels !== undefined && budgeted.length * 48 <= pixels.height - 215);
   return (
     <Widget
       title="Orçamento"
@@ -23,9 +30,11 @@ export function BudgetWidget({ now, hidden, size }: WidgetProps) {
           <div class="muted">Nenhum orçamento neste mês. Abra para criar.</div>
         ) : (
           <>
-            <div class="big">{brl(Math.max(0, data.totals.budget - data.totals.actual), hidden)}</div>
+            {over > 0 ? <div class="big bad-text">{brl(overAmount, hidden)}</div> : <div class="big">{brl(remaining, hidden)}</div>}
             <div class="muted">
-              sobram de {brl(data.totals.budget, hidden)} · {data.totals.over > 0 ? `${data.totals.over} acima do limite` : 'nenhum acima do limite'}
+              {over > 0
+                ? `acima do limite em ${over} ${over === 1 ? 'categoria' : 'categorias'} · restam ${brl(remaining, hidden)} nas outras`
+                : `sobram de ${brl(data.totals.budget, hidden)} · nenhum acima do limite`}
             </div>
             <Meter fraction={data.totals.budget > 0 ? data.totals.actual / data.totals.budget : 0} />
           </>
@@ -33,17 +42,33 @@ export function BudgetWidget({ now, hidden, size }: WidgetProps) {
       }
     >
       {size !== 'sm' && budgeted.length > 0 && (
-        <ul class="rows">
-          {budgeted.slice(0, size === 'lg' ? 10 : 5).map((l) => (
-            <li key={`${l.scope}${l.name}`}>
-              <Go class="grow clip" page="budgets" params={{ month }}>
-                {l.name}
-              </Go>
-              <span class={l.used !== null && l.used > 1 ? 'bad-text' : 'muted'}>{percent(l.used ?? 0)}</span>
-              <strong>{brl(l.actual, hidden)}</strong>
-            </li>
-          ))}
-        </ul>
+        <FitList
+          noun={['categoria', 'categorias']}
+          rows={budgeted.map((l) => {
+            const passed = l.budget !== null && l.actual > l.budget;
+            const figure = passed ? <span class="bad-text">passou {brl(l.actual - l.budget!, hidden)}</span> : <span class="muted">{shareLabel(l.used ?? 0)}</span>;
+            return detailed ? (
+              <li key={`${l.scope}${l.name}`} class="budget-line">
+                <div class="budget-head">
+                  <Go class="grow clip" page="budgets" params={{ month }}>
+                    {l.name}
+                  </Go>
+                  {figure}
+                  <strong>{brl(l.actual, hidden)}</strong>
+                </div>
+                <Meter fraction={l.used ?? 0} />
+              </li>
+            ) : (
+              <li key={`${l.scope}${l.name}`}>
+                <Go class="grow clip" page="budgets" params={{ month }}>
+                  {l.name}
+                </Go>
+                {figure}
+                <strong>{brl(l.actual, hidden)}</strong>
+              </li>
+            );
+          })}
+        />
       )}
     </Widget>
   );

@@ -621,3 +621,21 @@ body.wide .main { max-width: none; }
 @media (max-width: 640px) {
   .outlook-origin { display: none; }
 }
+/* ---------- painel e widgets ---------- */
+/* The page actions keep one line: the menu measures what is left beside them and folds into "Mais" before they would overlap. */
+.topbar-actions { flex-wrap: nowrap; flex: none; }
+/* Rows past the edge of a widget are hidden by FitList; the line that says how many are left sits at the end of the list. */
+.fit > [hidden] { display: none !important; }
+.rows li.more-rows { font-size: 12px; padding-left: 6px; }
+.rows li.sub { padding-left: 20px; font-size: 13px; }
+.rows li.list-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-top: 6px; }
+.rows li > strong { flex: none; white-space: nowrap; }
+.mini-pick { grid-template-columns: minmax(0, 1fr); }
+/* A soft fade tells that the widget has more below the edge, so a cut row does not read as a wrong number. */
+.widget-body.fade { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
+.expand { width: 28px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+.grip span { color: var(--muted); }
+.order-list { max-width: 420px; margin: 0; padding: 0; }
+.order-list li { padding: 4px 0; }

@@ -3,7 +3,7 @@ import { ago, maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
 import { Go } from '../ui.tsx';
-import { Widget } from '../Widget.tsx';
+import { FitList, Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
 export const KIND_LABEL: Record<string, string> = {
@@ -30,8 +30,10 @@ export function FindingsWidget({ now, size, hidden }: WidgetProps) {
     >
       {data && size !== 'sm' && data.items.length > 0 && (
         <>
-          <ul class="rows tall">
-            {data.items.map((f) => (
+          <FitList
+            class="rows tall"
+            noun={['registro', 'registros']}
+            rows={data.items.map((f) => (
               <li key={f.id} class="tx" data-no-nav onClick={() => patchParams({ tx: f.transactionId })} tabIndex={0}>
                 <span class={f.severity === 'warning' ? 'swatch warn' : 'swatch'} />
                 <div class="grow">
@@ -42,7 +44,7 @@ export function FindingsWidget({ now, size, hidden }: WidgetProps) {
                 </div>
               </li>
             ))}
-          </ul>
+          />
           <Go page="status">Resolver na tela de conferência</Go>
         </>
       )}

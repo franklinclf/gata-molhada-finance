@@ -12,15 +12,15 @@ const MAX_HEIGHT = 40;
 
 /** Size a new widget starts with, in grid cells (12 columns). */
 export const DEFAULT_SIZES: Record<WidgetId, { w: number; h: number }> = {
-  outlook: { w: 4, h: 6 },
-  balances: { w: 4, h: 5 },
-  cards: { w: 4, h: 6 },
-  cashflow: { w: 4, h: 5 },
+  outlook: { w: 4, h: 7 },
+  balances: { w: 4, h: 7 },
+  cards: { w: 4, h: 7 },
+  cashflow: { w: 4, h: 7 },
   spending: { w: 4, h: 6 },
-  installments: { w: 4, h: 5 },
-  budget: { w: 4, h: 5 },
-  networth: { w: 4, h: 5 },
-  goals: { w: 4, h: 5 },
+  installments: { w: 4, h: 6 },
+  budget: { w: 4, h: 6 },
+  networth: { w: 4, h: 6 },
+  goals: { w: 4, h: 6 },
   summary: { w: 4, h: 4 },
   upcoming: { w: 4, h: 6 },
   calendar: { w: 4, h: 7 },

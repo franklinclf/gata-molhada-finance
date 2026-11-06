@@ -13,6 +13,7 @@ import { CalendarPage } from './pages/calendar.tsx';
 import { BudgetsPage } from './pages/budgets.tsx';
 import { SettingsPage } from './pages/settings.tsx';
 import { SpendingPage } from './pages/spending.tsx';
+import { NAV, useNavOrder } from './nav.ts';
 import { useTopbarTools } from './topbar.ts';
 import { TransactionsPage } from './pages/transactions.tsx';
 import { hrefFor, useRoute } from './router.ts';
@@ -55,64 +56,28 @@ const MORE: Array<[string, string]> = [
   ['settings', 'Ajustes'],
 ];
 
-/** Every section of the top bar of a wide screen, in order. Those that do not fit the width move under "Mais". */
-const NAV: Array<[string, string]> = [
-  ['', 'Dashboard'],
-  ['transactions', 'Transações'],
-  ['spending', 'Gastos'],
-  ['cards', 'Cartões'],
-  ['budgets', 'Orçamento'],
-  ['accounts', 'Contas'],
-  ['chat', 'Analista'],
-  ['goals', 'Metas'],
-  ['calendar', 'Calendário'],
-  ['settings', 'Ajustes'],
-];
-
 const NAV_GAP = 4;
-const NAV_ORDER_KEY = 'gmf-nav-order';
 
-/** The top bar sections in the order the owner dragged them to, with any new section at the end. */
-function useNavOrder() {
-  const [saved, setSaved] = useState<string[]>(() => {
-    try {
-      const value = JSON.parse(localStorage.getItem(NAV_ORDER_KEY) ?? '[]') as unknown;
-      return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
-    } catch {
-      return [];
-    }
-  });
-  const known = NAV.map(([id]) => id);
-  const ids = [...saved.filter((id) => known.includes(id)), ...known.filter((id) => !saved.includes(id))];
-  const items = ids.map((id) => NAV.find(([x]) => x === id)!);
-  const move = (id: string, before: string) => {
-    if (id === before) return;
-    const next = ids.filter((x) => x !== id);
-    next.splice(next.indexOf(before), 0, id);
-    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next));
-    setSaved(next);
-  };
-  const reset = () => {
-    localStorage.removeItem(NAV_ORDER_KEY);
-    setSaved([]);
-  };
-  return { items, move, reset, custom: saved.length > 0 };
-}
-
-/** How many of the top bar links fit in the bar's width. `all` means no "Mais" button is needed. */
-function useFittingCount(total: number) {
+/** How many of the top bar links fit in the bar's width. When all fit, no "Mais" button is needed. */
+function useFittingCount(total: number, order: string, actions: unknown) {
   const bar = useRef<HTMLElement>(null);
   const probe = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(total);
   useLayoutEffect(() => {
+    const header = bar.current?.parentElement;
+    if (!header) return;
     const measure = () => {
       if (!bar.current || !probe.current) return;
-      const available = bar.current.clientWidth;
+      // The room is what the bar has left once the brand and the page actions (which grow while customizing the panel) take theirs.
+      const style = getComputedStyle(header);
+      const gap = parseFloat(style.columnGap) || 0;
+      const others = ([...header.children] as HTMLElement[]).filter((child) => child !== bar.current);
+      const available = header.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - others.reduce((sum, child) => sum + child.offsetWidth + gap, 0);
       const kids = [...probe.current.children] as HTMLElement[];
       const more = kids.pop()?.offsetWidth ?? 0;
       const widths = kids.map((k) => k.offsetWidth);
       const all = widths.reduce((s, w) => s + w + NAV_GAP, 0) - NAV_GAP;
-      if (available <= 0 || all <= available) return setFit(total);
+      if (all <= available) return setFit(total);
       let used = more;
       let count = 0;
       for (const w of widths) {
@@ -123,10 +88,12 @@ function useFittingCount(total: number) {
       setFit(count);
     };
     measure();
+    // Every child of the bar is watched, so a change in the page actions measures again.
     const observer = new ResizeObserver(measure);
-    if (bar.current) observer.observe(bar.current);
+    observer.observe(header);
+    for (const child of header.children) observer.observe(child);
     return () => observer.disconnect();
-  }, [total]);
+  }, [total, order, actions]);
   return { bar, probe, fit };
 }
 
@@ -139,18 +106,18 @@ export function App() {
   const [menu, setMenu] = useState(false);
   const route = useRoute();
   const nav = useNavOrder();
-  const { bar, probe, fit } = useFittingCount(NAV.length);
+  // Measured again when the page actions change, since they take room from the menu.
+  const tools = useTopbarTools();
+  const { bar, probe, fit } = useFittingCount(NAV.length, nav.ids.join(), tools);
   const [dragging, setDragging] = useState<string | null>(null);
   // Cash flow and net worth are views of the accounts page.
   const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page === 'status' ? 'settings' : route.page;
-  const tools = useTopbarTools();
   const link = (id: string, label: string, onClick?: () => void) => (
     <a
       key={id}
       class={`${section === id ? 'navlink on' : 'navlink'}${dragging === id ? ' dragging' : ''}`}
       href={hrefFor(id)}
       draggable
-      title="Arraste para mudar a ordem"
       onDragStart={() => setDragging(id)}
       onDragEnd={() => setDragging(null)}
       onDragOver={(e) => e.preventDefault()}
@@ -260,7 +227,7 @@ export function App() {
                 Mais ▾
               </button>
               {menu && (
-                <div class="nav-menu" role="menu">
+                <div class="nav-menu">
                   {nav.items.slice(fit).map(([id, label]) => link(id, label, () => setMenu(false)))}
                   {nav.custom && (
                     <button class="navlink" onClick={() => nav.reset()}>

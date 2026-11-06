@@ -5,6 +5,8 @@ import { columnsFor, COLUMNS, place, type Box } from './grid.ts';
 
 export const ROW_HEIGHT = 72;
 export const GAP = 14;
+/** The move bar above a widget while customizing; the widget is that much shorter than its cell. */
+const GRIP_HEIGHT = 32;
 
 interface Drag {
   id: string;
@@ -96,8 +98,9 @@ export function Grid({ items, editing, canDrag = true, wide = false, onColumns, 
           style={{ gridColumn: `${item.x + 1} / span ${item.w}`, gridRow: `${item.y + 1} / span ${item.h}` }}
         >
           {editing && (
-            <div class="grip" onPointerDown={(e) => start(e, item, 'move')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para mover">
-              <span>{titleOf(item)}</span>
+            <div class="grip" onPointerDown={(e) => start(e, item, 'move')} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+              {/* The widget below already shows its title, so the bar only says what it does. */}
+              <span aria-label={`Mover ${titleOf(item)}`}>⠿ Arraste para mover</span>
               <button
                 class="x"
                 onPointerDown={(e) => e.stopPropagation()}
@@ -109,7 +112,7 @@ export function Grid({ items, editing, canDrag = true, wide = false, onColumns, 
             </div>
           )}
           {!editing && canDrag && <div class="mini-grip" onPointerDown={(e) => start(e, item, 'move')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para mover" aria-label={`Mover ${titleOf(item)}`}>⠿</div>}
-          {renderItem(item, { width: item.w * cellWidth - GAP, height: item.h * (ROW_HEIGHT + GAP) - GAP })}
+          {renderItem(item, { width: item.w * cellWidth - GAP, height: item.h * (ROW_HEIGHT + GAP) - GAP - (editing ? GRIP_HEIGHT : 0) })}
           {!editing && canDrag && <div class="resize quiet" onPointerDown={(e) => start(e, item, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para redimensionar" />}
           {editing && <div class="resize" onPointerDown={(e) => start(e, item, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para redimensionar" />}
         </div>
