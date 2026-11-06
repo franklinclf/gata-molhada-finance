@@ -6,7 +6,7 @@ import { PeriodPicker, PRESETS } from '../period.tsx';
 import { patchParams, type Route } from '../router.ts';
 import { Go, Loading, TxRow } from '../ui.tsx';
 
-export function CashflowPage({ route, now, hidden }: { route: Route; now: Date; hidden: boolean }) {
+export function CashflowPage({ route, now, hidden, embedded = false }: { route: Route; now: Date; hidden: boolean; embedded?: boolean }) {
   const today = localDay(now.toISOString());
   const narrow = window.innerWidth < 600;
   const month = PRESETS.find((p) => p.id === 'month')!.range(today);
@@ -36,7 +36,7 @@ export function CashflowPage({ route, now, hidden }: { route: Route; now: Date; 
 
   return (
     <div class="page-body">
-      <h1 class="page-title">Fluxo de caixa</h1>
+      {!embedded && <h1 class="page-title">Fluxo de caixa</h1>}
       <PeriodPicker from={from} to={to} now={now} onChange={(r) => patchParams({ from: r.from ?? month.from, to: r.to ?? month.to })} />
       {flow.error || (flow.loading && !flow.data) ? (
         <Loading error={flow.error} />

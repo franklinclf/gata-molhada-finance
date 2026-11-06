@@ -2,13 +2,35 @@ import { api } from '../api.ts';
 import { PALETTE, StackBar } from '../charts.tsx';
 import { ago, brl, isStale, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
+import { navigate, type Route } from '../router.ts';
 import { Go, Loading } from '../ui.tsx';
+import { CashflowPage } from './cashflow.tsx';
+import { NetWorthPage } from './networth.tsx';
 
-export function AccountsPage({ now, hidden }: { now: Date; hidden: boolean }) {
-  const { data, error, loading } = useLoad(() => api.balances(), []);
+const VIEWS = [['balances', 'Saldos'], ['cashflow', 'Fluxo de caixa'], ['networth', 'Patrimônio']] as const;
+
+/** Money in the accounts: today's balances, what came in and went out, and the net worth they are part of. */
+export function AccountsPage({ route, now, hidden, view }: { route: Route; now: Date; hidden: boolean; view?: string }) {
+  const chosen = view ?? route.params.get('view') ?? 'balances';
   return (
     <div class="page-body">
-      <h1 class="page-title">Saldo em contas</h1>
+      <h1 class="page-title">Contas</h1>
+      <div class="tabs">
+        {VIEWS.map(([id, label]) => (
+          <button key={id} class={chosen === id ? 'tab on' : 'tab'} onClick={() => navigate('accounts', id === 'balances' ? {} : { view: id })}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {chosen === 'cashflow' ? <CashflowPage route={route} now={now} hidden={hidden} embedded /> : chosen === 'networth' ? <NetWorthPage now={now} hidden={hidden} embedded /> : <Balances now={now} hidden={hidden} />}
+    </div>
+  );
+}
+
+function Balances({ now, hidden }: { now: Date; hidden: boolean }) {
+  const { data, error, loading } = useLoad(() => api.balances(), []);
+  return (
+    <>
       {error || (loading && !data) ? (
         <Loading error={error} />
       ) : data ? (
@@ -48,6 +70,6 @@ export function AccountsPage({ now, hidden }: { now: Date; hidden: boolean }) {
           </div>
         </>
       ) : null}
-    </div>
+    </>
   );
 }

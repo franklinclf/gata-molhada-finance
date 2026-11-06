@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { api, type CardsView } from '../api.ts';
 import { Bars, Meter, StackedBars } from '../charts.tsx';
 import { brl, dayMonth, monthName } from '../format.ts';
-import { useLoad } from '../hooks.ts';
+import { useLoad, useStoredFlag } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
 import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
@@ -323,13 +323,24 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
   );
 }
 
-function ForecastTab({ hidden }: { hidden: boolean }) {
+function ForecastTab({ hidden, installments, route }: { hidden: boolean; installments: ReturnType<typeof useLoad<import('../api.ts').InstallmentsView>>; route: Route }) {
   const { data, error } = useLoad(() => api.forecast(), []);
   const [open, setOpen] = useState<string | null>(null);
+  // The guess by average is off until asked for: only what is known (installments) and what repeats is counted.
+  const [guess, setGuess] = useStoredFlag('gmf-forecast-average', false);
   if (!data) return <Loading error={error} />;
   const chosen = data.months.find((m) => m.key === open) ?? null;
+  const totalOf = (m: { open?: boolean; known?: number; installments: number; recurring: number; variable: number; total: number }) => {
+    const sure = m.installments + m.recurring + (guess ? m.variable : 0);
+    return m.open ? Math.max(m.known ?? 0, sure) : sure;
+  };
+  const cardTotal = (c: { installments: number; recurring: number; variable: number }) => c.installments + c.recurring + (guess ? c.variable : 0);
   return (
     <>
+      <label class="check">
+        <input type="checkbox" checked={guess} onChange={(e) => setGuess((e.currentTarget as HTMLInputElement).checked)} />
+        Incluir estimativa pela média do gasto de costume (um chute, fora do que já é certo ou se repete)
+      </label>
       <div class="panel">
         <h3>Faturas estimadas, por mês de vencimento (clique em um mês para ver por cartão)</h3>
         <StackedBars
@@ -343,14 +354,14 @@ function ForecastTab({ hidden }: { hidden: boolean }) {
             parts: [
               { value: m.installments, color: 'var(--good)', label: 'parcelas já compradas' },
               { value: m.recurring, color: 'var(--accent)', label: 'cobranças que se repetem' },
-              { value: m.variable, color: 'var(--track)', label: 'gasto de costume (estimativa)' },
+              ...(guess ? [{ value: m.variable, color: 'var(--track)', label: 'gasto de costume (estimativa)' }] : []),
             ],
           }))}
         />
         <div class="legend">
           <span><i style={{ background: 'var(--good)' }} /> parcelas já compradas (certo)</span>
           <span><i style={{ background: 'var(--accent)' }} /> cobranças que se repetem (provável)</span>
-          <span><i style={{ background: 'var(--track)' }} /> gasto de costume (chute pela média)</span>
+          {guess && <span><i style={{ background: 'var(--track)' }} /> gasto de costume (chute pela média)</span>}
         </div>
       </div>
       <div class="panel">
@@ -360,8 +371,8 @@ function ForecastTab({ hidden }: { hidden: boolean }) {
               <th>Vencimento</th>
               <th>Parcelas</th>
               <th>Repetem</th>
-              <th>De costume</th>
-              <th>Estimado</th>
+              {guess && <th>De costume</th>}
+              <th>{guess ? 'Estimado' : 'Previsto'}</th>
             </tr>
           </thead>
           <tbody>
@@ -373,9 +384,9 @@ function ForecastTab({ hidden }: { hidden: boolean }) {
                 </td>
                 <td>{brl(m.installments, hidden)}</td>
                 <td>{brl(m.recurring, hidden)}</td>
-                <td>{brl(m.variable, hidden)}</td>
+                {guess && <td>{brl(m.variable, hidden)}</td>}
                 <td>
-                  <strong>{brl(m.total, hidden)}</strong>
+                  <strong>{brl(totalOf(m), hidden)}</strong>
                   {m.open && m.known > 0 && <div class="muted">já tem {brl(m.known, hidden)}</div>}
                 </td>
               </tr>
@@ -389,15 +400,17 @@ function ForecastTab({ hidden }: { hidden: boolean }) {
                 <div class="grow">
                   <div>{c.label}</div>
                   <div class="muted">
-                    parcelas {brl(c.installments, hidden)} · repetem {brl(c.recurring, hidden)} · de costume {brl(c.variable, hidden)}
+                    parcelas {brl(c.installments, hidden)} · repetem {brl(c.recurring, hidden)}{guess ? ` · de costume ${brl(c.variable, hidden)}` : ''}
                   </div>
                 </div>
-                <strong>{brl(c.total, hidden)}</strong>
+                <strong>{brl(cardTotal(c), hidden)}</strong>
               </li>
             ))}
           </ul>
         )}
       </div>
+      <h2 class="section-title">Parcelas em andamento</h2>
+      <InstallmentsTab installments={installments} hidden={hidden} route={route} />
       <div class="panel">
         <h3>Como foi calculado</h3>
         <div class="muted">
@@ -496,9 +509,46 @@ function InstallmentsTab({ installments, hidden, route }: { installments: Return
   );
 }
 
+function LimitsPanel({ data, hidden }: { data: CardsView; hidden: boolean }) {
+  return (
+            <div class="panel">
+      <div class="summary">
+        <div>
+          <span class="muted">Limite total</span>
+          <strong>{brl(data.totals.creditLimit, hidden)}</strong>
+        </div>
+        <div>
+          <span class="muted">Usado</span>
+          <strong>{brl(data.totals.used, hidden)}</strong>
+        </div>
+        <div>
+          <span class="muted">Disponível</span>
+          <strong>{brl(data.totals.available, hidden)}</strong>
+        </div>
+      </div>
+      <ul class="rows tall">
+        {limitRows(data).map((r) => (
+          <li key={r.key}>
+            <div class="grow">
+              <div>{r.name}{r.shared ? ' · limite compartilhado' : ''}</div>
+              <Meter fraction={r.limit > 0 ? r.used / r.limit : 0} tip={`Usado ${hidden ? '••••' : brl(r.used)} de ${hidden ? '••••' : brl(r.limit)}`} />
+            </div>
+            <span class="muted">
+              usado {brl(r.used, hidden)} de {brl(r.limit, hidden)} · disponível {brl(r.limit - r.used, hidden)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div class="note">Cartões que dividem um limite aparecem juntos e o limite é contado uma vez no total. Cartões ocultos em Ajustes não entram.</div>
+    </div>
+  );
+}
+
 export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: boolean }) {
   const cycle = route.params.get('cycle') ?? 'open';
-  const tab = route.params.get('tab') ?? 'cards';
+  // Old links: installments now live under Futuras and limits under Faturas.
+  const rawTab = route.params.get('tab') ?? 'cards';
+  const tab = rawTab === 'installments' ? 'forecast' : rawTab === 'limits' ? 'cards' : rawTab;
   const { data, error, loading } = useLoad(() => api.cards(cycle), [cycle]);
   const installments = useLoad(() => api.installments(), []);
   const bills = useLoad(() => api.bills(), []);
@@ -508,7 +558,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
     <div class="page-body">
       <h1 class="page-title">Cartões</h1>
       <div class="tabs">
-        {[['cards', 'Faturas'], ['check', 'Conferir'], ['forecast', 'Futuras'], ['installments', 'Parcelas'], ['limits', 'Limites']].map(([id, label]) => (
+        {[['cards', 'Faturas'], ['check', 'Conferir'], ['forecast', 'Futuras e parcelas']].map(([id, label]) => (
           <button key={id} class={tab === id ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: id === 'cards' ? null : id })}>
             {label}
           </button>
@@ -595,42 +645,11 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
                   <CardBlock key={card.id} card={card} cycle={cycle} hidden={hidden} />
                 ))}
               </div>
+              <h2 class="section-title">Limites</h2>
+              <LimitsPanel data={data} hidden={hidden} />
             </>
           )}
-          {tab === 'forecast' && <ForecastTab hidden={hidden} />}
-          {tab === 'installments' && <InstallmentsTab installments={installments} hidden={hidden} route={route} />}
-          {tab === 'limits' && (
-            <div class="panel">
-              <div class="summary">
-                <div>
-                  <span class="muted">Limite total</span>
-                  <strong>{brl(data.totals.creditLimit, hidden)}</strong>
-                </div>
-                <div>
-                  <span class="muted">Usado</span>
-                  <strong>{brl(data.totals.used, hidden)}</strong>
-                </div>
-                <div>
-                  <span class="muted">Disponível</span>
-                  <strong>{brl(data.totals.available, hidden)}</strong>
-                </div>
-              </div>
-              <ul class="rows tall">
-                {limitRows(data).map((r) => (
-                  <li key={r.key}>
-                    <div class="grow">
-                      <div>{r.name}{r.shared ? ' · limite compartilhado' : ''}</div>
-                      <Meter fraction={r.limit > 0 ? r.used / r.limit : 0} tip={`Usado ${hidden ? '••••' : brl(r.used)} de ${hidden ? '••••' : brl(r.limit)}`} />
-                    </div>
-                    <span class="muted">
-                      usado {brl(r.used, hidden)} de {brl(r.limit, hidden)} · disponível {brl(r.limit - r.used, hidden)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <div class="note">Cartões que dividem um limite aparecem juntos e o limite é contado uma vez no total. Cartões ocultos em Ajustes não entram.</div>
-            </div>
-          )}
+          {tab === 'forecast' && <ForecastTab hidden={hidden} installments={installments} route={route} />}
         </>
       ) : null}
     </div>

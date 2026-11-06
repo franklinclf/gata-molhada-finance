@@ -57,13 +57,13 @@ function ManualRow({ item, now, hidden, onChanged, onError }: { item: NetWorthVi
   );
 }
 
-export function NetWorthPage({ now, hidden }: { now: Date; hidden: boolean }) {
+export function NetWorthPage({ now, hidden, embedded = false }: { now: Date; hidden: boolean; embedded?: boolean }) {
   const { data, error, loading, reload } = useLoad(() => api.netWorth(), []);
   const [name, setName] = useState('');
   const [kind, setKind] = useState<'asset' | 'liability'>('asset');
   const [value, setValue] = useState('');
   const [message, setMessage] = useState<string | null>(null);
-  if (error || (loading && !data)) return <div class="page-body"><h1 class="page-title">Patrimônio</h1><Loading error={error} /></div>;
+  if (error || (loading && !data)) return <div class="page-body">{!embedded && <h1 class="page-title">Patrimônio</h1>}<Loading error={error} /></div>;
   if (!data) return null;
   const add = async () => {
     try {
@@ -78,7 +78,7 @@ export function NetWorthPage({ now, hidden }: { now: Date; hidden: boolean }) {
   };
   return (
     <div class="page-body">
-      <h1 class="page-title">Patrimônio</h1>
+      {!embedded && <h1 class="page-title">Patrimônio</h1>}
       <div class="panel">
         <div class="big">{brl(data.net, hidden)}</div>
         <div class="muted">

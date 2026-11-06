@@ -11,8 +11,6 @@ import { ChatPage } from './pages/chat.tsx';
 import { GoalsPage } from './pages/goals.tsx';
 import { CalendarPage } from './pages/calendar.tsx';
 import { BudgetsPage } from './pages/budgets.tsx';
-import { NetWorthPage } from './pages/networth.tsx';
-import { CashflowPage } from './pages/cashflow.tsx';
 import { SettingsPage } from './pages/settings.tsx';
 import { SpendingPage } from './pages/spending.tsx';
 import { StatusPage } from './pages/status.tsx';
@@ -30,12 +28,10 @@ const TABS: Array<[string, string, string]> = [
 ];
 const MORE: Array<[string, string]> = [
   ['budgets', 'Orçamento'],
-  ['networth', 'Patrimônio'],
   ['goals', 'Metas'],
   ['calendar', 'Calendário'],
   ['chat', 'Analista'],
   ['accounts', 'Contas'],
-  ['cashflow', 'Fluxo de caixa'],
   ['status', 'Fontes e conferência'],
   ['settings', 'Ajustes'],
 ];
@@ -49,15 +45,41 @@ const NAV: Array<[string, string]> = [
   ['budgets', 'Orçamento'],
   ['accounts', 'Contas'],
   ['chat', 'Analista'],
-  ['networth', 'Patrimônio'],
   ['goals', 'Metas'],
   ['calendar', 'Calendário'],
-  ['cashflow', 'Fluxo de caixa'],
   ['status', 'Fontes e conferência'],
   ['settings', 'Ajustes'],
 ];
 
 const NAV_GAP = 4;
+const NAV_ORDER_KEY = 'gmf-nav-order';
+
+/** The top bar sections in the order the owner dragged them to, with any new section at the end. */
+function useNavOrder() {
+  const [saved, setSaved] = useState<string[]>(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem(NAV_ORDER_KEY) ?? '[]') as unknown;
+      return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
+  const known = NAV.map(([id]) => id);
+  const ids = [...saved.filter((id) => known.includes(id)), ...known.filter((id) => !saved.includes(id))];
+  const items = ids.map((id) => NAV.find(([x]) => x === id)!);
+  const move = (id: string, before: string) => {
+    if (id === before) return;
+    const next = ids.filter((x) => x !== id);
+    next.splice(next.indexOf(before), 0, id);
+    localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next));
+    setSaved(next);
+  };
+  const reset = () => {
+    localStorage.removeItem(NAV_ORDER_KEY);
+    setSaved([]);
+  };
+  return { items, move, reset, custom: saved.length > 0 };
+}
 
 /** How many of the top bar links fit in the bar's width. `all` means no "Mais" button is needed. */
 function useFittingCount(total: number) {
@@ -98,7 +120,31 @@ export function App() {
   const [more, setMore] = useState(false);
   const [menu, setMenu] = useState(false);
   const route = useRoute();
+  const nav = useNavOrder();
   const { bar, probe, fit } = useFittingCount(NAV.length);
+  const [dragging, setDragging] = useState<string | null>(null);
+  // Cash flow and net worth are views of the accounts page.
+  const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page;
+  const link = (id: string, label: string, onClick?: () => void) => (
+    <a
+      key={id}
+      class={`${section === id ? 'navlink on' : 'navlink'}${dragging === id ? ' dragging' : ''}`}
+      href={hrefFor(id)}
+      draggable
+      title="Arraste para mudar a ordem"
+      onDragStart={() => setDragging(id)}
+      onDragEnd={() => setDragging(null)}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (dragging) nav.move(dragging, id);
+        setDragging(null);
+      }}
+      onClick={onClick}
+    >
+      {label}
+    </a>
+  );
 
   useEffect(() => {
     setUnauthorizedHandler(() => setPhase('out'));
@@ -128,7 +174,7 @@ export function App() {
   if (phase === 'out') return <Login onDone={() => setPhase('in')} />;
 
   const tx = route.params.get('tx');
-  const inMore = MORE.some(([id]) => id === route.page);
+  const inMore = MORE.some(([id]) => id === (route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page));
   let page;
   switch (route.page) {
     case 'transactions':
@@ -153,13 +199,13 @@ export function App() {
       page = <CalendarPage route={route} now={now} hidden={hidden} />;
       break;
     case 'networth':
-      page = <NetWorthPage now={now} hidden={hidden} />;
+      page = <AccountsPage route={route} now={now} hidden={hidden} view="networth" />;
       break;
     case 'accounts':
-      page = <AccountsPage now={now} hidden={hidden} />;
+      page = <AccountsPage route={route} now={now} hidden={hidden} />;
       break;
     case 'cashflow':
-      page = <CashflowPage route={route} now={now} hidden={hidden} />;
+      page = <AccountsPage route={route} now={now} hidden={hidden} view="cashflow" />;
       break;
     case 'status':
       page = <StatusPage now={now} hidden={hidden} />;
@@ -187,29 +233,26 @@ export function App() {
           <a class="brand" href={hrefFor('')}>Gata Molhada</a>
         </h1>
         <nav aria-label="Seções" ref={bar}>
-          {NAV.slice(0, fit).map(([id, label]) => (
-            <a key={id} class={route.page === id ? 'navlink on' : 'navlink'} href={hrefFor(id)}>
-              {label}
-            </a>
-          ))}
+          {nav.items.slice(0, fit).map(([id, label]) => link(id, label))}
           {fit < NAV.length && (
             <div class="nav-more">
-              <button class={NAV.slice(fit).some(([id]) => id === route.page) ? 'navlink on' : 'navlink'} aria-expanded={menu} onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>
+              <button class={nav.items.slice(fit).some(([id]) => id === section) ? 'navlink on' : 'navlink'} aria-expanded={menu} onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>
                 Mais ▾
               </button>
               {menu && (
                 <div class="nav-menu" role="menu">
-                  {NAV.slice(fit).map(([id, label]) => (
-                    <a key={id} role="menuitem" class={route.page === id ? 'navlink on' : 'navlink'} href={hrefFor(id)} onClick={() => setMenu(false)}>
-                      {label}
-                    </a>
-                  ))}
+                  {nav.items.slice(fit).map(([id, label]) => link(id, label, () => setMenu(false)))}
+                  {nav.custom && (
+                    <button class="navlink" onClick={() => nav.reset()}>
+                      Ordem original
+                    </button>
+                  )}
                 </div>
               )}
             </div>
           )}
           <div class="nav-probe" ref={probe} aria-hidden="true">
-            {NAV.map(([id, label]) => (
+            {nav.items.map(([id, label]) => (
               <span key={id} class="navlink">{label}</span>
             ))}
             <span class="navlink">Mais ▾</span>
