@@ -3,7 +3,7 @@ import { api, ApiError } from '../api.ts';
 import type { CategoryRow, RuleConditions, RulePreview, RuleRow } from '../api.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { Select } from '../Select.tsx';
-import { brl, dayMonth } from '../format.ts';
+import { brl, dayMonth, parseBrl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
 
@@ -39,9 +39,7 @@ const emptyLeaf = (): Leaf => ({ field: 'description', operator: 'contains', val
 
 /** Reais typed by the owner ("-12,50") to cents. */
 function toCents(text: string): number | null {
-  const clean = text.trim().replace(/\./g, '').replace(',', '.');
-  const n = Number(clean);
-  return clean !== '' && Number.isFinite(n) ? Math.round(n * 100) : null;
+  return parseBrl(text, { allowZero: true, allowNegative: true });
 }
 
 function valueText(leaf: Leaf): string {

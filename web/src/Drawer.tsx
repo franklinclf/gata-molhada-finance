@@ -58,7 +58,7 @@ function InstallmentField({ id, d, act }: { id: string; d: Detail; act: Act }) {
   return (
     <Field label={`Parcela${d.installmentByUser ? ' (informada por você)' : ''}`} hint={d.transaction.installment ? undefined : 'Se for parcelada, informe: o app passa a contar as próximas faturas.'}>
       <div class="inline-inputs">
-        <input inputMode="numeric" placeholder="Nº" aria-label="Número da parcela" value={number} onInput={(e) => setNumber((e.currentTarget as HTMLInputElement).value)} />
+        <input inputMode="numeric" placeholder="Atual" aria-label="Número da parcela" value={number} onInput={(e) => setNumber((e.currentTarget as HTMLInputElement).value)} />
         <span class="muted">de</span>
         <input inputMode="numeric" placeholder="Total" aria-label="Total de parcelas" value={total} onInput={(e) => setTotal((e.currentTarget as HTMLInputElement).value)} />
         {changed && number !== '' && total !== '' && (
@@ -89,11 +89,11 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
       <h3>Corrigir</h3>
       <div class="correct">
         {!manual && (
-          <Field label={`Status${d.statusByUser ? ' (definido por você)' : ''}`}>
+          <Field label={`Status${d.statusByUser ? ' (definido por você)' : ''}`} hint={d.statusByUser ? undefined : `A fonte diz: ${d.transaction.status === 'pending' ? 'pendente' : 'lançada'}.`}>
             <Select
               ariaLabel="Status da transação"
               value={d.statusByUser ? d.transaction.status : ''}
-              emptyLabel={`Como a fonte diz (${d.statusByUser ? '...' : d.transaction.status === 'pending' ? 'pendente' : 'lançada'})`}
+              emptyLabel="Como a fonte diz"
               options={[{ value: 'pending', label: 'Pendente' }, { value: 'posted', label: 'Lançada' }]}
               onChange={(value) => void act.run(() => api.setStatus(id, value === '' ? null : (value as 'pending' | 'posted')))}
             />
@@ -110,11 +110,11 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
             />
           </Field>
         )}
-        <Field label="Assinatura ou recorrente" hint={`Vale para todas as cobranças de “${r.name}”.`}>
+        <Field label="Assinatura ou recorrente" hint={`${detected.charAt(0).toUpperCase()}${detected.slice(1)}. Vale para todas as cobranças de “${r.name}”.`}>
           <Select
             ariaLabel="Recorrência"
             value={r.label ?? ''}
-            emptyLabel={`Como o app decide (${detected})`}
+            emptyLabel="Automático"
             options={[{ value: 'subscription', label: 'Assinatura (streaming, app, plano)' }, { value: 'recurring', label: 'Conta recorrente (aluguel, internet)' }, { value: 'none', label: 'Não é recorrente' }]}
             onChange={(value) => void act.run(() => api.markRecurring(r.key, value === '' ? null : (value as 'subscription' | 'recurring' | 'none')))}
           />
@@ -141,7 +141,16 @@ function CategorySection({ id, d, act }: { id: string; d: Detail; act: Act }) {
   const categories = useLoad(() => api.categories(), []);
   const [similar, setSimilar] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
-  const save = (category: string | null) => act.run(() => api.setCategory(id, category, similar));
+  const [saved, setSaved] = useState<string | null>(null);
+  // "Apply to similar" is turned off after a save, so the next change in the same drawer does not reach many transactions by accident.
+  const save = async (category: string | null) => {
+    setSaved(null);
+    const applied = similar;
+    if (await act.run(() => api.setCategory(id, category, similar))) {
+      setSimilar(false);
+      setSaved(applied ? 'Categoria salva também nas outras com a mesma descrição.' : 'Categoria salva só nesta transação.');
+    }
+  };
   const ask = async () => {
     setAiNote(null);
     await act.run(async () => {
@@ -164,6 +173,7 @@ function CategorySection({ id, d, act }: { id: string; d: Detail; act: Act }) {
       </div>
       {d.transaction.categoryOrigin !== 'source' && d.transaction.sourceCategory !== null && <div class="hint">A fonte diz: {d.transaction.sourceCategory}</div>}
       {aiNote && <div class="hint" role="status">{aiNote}</div>}
+      {saved && <div class="hint" role="status">{saved}</div>}
       <CategorySelect value="" onChange={(value) => value.trim() !== '' && void save(value)} categories={categories.data?.items} placeholder="Trocar a categoria..." />
       <label class="check">
         <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />

@@ -38,6 +38,7 @@ function Balances({ now, hidden }: { now: Date; hidden: boolean }) {
           <div class="panel">
             <div class="big">{brl(data.total, hidden)}</div>
             <StackBar parts={data.institutions.map((i, n) => ({ value: Math.max(i.balance, 0), color: PALETTE[n % PALETTE.length]!, label: i.institution }))} />
+            {data.institutions.some((i) => i.balance < 0) && <div class="note">Saldo negativo fica fora da barra, mas entra no total: {data.institutions.filter((i) => i.balance < 0).map((i) => i.institution).join(', ')}.</div>}
           </div>
           {data.institutions.map((inst, n) => (
             <section class="panel" key={inst.institution}>
@@ -46,7 +47,7 @@ function Balances({ now, hidden }: { now: Date; hidden: boolean }) {
                   <span class="swatch" style={{ background: PALETTE[n % PALETTE.length] }} /> {inst.institution}
                 </h2>
                 <div>
-                  <strong>{brl(inst.balance, hidden)}</strong> <span class="muted">{percent(inst.share)}</span>
+                  <strong class={inst.balance < 0 ? 'bad-text' : undefined}>{brl(inst.balance, hidden)}</strong> <span class="muted">{percent(inst.share)}</span>
                 </div>
               </div>
               <div class={isStale(inst.asOf, now) ? 'asof stale' : 'asof'}>Atualizado {ago(inst.asOf, now)}</div>

@@ -323,3 +323,14 @@ test('bulk edit changes many transactions at once and rejects mixed or empty req
   assert.equal(bulkEdit(store, ['rent'], { ignored: true }, NOW).ok, true);
   assert.equal(explore(store, base, NOW).items.some((t) => t.id === 'rent'), false);
 });
+
+test('bulk edit moves card purchases to a bill, skips the rest and goes back to automatic with null', () => {
+  const store = seeded();
+  const moved = bulkEdit(store, ['phone', 'rent'], { cycleKey: '2026-12' }, NOW);
+  assert.deepEqual([moved.ok, moved.changed, moved.skipped], [true, 1, 1]);
+  assert.equal(transactionDetail(store, 'phone', NOW)?.cycleByUser, true);
+  const back = bulkEdit(store, ['phone'], { cycleKey: null }, NOW);
+  assert.deepEqual([back.ok, back.changed], [true, 1]);
+  assert.equal(transactionDetail(store, 'phone', NOW)?.cycleByUser, false);
+  assert.equal(bulkEdit(store, ['phone'], { cycleKey: '12/2026' }, NOW).ok, false);
+});
