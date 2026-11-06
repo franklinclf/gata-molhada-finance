@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { dayNumber } from '../core/dates.ts';
 import type { Cents } from '../core/money.ts';
+import { normalizeName } from '../core/names.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { addMonthsToDay, cyclesFor, type Cycle } from './cycles.ts';
@@ -68,6 +69,33 @@ export function seriesDescription(description: string): string {
   return description.replace(/\s*\d{1,2}\s*\/\s*\d{1,2}\s*$/, '').trim();
 }
 
+/** Texts shorter than this are too generic to say that a longer one is the same purchase. */
+const MIN_PREFIX = 8;
+/** Days between an installment charge and the credit of the same amount that cancels it. */
+const REFUND_DAYS = 3;
+
+const seriesText = (description: string) => normalizeName(seriesDescription(description));
+
+/**
+ * Installment charges cancelled by a credit of the same amount and text a few days later (a purchase refunded right away).
+ * A cancelled purchase has no installments to come, so it must not plan any.
+ */
+function refundedCharges(transactions: EffectiveTransaction[]): Set<string> {
+  const credits = transactions.filter((t) => !t.excluded && t.amount > 0 && t.role === null);
+  const used = new Set<string>();
+  const out = new Set<string>();
+  for (const t of transactions) {
+    if (!t.installment || t.excluded || t.amount >= 0) continue;
+    const text = seriesText(t.description);
+    const day = dayNumber(localDay(t.occurredAt));
+    const credit = credits.find((c) => !used.has(c.id) && c.accountId === t.accountId && c.amount === -t.amount && Math.abs(dayNumber(localDay(c.occurredAt)) - day) <= REFUND_DAYS && (seriesText(c.description).startsWith(text) || text.startsWith(seriesText(c.description))));
+    if (!credit) continue;
+    used.add(credit.id);
+    out.add(t.id);
+  }
+  return out;
+}
+
 const hash = (text: string) => createHash('sha256').update(text).digest('hex').slice(0, 12);
 
 function addMonthsToKey(key: string, n: number): string {
@@ -95,17 +123,35 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}): I
   const transactions = effectiveTransactions(store, opts, accounts);
   const today = localDay(now.toISOString());
 
+  const refunded = refundedCharges(transactions);
   const series = new Map<string, EffectiveTransaction[]>();
+  const shapes = new Map<string, { accountId: string; text: string; total: number; amount: Cents }>();
   for (const t of transactions) {
-    if (!t.installment || t.excluded || t.installment.total < 2 || t.amount >= 0) continue;
+    if (!t.installment || t.excluded || t.installment.total < 2 || t.amount >= 0 || refunded.has(t.id)) continue;
     // 3 x 100,00 can be billed 33,34 / 33,33 / 33,33: amounts within one cent per instalment are the same purchase.
     const tolerance = t.installment.total;
-    const base = `${t.accountId}|${seriesDescription(t.description)}|${tolerance}`;
-    const known = [...series.keys()].filter((k) => k.startsWith(`${base}|`)).map((k) => ({ k, amount: Number(k.slice(base.length + 1)) }));
-    const near = known.find((s) => Math.abs(s.amount - -t.amount) <= tolerance);
-    const key = near ? near.k : `${base}|${-t.amount}`;
+    const text = seriesText(t.description);
+    const same = (s: { accountId: string; total: number; amount: Cents }) => s.accountId === t.accountId && s.total === tolerance && Math.abs(s.amount - -t.amount) <= tolerance;
+    let key: string | undefined;
+    for (const [k, s] of shapes) if (same(s) && s.text === text) key = k;
+    // A bank can change the text halfway (Nubank adds the store name to "Parcelamento de Compra"): a series whose text starts
+    // like this one, with the same count and amount and without this number yet, is the same purchase.
+    if (key === undefined) {
+      for (const [k, s] of shapes) {
+        const prefix = s.text.length >= MIN_PREFIX && text.length >= MIN_PREFIX && (s.text.startsWith(text) || text.startsWith(s.text));
+        if (same(s) && prefix && !series.get(k)!.some((o) => o.installment!.number === t.installment!.number)) key = k;
+      }
+    }
+    if (key === undefined) {
+      key = `${t.accountId}|${seriesDescription(t.description)}|${tolerance}|${-t.amount}`;
+      shapes.set(key, { accountId: t.accountId, text, total: tolerance, amount: -t.amount });
+    }
     series.set(key, [...(series.get(key) ?? []), t]);
   }
+  // The first installment sometimes comes as a plain charge, with no "1/3" on it: a charge with the series' text and amount
+  // in the bill where a missing number falls is that installment, not something else to plan.
+  const plain = transactions.filter((t) => !t.installment && !t.excluded && t.amount < 0 && t.role === null && !refunded.has(t.id));
+  const usedPlain = new Set<string>();
 
   const purchases: InstallmentPurchase[] = [];
   for (const account of cardAccounts) {
@@ -150,6 +196,13 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}): I
           slots.push({ number: n, cycle: cycleKey, status: s.ahead > 0 ? 'future' : s.cycle ? statusOf(s.cycle) : 'paid', inferred: false, day: s.day });
         } else {
           const cycle = byKey.get(cycleKey);
+          const text = seriesText(first.description);
+          const twin = plain.find((p) => !usedPlain.has(p.id) && p.accountId === account.id && Math.abs(-p.amount - amount) <= total && seriesText(p.description).startsWith(text) && (p.billCycle ?? cycleOfDay(localDay(p.occurredAt))?.key) === cycleKey);
+          if (twin) {
+            usedPlain.add(twin.id);
+            slots.push({ number: n, cycle: cycleKey, status: cycle ? statusOf(cycle) : 'paid', inferred: false, day: localDay(twin.occurredAt) });
+            continue;
+          }
           let status: InstallmentStatus;
           if (n < numbers[0]!) status = 'paid';
           else if (cycle) status = statusOf(cycle);

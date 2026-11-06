@@ -231,6 +231,7 @@ test('roles come from the source, so own transfers and investments stay out of s
   assert.equal(evidenceRole('Credit card payment', 'x'), 'card_payment');
   assert.equal(evidenceRole(null, 'PAGAMENTO RECEBIDO - OBRIGADO'), 'card_payment');
   assert.equal(evidenceRole(null, 'PAGTO. POR DEB EM C/C'), 'card_payment');
+  assert.equal(evidenceRole(null, 'DEVOLUCAO SALDO CREDOR'), 'card_payment');
   assert.equal(evidenceRole(null, 'PAGAMENTO COM SALDO'), 'card_payment');
   assert.equal(evidenceRole(null, 'Aplicação RDB'), 'investment');
   assert.equal(evidenceRole('Supermercado', 'EXTRA HIPER'), null);
