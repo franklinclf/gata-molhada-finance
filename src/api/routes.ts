@@ -9,6 +9,7 @@ import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
 import { createGoal, deleteGoal, listGoals, updateGoal, type GoalResult } from './goals.ts';
 import { calendar } from './calendar.ts';
+import { outlook } from './outlook.ts';
 import { detectRecurring, ignoreRecurring, markRecurring } from './recurring.ts';
 import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
 import { compareMonths, isMonth } from './compare.ts';
@@ -217,6 +218,9 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return badRequest('month must look like 2026-10');
       return { status: 200, body: calendar(store, month, now, opts) };
     }
+    case 'outlook':
+      if (parts.length !== 2) return null;
+      return method === 'GET' ? { status: 200, body: outlook(store, now, opts) } : methodNotAllowed();
     case 'manual-transactions': {
       const asResult = <T,>(r: ManualResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
       if (parts.length === 2) {

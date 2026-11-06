@@ -1,6 +1,6 @@
 import type { Store } from '../store/store.ts';
 
-export const WIDGET_IDS = ['balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'summary', 'upcoming', 'calendar', 'trend', 'review', 'recent', 'freshness', 'findings'] as const;
+export const WIDGET_IDS = ['outlook', 'balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'summary', 'upcoming', 'calendar', 'trend', 'review', 'recent', 'freshness', 'findings'] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 
 export const GRID_COLUMNS = 12;
@@ -12,6 +12,7 @@ const MAX_HEIGHT = 40;
 
 /** Size a new widget starts with, in grid cells (12 columns). */
 export const DEFAULT_SIZES: Record<WidgetId, { w: number; h: number }> = {
+  outlook: { w: 4, h: 6 },
   balances: { w: 4, h: 5 },
   cards: { w: 4, h: 6 },
   cashflow: { w: 4, h: 5 },

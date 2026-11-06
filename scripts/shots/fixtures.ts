@@ -209,6 +209,7 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
     '/api/chat/conversations/1': call('/api/chat/conversations/1'),
     '/api/calendar': call('/api/calendar'),
     '/api/spending/compare': call('/api/spending/compare'),
+    '/api/outlook': call('/api/outlook'),
     '/api/spending/trend': call('/api/spending/trend', 'months=6'),
     '/api/findings': call('/api/findings'),
     '/api/categories': call('/api/categories'),

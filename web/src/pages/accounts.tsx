@@ -1,9 +1,10 @@
 import { api } from '../api.ts';
 import { PALETTE, StackBar } from '../charts.tsx';
-import { ago, brl, isStale, percent } from '../format.ts';
+import { ago, brl, dayMonth, isStale, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { navigate, type Route } from '../router.ts';
 import { Go, Loading } from '../ui.tsx';
+import { OutlookCommitted, OutlookFacts, OutlookTimeline } from '../widgets/outlook.tsx';
 import { CashflowPage } from './cashflow.tsx';
 import { NetWorthPage } from './networth.tsx';
 
@@ -29,6 +30,7 @@ export function AccountsPage({ route, now, hidden, view }: { route: Route; now: 
 
 function Balances({ now, hidden }: { now: Date; hidden: boolean }) {
   const { data, error, loading } = useLoad(() => api.balances(), []);
+  const outlook = useLoad(() => api.outlook(), [], 120_000);
   return (
     <>
       {error || (loading && !data) ? (
@@ -39,6 +41,20 @@ function Balances({ now, hidden }: { now: Date; hidden: boolean }) {
             <div class="big">{brl(data.total, hidden)}</div>
             <StackBar parts={data.institutions.map((i, n) => ({ value: Math.max(i.balance, 0), color: PALETTE[n % PALETTE.length]!, label: i.institution }))} />
           </div>
+          {outlook.data && (
+            <section class="panel">
+              <h2>Próximos compromissos</h2>
+              <div class="muted">
+                {outlook.data.firstUncovered
+                  ? `O saldo não cobre ${outlook.data.firstUncovered.name} em ${dayMonth(outlook.data.firstUncovered.day)}: faltam ${brl(outlook.data.firstUncovered.shortfall, hidden)}.`
+                  : 'O saldo projetado cobre todos os vencimentos da lista.'}{' '}
+                Entradas e contas fixas vêm do que se repete todo mês nas suas contas.
+              </div>
+              <OutlookFacts data={outlook.data} hidden={hidden} />
+              <OutlookTimeline data={outlook.data} hidden={hidden} limit={12} detail />
+              <OutlookCommitted data={outlook.data} hidden={hidden} />
+            </section>
+          )}
           {data.institutions.map((inst, n) => (
             <section class="panel" key={inst.institution}>
               <div class="row-head">
