@@ -13,7 +13,7 @@ interface Action {
 const fold = (text: string): string => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 const PAGES: Array<[string, string, string]> = [
-  ['', 'Painel', 'inicio home dashboard'],
+  ['', 'Dashboard', 'inicio home painel'],
   ['transactions', 'Transações', 'lancamentos extrato'],
   ['spending', 'Gastos', 'despesas categorias'],
   ['cards', 'Cartões', 'faturas cartao credito'],
@@ -24,7 +24,7 @@ const PAGES: Array<[string, string, string]> = [
   ['chat', 'Analista', 'perguntar ia chat'],
   ['accounts', 'Contas', 'saldo bancos'],
   ['cashflow', 'Fluxo de caixa', 'entradas saidas'],
-  ['status', 'Fontes e conferência', 'sincronizacao atualizar'],
+  ['status', 'Fontes e conferência (Ajustes, Dados)', 'sincronizacao atualizar'],
   ['settings', 'Ajustes', 'configuracoes categorias regras backup seguranca'],
 ];
 

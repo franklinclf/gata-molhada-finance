@@ -377,3 +377,5 @@ Parcelas que o banco ainda não listou: uma parcela que o app sabe que vem (a 2/
 - **Sistema de design**: `web/src/ds.tsx` (Button, ButtonLink, Chip, Badge, Field, Panel) e as variáveis de cor em `styles.css`. Paletas e cor de destaque própria em Ajustes, Aparência (guardado no navegador, `web/src/theme.ts`).
 - **IA**: em Ajustes, IA, "Quem decidiu cada descrição" explica por que as sugestões diminuem: a IA decide por descrição, e a maioria já tem resposta de uma regra, da tradução da fonte ou de uma rodada anterior.
 - **Conferir**: cada fatura que não fecha tem "Perguntar à IA" (abre o analista com a pergunta pronta), "Lançar a diferença" e "Ver compras".
+- **Barra superior**: o primeiro item do menu é Dashboard. Os controles do painel (Personalizar, largura, adicionar widget) ficam na barra superior, à direita, só no Dashboard. Ocultar valores e Sair são ícones. "Fontes e conferência" fica em Ajustes, Dados (o endereço `#/status` abre essa aba).
+- **Paletas**: além das sugeridas (escuras e claras), dá para criar paletas próprias escolhendo sete cores; o app deriva o resto. Ficam no navegador.

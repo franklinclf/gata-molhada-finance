@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { DEFAULT_SIZES, defaultLayout, WIDGET_IDS } from '../../src/api/layout.ts';
 import { api } from './api.ts';
@@ -5,6 +6,7 @@ import type { LayoutItem, WidgetId } from './api.ts';
 import { freeSlot, reflow, sizeClassPx } from './grid.ts';
 import { Grid } from './Grid.tsx';
 import { useLoad, useStoredFlag } from './hooks.ts';
+import { setTopbarTools } from './topbar.ts';
 import { Loading } from './ui.tsx';
 import { Select } from './Select.tsx';
 import { WIDGETS } from './widgets/index.ts';
@@ -45,6 +47,13 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
     timer.current = setTimeout(() => void api.saveLayout({ version: 2, items: next }).catch(() => {}), 500);
   }
 
+  // The controls live in the top bar; they are handed over after every render so they always see the current state.
+  const toolsRef = useRef<ComponentChildren>(null);
+  useEffect(() => {
+    setTopbarTools(toolsRef.current);
+  });
+  useEffect(() => () => setTopbarTools(null), []);
+
   if (!items) return <Loading error={saved.error} />;
 
   function add(widget: WidgetId) {
@@ -69,9 +78,8 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
     );
   };
 
-  return (
+  const tools = (
     <>
-      <div class="toolbar">
         {!narrow && (
           <button class="icon" onClick={() => setEditing(!editing)} aria-pressed={editing}>
             {editing ? 'Concluir' : 'Personalizar painel'}
@@ -95,7 +103,12 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
             </button>
           </>
         )}
-      </div>
+    </>
+  );
+  toolsRef.current = tools;
+
+  return (
+    <>
       {narrow ? (
         <div class="stack">
           {ordered.map((item) => (

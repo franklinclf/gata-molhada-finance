@@ -10,8 +10,9 @@ import type { CategoryRow } from '../api.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { Select } from '../Select.tsx';
 import { Button, ButtonLink } from '../ds.tsx';
-import { chooseAccent, choosePalette, PALETTES, savedAccent, savedPalette } from '../theme.ts';
+import { allPalettes, chooseAccent, choosePalette, colorsOf, customPalettes, deleteCustomPalette, savedAccent, savedPalette, saveCustomPalette, type CustomColors, type CustomPalette } from '../theme.ts';
 import { RulesTab } from './rules.tsx';
+import { StatusPage } from './status.tsx';
 
 const KIND: Record<string, string> = { checking: 'Conta corrente', savings: 'Poupança', credit_card: 'Cartão de crédito' };
 
@@ -734,38 +735,105 @@ function DataTab() {
   );
 }
 
-/** Color palette of the app, kept in this browser. */
+const COLOR_LABELS: Array<[keyof CustomColors, string]> = [
+  ['bg', 'Fundo'],
+  ['card', 'Cartões'],
+  ['text', 'Texto'],
+  ['accent', 'Destaque'],
+  ['good', 'Positivo'],
+  ['bad', 'Negativo'],
+  ['warn', 'Alerta'],
+];
+
+/** Color palette of the app, kept in this browser: suggested ones, and ones the owner builds color by color. */
 function AppearanceTab() {
   const [palette, setPalette] = useState(savedPalette());
   const [accent, setAccent] = useState(savedAccent());
+  const [version, setVersion] = useState(0);
+  const [draft, setDraft] = useState<CustomPalette | null>(null);
+  const all = allPalettes();
+  void version;
+  const pick = (id: string) => {
+    choosePalette(id);
+    setPalette(id);
+    setAccent(null);
+  };
+  // Every change is painted at once, so the owner sees the result while choosing.
+  const edit = (next: CustomPalette) => {
+    setDraft(next);
+    saveCustomPalette(next);
+    pick(next.id);
+    setVersion((n) => n + 1);
+  };
   return (
-    <section class="panel">
-      <h2>Paleta de cores</h2>
-      <div class="muted">A escolha vale só neste navegador.</div>
-      <div class="palette-grid">
-        {PALETTES.map((p) => (
-          <button key={p.id} class="palette-card" aria-pressed={palette === p.id && accent === null} onClick={() => { choosePalette(p.id); setPalette(p.id); setAccent(null); }}>
-            <span class="palette-swatches">
-              {['--bg', '--card', '--accent', '--good', '--bad'].map((v) => (
-                <i key={v} style={{ background: p.vars[v] }} />
-              ))}
-            </span>
-            {p.name}
-          </button>
-        ))}
-      </div>
-      <div class="row-head">
-        <label class="field">
-          <span class="muted">Cor de destaque própria</span>
-          <input type="color" value={accent ?? PALETTES.find((p) => p.id === palette)!.vars['--accent']} onChange={(e) => { const value = (e.currentTarget as HTMLInputElement).value; chooseAccent(value); setAccent(value); }} />
-        </label>
-        {accent !== null && (
-          <Button size="sm" onClick={() => { chooseAccent(null); setAccent(null); }}>
-            Voltar à cor da paleta
+    <>
+      <section class="panel">
+        <h2>Paleta de cores</h2>
+        <div class="muted">A escolha vale só neste navegador.</div>
+        <div class="palette-grid">
+          {all.map((p) => (
+            <button key={p.id} class="palette-card" aria-pressed={palette === p.id && accent === null} onClick={() => pick(p.id)}>
+              <span class="palette-swatches">
+                {['--bg', '--card', '--accent', '--good', '--bad'].map((v) => (
+                  <i key={v} style={{ background: p.vars[v] }} />
+                ))}
+              </span>
+              {p.name}
+            </button>
+          ))}
+        </div>
+        <div class="row-head">
+          <Button size="sm" onClick={() => edit({ id: `custom-${Date.now().toString(36)}`, name: 'Minha paleta', colors: colorsOf(all.find((p) => p.id === palette) ?? all[0]!) })}>
+            + Criar minha paleta
           </Button>
-        )}
-      </div>
-    </section>
+          {palette.startsWith('custom-') && !draft && (
+            <Button size="sm" onClick={() => setDraft(customPalettes().find((c) => c.id === palette) ?? null)}>
+              Editar a escolhida
+            </Button>
+          )}
+        </div>
+      </section>
+      {draft && (
+        <section class="panel">
+          <h2>Minha paleta</h2>
+          <label class="field">
+            <span class="muted">Nome</span>
+            <input value={draft.name} maxLength={30} onInput={(e) => edit({ ...draft, name: (e.currentTarget as HTMLInputElement).value || 'Minha paleta' })} />
+          </label>
+          <div class="palette-grid">
+            {COLOR_LABELS.map(([key, label]) => (
+              <label key={key} class="field">
+                <span class="muted">{label}</span>
+                <input type="color" value={draft.colors[key]} onInput={(e) => edit({ ...draft, colors: { ...draft.colors, [key]: (e.currentTarget as HTMLInputElement).value } })} />
+              </label>
+            ))}
+          </div>
+          <div class="muted">Os tons intermediários (cartão elevado, linhas, texto apagado) saem dessas sete cores.</div>
+          <div class="actions">
+            <Button variant="primary" size="sm" onClick={() => setDraft(null)}>
+              Pronto
+            </Button>
+            <Button variant="danger" size="sm" onClick={() => { deleteCustomPalette(draft.id); setPalette(savedPalette()); setDraft(null); setVersion((n) => n + 1); }}>
+              Excluir esta paleta
+            </Button>
+          </div>
+        </section>
+      )}
+      <section class="panel">
+        <h2>Só a cor de destaque</h2>
+        <div class="row-head">
+          <label class="field">
+            <span class="muted">Troca o destaque da paleta escolhida</span>
+            <input type="color" value={accent ?? all.find((p) => p.id === palette)?.vars['--accent'] ?? '#c6f432'} onChange={(e) => { const value = (e.currentTarget as HTMLInputElement).value; chooseAccent(value); setAccent(value); }} />
+          </label>
+          {accent !== null && (
+            <Button size="sm" onClick={() => { chooseAccent(null); setAccent(null); }}>
+              Voltar à cor da paleta
+            </Button>
+          )}
+        </div>
+      </section>
+    </>
   );
 }
 
@@ -797,7 +865,7 @@ export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boo
           Segurança
         </button>
       </div>
-      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'data' ? <DataTab /> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : tab === 'appearance' ? <AppearanceTab /> : <AccountsTab hidden={hidden} />}
+      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'data' ? <><StatusPage now={now} hidden={hidden} embedded /><DataTab /></> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : tab === 'appearance' ? <AppearanceTab /> : <AccountsTab hidden={hidden} />}
     </div>
   );
 }
