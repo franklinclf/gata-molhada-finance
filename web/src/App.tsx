@@ -13,15 +13,35 @@ import { CalendarPage } from './pages/calendar.tsx';
 import { BudgetsPage } from './pages/budgets.tsx';
 import { SettingsPage } from './pages/settings.tsx';
 import { SpendingPage } from './pages/spending.tsx';
-import { StatusPage } from './pages/status.tsx';
+import { useTopbarTools } from './topbar.ts';
 import { TransactionsPage } from './pages/transactions.tsx';
 import { hrefFor, useRoute } from './router.ts';
+
+const svg = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': true } as const;
+const Eye = () => (
+  <svg {...svg}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+const EyeOff = () => (
+  <svg {...svg}>
+    <path d="M17.9 17.9A10.4 10.4 0 0 1 12 19c-6.5 0-10-7-10-7a17.7 17.7 0 0 1 4.1-5M9.9 5.2A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.2 3.2M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    <path d="M2 2l20 20" />
+  </svg>
+);
+const LogOut = () => (
+  <svg {...svg}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <path d="M16 17l5-5-5-5M21 12H9" />
+  </svg>
+);
 
 type Phase = 'checking' | 'out' | 'in';
 
 /** The four sections kept on the bottom bar of a phone; the rest sit behind "Mais". */
 const TABS: Array<[string, string, string]> = [
-  ['', 'Painel', '▦'],
+  ['', 'Dashboard', '▦'],
   ['transactions', 'Transações', '☰'],
   ['spending', 'Gastos', '◔'],
   ['cards', 'Cartões', '▭'],
@@ -32,13 +52,12 @@ const MORE: Array<[string, string]> = [
   ['calendar', 'Calendário'],
   ['chat', 'Analista'],
   ['accounts', 'Contas'],
-  ['status', 'Fontes e conferência'],
   ['settings', 'Ajustes'],
 ];
 
 /** Every section of the top bar of a wide screen, in order. Those that do not fit the width move under "Mais". */
 const NAV: Array<[string, string]> = [
-  ['', 'Painel'],
+  ['', 'Dashboard'],
   ['transactions', 'Transações'],
   ['spending', 'Gastos'],
   ['cards', 'Cartões'],
@@ -47,7 +66,6 @@ const NAV: Array<[string, string]> = [
   ['chat', 'Analista'],
   ['goals', 'Metas'],
   ['calendar', 'Calendário'],
-  ['status', 'Fontes e conferência'],
   ['settings', 'Ajustes'],
 ];
 
@@ -124,7 +142,8 @@ export function App() {
   const { bar, probe, fit } = useFittingCount(NAV.length);
   const [dragging, setDragging] = useState<string | null>(null);
   // Cash flow and net worth are views of the accounts page.
-  const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page;
+  const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page === 'status' ? 'settings' : route.page;
+  const tools = useTopbarTools();
   const link = (id: string, label: string, onClick?: () => void) => (
     <a
       key={id}
@@ -208,7 +227,8 @@ export function App() {
       page = <AccountsPage route={route} now={now} hidden={hidden} view="cashflow" />;
       break;
     case 'status':
-      page = <StatusPage now={now} hidden={hidden} />;
+      // Sources and checks now live in Settings, Data.
+      page = <SettingsPage route={{ page: 'settings', params: new URLSearchParams({ tab: 'data' }) }} hidden={hidden} now={now} />;
       break;
     case 'settings':
       page = <SettingsPage route={route} hidden={hidden} now={now} />;
@@ -259,16 +279,19 @@ export function App() {
           </div>
         </nav>
         <div class="topbar-actions">
-          <button class="icon" onClick={() => setHidden(!hidden)} aria-pressed={hidden} title={hidden ? 'Mostrar valores' : 'Ocultar valores'}>
-            {hidden ? 'Mostrar valores' : 'Ocultar valores'}
+          {tools}
+          <button class="icon icon-btn" onClick={() => setHidden(!hidden)} aria-pressed={hidden} aria-label={hidden ? 'Mostrar valores' : 'Ocultar valores'} title={hidden ? 'Mostrar valores' : 'Ocultar valores'}>
+            {hidden ? <EyeOff /> : <Eye />}
           </button>
           <button
-            class="icon"
+            class="icon icon-btn"
+            aria-label="Sair"
+            title="Sair"
             onClick={() => {
               void api.logout().finally(() => setPhase('out'));
             }}
           >
-            Sair
+            <LogOut />
           </button>
         </div>
       </header>

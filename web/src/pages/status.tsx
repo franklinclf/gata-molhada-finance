@@ -15,7 +15,7 @@ function alertText(event: string, code: string | null): string {
   return 'a última leitura deu erro' + (code ? ` (${code})` : '') + '.';
 }
 
-export function StatusPage({ now, hidden }: { now: Date; hidden: boolean }) {
+export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidden: boolean; embedded?: boolean }) {
   const fresh = useLoad(() => api.freshness(), [], 60_000);
   const findings = useLoad(() => api.findings(), []);
   const ai = useLoad(() => api.ai(), []);
@@ -36,7 +36,7 @@ export function StatusPage({ now, hidden }: { now: Date; hidden: boolean }) {
   };
   return (
     <div class="page-body">
-      <h1 class="page-title">Fontes e conferência</h1>
+      {embedded ? <h2>Fontes e conferência</h2> : <h1 class="page-title">Fontes e conferência</h1>}
       {fresh.data && fresh.data.health.length > 0 && (
         <section class="panel health" role="alert">
           <h2>Algo nos dados não fecha</h2>
