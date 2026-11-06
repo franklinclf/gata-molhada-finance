@@ -1,7 +1,8 @@
 import { useState } from 'preact/hooks';
 import { brl, brlShort, dayMonth } from './format.ts';
 
-export const PALETTE = ['#c6f432', '#8b7cff', '#ffb547', '#ff6b6b', '#4dd6c4', '#5aa9ff', '#f78fd0', '#9aa4b2'];
+/** Chart colors come from the palette (--chart-1 is the accent), so slices stay visible on light and dark cards. */
+export const PALETTE = Array.from({ length: 8 }, (_, i) => `var(--chart-${i + 1})`);
 
 interface Segment {
   value: number;
