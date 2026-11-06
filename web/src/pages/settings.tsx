@@ -4,6 +4,7 @@ import { ago } from '../format.ts';
 import { createPasskey, guessDeviceName, passkeysSupported } from '../passkey.ts';
 import { brl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
+import { useNavOrder } from '../nav.ts';
 import { patchParams, type Route } from '../router.ts';
 import { CheckList, Go, Loading } from '../ui.tsx';
 import type { CategoryRow } from '../api.ts';
@@ -746,6 +747,37 @@ const COLOR_LABELS: Array<[keyof CustomColors, string]> = [
 ];
 
 /** Color palette of the app, kept in this browser: suggested ones, and ones the owner builds color by color. */
+/** The order of the top bar sections, by buttons that work on touch and keyboard (the bar also accepts a drag on a mouse). */
+function MenuOrderSection() {
+  const order = useNavOrder();
+  return (
+    <section class="panel">
+      <h2>Ordem do menu superior</h2>
+      <div class="muted">Vale para telas largas e só neste navegador. Use as setas para subir ou descer cada seção. Com a barra cheia, as últimas ficam em “Mais”.</div>
+      <ol class="rows order-list">
+        {order.items.map(([id, label], index) => (
+          <li key={id}>
+            <span class="grow">{label}</span>
+            <Button size="sm" aria-label={`Subir ${label}`} disabled={index === 0} onClick={() => order.shift(id, -1)}>
+              ↑
+            </Button>
+            <Button size="sm" aria-label={`Descer ${label}`} disabled={index === order.items.length - 1} onClick={() => order.shift(id, 1)}>
+              ↓
+            </Button>
+          </li>
+        ))}
+      </ol>
+      {order.custom && (
+        <div class="actions">
+          <Button size="sm" onClick={() => order.reset()}>
+            Voltar à ordem original
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AppearanceTab() {
   const [palette, setPalette] = useState(savedPalette());
   const [accent, setAccent] = useState(savedAccent());
@@ -833,6 +865,7 @@ function AppearanceTab() {
           )}
         </div>
       </section>
+      <MenuOrderSection />
     </>
   );
 }

@@ -132,7 +132,7 @@ export function Bars({ data, hidden, selected, onSelect, height = 130 }: { data:
 }
 
 /** Running total as a line with a soft fill and a pointer that reads the value of the day under it. */
-export function LineChart({ points, hidden, days, label: title = 'Gastos acumulados' }: { points: number[]; hidden: boolean; days?: string[]; label?: string }) {
+export function LineChart({ points, hidden, days, label: title = 'Gastos acumulados', height: boxHeight }: { points: number[]; hidden: boolean; days?: string[]; label?: string; /** Height of the chart in px; 90 when not given. */ height?: number }) {
   const [at, setAt] = useState<number | null>(null);
   if (points.length < 2) return <div class="empty">Sem dados no período</div>;
   const width = 300;
@@ -147,6 +147,7 @@ export function LineChart({ points, hidden, days, label: title = 'Gastos acumula
   return (
     <div
       class="line-wrap"
+      style={boxHeight ? { height: `${boxHeight}px` } : undefined}
       data-tip={at === null ? undefined : label}
       onMouseMove={(e) => {
         const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
