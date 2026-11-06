@@ -50,10 +50,11 @@ flowchart TD
     E4 --> V2["Cartões: ciclos, Conferir, parcelas, previsão"]
     E4 --> V3["Orçamento, recorrências, calendário"]
     E4 --> V4["Patrimônio, metas, painel"]
+    E4 --> V5["Mês em curso e calendário<br/>projeção comum: src/api/projection.ts"]
   end
 
   MANUAL --> TX
-  V1 & V2 & V3 & V4 --> WEB["Preact SPA / PWA"]
+  V1 & V2 & V3 & V4 & V5 --> WEB["Preact SPA / PWA"]
   WEB -->|"corrige"| E1
 ```
 
@@ -135,12 +136,14 @@ Cada vez que a fonte avisa que há dado novo, o app relê os últimos 45 dias (`
 
 ## 8. Limpeza do que o Meu Pluggy deixa de listar
 
-Depois de uma leitura completa (contas e transações sem erro), o app remove da fonte:
+A leitura de transações é feita conta por conta. Uma conta com erro vira aviso com o nome da instituição e da conta, mantém os registros que já tinha, e o observer tenta de novo na verificação seguinte; as outras contas são gravadas normalmente. Depois da leitura, o app remove da fonte, só nas contas lidas com sucesso:
 
 - as transações dentro da janela lida (do dia seguinte ao início até agora) que a leitura não trouxe. É o caso de um registro apagado, ou recriado com outro id ao ser lançado (por exemplo a pendente de R$ 2,36 do "Lucro", que ficou ao lado da lançada). Futuras parcelas, com data depois de hoje, ficam de fora da limpeza;
 - as contas que a lista de contas não trouxe, com as transações e faturas delas. Uma conexão refeita ganha ids novos e deixava a conta antiga para trás, o que dobrava saldos.
 
-Duas travas: uma leitura vazia não remove nada, e mais da metade da janela (ou das contas) sumindo de uma vez é tratada como leitura ruim e vira um aviso. Duas leituras da mesma fonte não rodam ao mesmo tempo, para uma resposta antiga não sobrescrever uma nova. Uma mudança vista e ainda não lida sobrevive a um reinício do servidor.
+Travas: uma conta que voltou sem nenhuma transação na janela nunca é podada (nem no recomeço completo), uma conta que perdeu mais da metade da janela de uma vez também é mantida, e mais da metade das contas sumindo da lista é tratada como leitura ruim; cada caso vira aviso.
+
+As respostas brutas (`raw_snapshots`) também são reduzidas ao fim de cada sincronização: ficam as 3 últimas leituras completas, a última leitura completa de cada mês e tudo o que for mais novo que a mais antiga mantida (uma leitura é um grupo de respostas sem pausa maior que 15 minutos); sem nenhuma leitura completa, nada é apagado. Os únicos leitores das respostas antigas são os backfills de partes e de moeda estrangeira, que rodam uma vez na partida, antes de qualquer sincronização. O arquivo é compactado com VACUUM só quando mais de 30% das páginas estão livres e no máximo uma vez por dia (`last_vacuum_at` em `settings`). As cópias `before-reset-*.sqlite` da pasta de backups ficam limitadas às 3 mais recentes, e o recomeço completo exige que a cópia exista e não esteja vazia. Duas leituras da mesma fonte não rodam ao mesmo tempo, para uma resposta antiga não sobrescrever uma nova. Uma mudança vista e ainda não lida sobrevive a um reinício do servidor.
 
 ## 9. Limitações conhecidas
 
@@ -153,3 +156,6 @@ Duas travas: uma leitura vazia não remove nada, e mais da metade da janela (ou 
 - Conta de dias, soma de meses e último dia do mês: `src/core/dates.ts`.
 - Fontes: `store.listSourceIds()` e `sourcePriority(store)` em `src/reconcile/run.ts`.
 - Janela de leitura: `SYNC_LOOKBACK_DAYS` em `src/scheduler/defaults.ts`.
+- Retenção de respostas brutas: `KEEP_RAW_READS` e `READ_GAP_MS` em `src/sync/sync.ts`; cópias do recomeço: `KEEP_RESET_COPIES` em `src/main.ts`.
+- Ritmo esperado de leitura e avisos de dado velho e de conta parada: `EXPECTED_READ_HOURS`, `LATE_GRACE_HOURS` e `SILENT_DAYS` em `src/api/views.ts`.
+- Janela das análises (desde `DATA_START`, até o fim do período pedido): `liveTransactions` e `spendingTransactions` em `src/api/views.ts`, a mesma regra do explorador.
