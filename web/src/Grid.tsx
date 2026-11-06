@@ -19,6 +19,8 @@ interface Drag {
 interface Props {
   items: LayoutItem[];
   editing: boolean;
+  /** Widgets can be moved and resized from a small handle at any time, not only while editing. */
+  canDrag?: boolean;
   onChange: (items: LayoutItem[]) => void;
   renderItem: (item: LayoutItem) => ComponentChildren;
   onRemove: (id: string) => void;
@@ -29,7 +31,7 @@ interface Props {
  * Dashboard grid. While editing, a widget moves by its top bar and resizes by its corner; neighbours make room.
  * The draft is kept in state during the gesture and saved when the pointer is released.
  */
-export function Grid({ items, editing, onChange, renderItem, onRemove, titleOf }: Props) {
+export function Grid({ items, editing, canDrag = true, onChange, renderItem, onRemove, titleOf }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<LayoutItem[] | null>(null);
   const drag = useRef<Drag | null>(null);
@@ -88,7 +90,9 @@ export function Grid({ items, editing, onChange, renderItem, onRemove, titleOf }
               </button>
             </div>
           )}
+          {!editing && canDrag && <div class="mini-grip" onPointerDown={(e) => start(e, item, 'move')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para mover" aria-label={`Mover ${titleOf(item)}`}>⠿</div>}
           {renderItem(item)}
+          {!editing && canDrag && <div class="resize quiet" onPointerDown={(e) => start(e, item, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para redimensionar" />}
           {editing && <div class="resize" onPointerDown={(e) => start(e, item, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para redimensionar" />}
         </div>
       ))}

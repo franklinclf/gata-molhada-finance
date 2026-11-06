@@ -108,9 +108,10 @@ export const STATE_LABEL: Record<string, string> = {
   ignored: 'Ignorada por você (fora dos totais)',
 };
 
-export function TxRow({ t, hidden, onOpen }: { t: { id: string; sourceIds?: string[]; title?: string; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void }) {
+export function TxRow({ t, hidden, onOpen, pick }: { t: { id: string; sourceIds?: string[]; title?: string; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void; /** When given, the row shows a checkbox and a click toggles it instead of opening the drawer. */ pick?: { on: boolean; toggle: () => void } }) {
   return (
-    <li class="tx" data-no-nav onClick={() => onOpen(t.id)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && onOpen(t.id)}>
+    <li class={pick?.on ? 'tx picked' : 'tx'} data-no-nav onClick={() => (pick ? pick.toggle() : onOpen(t.id))} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && (pick ? pick.toggle() : onOpen(t.id))}>
+      {pick && <input type="checkbox" checked={pick.on} aria-label="Selecionar" onClick={(e) => e.stopPropagation()} onChange={pick.toggle} />}
       <div class="grow">
         <div class="clip">{t.title ?? t.description}</div>
         <div class="muted clip">

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { transactionDetail } from '../../src/api/detail.ts';
 import { explore, type ExplorerQuery } from '../../src/api/explorer.ts';
-import { saveGroup, removeGroup, addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
+import { bulkEdit, saveGroup, removeGroup, addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import * as views from '../../src/api/views.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -308,4 +308,18 @@ test('explorer: planned future charges and data from before the start are not li
   assert.equal(ids(explore(store, { ...base, future: true }, NOW)).includes('future'), true);
   assert.equal(ids(explore(store, { ...base, future: true }, NOW)).includes('old'), false);
   assert.equal(transactionDetail(store, 'old', NOW), null);
+});
+
+test('bulk edit changes many transactions at once and rejects mixed or empty requests', () => {
+  const store = seeded();
+  const categoryOf = (id: string) => explore(store, base, NOW).items.find((t) => t.id === id)?.category;
+  const r = bulkEdit(store, ['market1', 'rent'], { category: 'Mercado novo' }, NOW);
+  assert.deepEqual([r.ok, r.changed], [true, 2]);
+  assert.equal(categoryOf('market1'), 'Mercado novo');
+  assert.equal(categoryOf('rent'), 'Mercado novo');
+  assert.equal(bulkEdit(store, ['rent'], { category: 'A', ignored: true }, NOW).ok, false);
+  assert.equal(bulkEdit(store, [], { ignored: true }, NOW).ok, false);
+  assert.equal(bulkEdit(store, ['nope'], { ignored: true }, NOW).ok, false);
+  assert.equal(bulkEdit(store, ['rent'], { ignored: true }, NOW).ok, true);
+  assert.equal(explore(store, base, NOW).items.some((t) => t.id === 'rent'), false);
 });

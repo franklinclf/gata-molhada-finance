@@ -4,7 +4,7 @@ import { api } from './api.ts';
 import type { LayoutItem, WidgetId } from './api.ts';
 import { freeSlot, sizeClass } from './grid.ts';
 import { Grid } from './Grid.tsx';
-import { useLoad } from './hooks.ts';
+import { useLoad, useStoredFlag } from './hooks.ts';
 import { Loading } from './ui.tsx';
 import { Select } from './Select.tsx';
 import { WIDGETS } from './widgets/index.ts';
@@ -26,6 +26,12 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
   const [items, setItems] = useState<LayoutItem[] | null>(null);
   const [editing, setEditing] = useState(false);
   const narrow = useNarrow();
+  const [wide, setWide] = useStoredFlag('gmf-wide', true);
+  // The dashboard may use the whole width of the screen, not only the centered column the other pages use.
+  useEffect(() => {
+    document.body.classList.toggle('wide', wide);
+    return () => document.body.classList.remove('wide');
+  }, [wide]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -70,9 +76,14 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
             {editing ? 'Concluir' : 'Personalizar painel'}
           </button>
         )}
+        {!narrow && (
+          <button class="icon" onClick={() => setWide(!wide)} aria-pressed={wide} title="Usar toda a largura da tela">
+            {wide ? 'Largura total' : 'Largura normal'}
+          </button>
+        )}
         {editing && !narrow && (
           <>
-            <Select ariaLabel="Adicionar widget" value="" placeholder="+ Adicionar widget" onChange={(value) => value && add(value as WidgetId)} options={WIDGET_IDS.map((id) => ({ value: id, label: WIDGETS[id].title }))} />
+            <Select ariaLabel="Adicionar widget" value="" placeholder="+ Adicionar widget" onChange={(value) => value && add(value as WidgetId)} options={WIDGET_IDS.filter((id) => !items.some((i) => i.widget === id)).map((id) => ({ value: id, label: WIDGETS[id].title }))} />
             <button class="icon" onClick={() => update(defaultLayout().items)}>
               Restaurar padrão
             </button>
@@ -88,7 +99,7 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
           ))}
         </div>
       ) : (
-        <Grid items={items} editing={editing} onChange={update} renderItem={render} onRemove={(id) => update(items.filter((i) => i.id !== id))} titleOf={(i) => WIDGETS[i.widget].title} />
+        <Grid items={items} editing={editing} canDrag={!narrow} onChange={update} renderItem={render} onRemove={(id) => update(items.filter((i) => i.id !== id))} titleOf={(i) => WIDGETS[i.widget].title} />
       )}
       {items.length === 0 && <div class="empty page">O painel está vazio. Use “Personalizar painel” para adicionar widgets.</div>}
     </>

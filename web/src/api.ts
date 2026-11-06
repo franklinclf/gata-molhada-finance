@@ -223,6 +223,8 @@ export const api = {
   addCategory: (name: string) => request<{ ok: true }>('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
   setCategoryParent: (name: string, parent: string | null) =>
     request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/parent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parent }) }),
+  bulkEdit: (ids: string[], change: { category: string | null } | { ignored: boolean } | { status: 'pending' | 'posted' | null } | { cycleKey: string | null }) =>
+    request<{ ok: true; changed: number; skipped: number }>('/api/transactions/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...change }) }),
   saveGroup: (current: string | null, name: string, members: string[]) =>
     request<{ ok: true }>(current === null ? '/api/category-groups' : `/api/category-groups/${encodeURIComponent(current)}`, { method: current === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) }),
   deleteGroup: (name: string) => request<{ ok: true }>(`/api/category-groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),

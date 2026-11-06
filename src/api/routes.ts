@@ -17,7 +17,7 @@ import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rul
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck } from './bill-check.ts';
-import { addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, removeGroup, renameCategory, saveGroup, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
+import { bulkEdit, addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, removeGroup, renameCategory, saveGroup, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -365,6 +365,14 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const query = parseExplorer(params);
         if (!query.ok) return badRequest(query.error);
         return { status: 200, body: explore(store, query.value, now, opts) };
+      }
+      if (parts.length === 3 && id === 'bulk') {
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { ids, category | ignored | status | cycleKey }');
+        const { ids, ...change } = input;
+        const result = bulkEdit(store, ids, change, now);
+        return result.ok ? { status: 200, body: { ok: true, changed: result.changed, skipped: result.skipped } } : fromMutation(result);
       }
       if (parts.length === 3 && id !== undefined) {
         if (method !== 'GET') return methodNotAllowed();
