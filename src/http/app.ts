@@ -46,6 +46,7 @@ let chatBusy = false;
 let categorizeBusy = false;
 
 export const COOKIE_NAME = 'gmf_session';
+const VIEW_CACHES = new WeakMap<object, Map<string, { changes: number; at: number; body: unknown }>>();
 const SECURITY_HEADERS = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' };
 
 function json(status: number, payload: unknown, extra: Record<string, string> = {}): RouteResult {
@@ -324,7 +325,19 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
       return done({ status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="gmf-backup-${localDay(deps.now().toISOString())}.gmfbak"`, ...SECURITY_HEADERS }, body: null, bytes: file });
     }
 
-    const result = apiRoute(method, pathname, new URLSearchParams(request.search ?? ''), deps.store, deps.now(), request.body);
+    const now = deps.now();
+    // A view is computed from the whole database, so it is kept until the data changes or a minute passes (dates and "ago" texts move with the clock).
+    const VIEW_CACHE = VIEW_CACHES.get(deps.store) ?? new Map<string, { changes: number; at: number; body: unknown }>();
+    VIEW_CACHES.set(deps.store, VIEW_CACHE);
+    const cacheKey = method === 'GET' ? `${pathname}?${request.search ?? ''}` : null;
+    const changes = deps.store.changeCount();
+    const cached = cacheKey === null ? undefined : VIEW_CACHE.get(cacheKey);
+    if (cached && cached.changes === changes && now.getTime() - cached.at < 60_000) return done(json(200, cached.body));
+    const result = apiRoute(method, pathname, new URLSearchParams(request.search ?? ''), deps.store, now, request.body);
+    if (cacheKey !== null && result?.status === 200 && deps.store.changeCount() === changes) {
+      if (VIEW_CACHE.size >= 300) VIEW_CACHE.delete(VIEW_CACHE.keys().next().value as string);
+      VIEW_CACHE.set(cacheKey, { changes, at: now.getTime(), body: result.body });
+    }
     return done(result ? json(result.status, result.body) : json(404, { error: 'not_found' }));
   }
   return json(404, { error: 'not_found' });
