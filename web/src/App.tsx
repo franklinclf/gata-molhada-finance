@@ -59,7 +59,7 @@ const MORE: Array<[string, string]> = [
 const NAV_GAP = 4;
 
 /** How many of the top bar links fit in the bar's width. When all fit, no "Mais" button is needed. */
-function useFittingCount(total: number, order: string, actions: unknown) {
+function useFittingCount(total: number, order: string, actions: unknown, shown: boolean) {
   const bar = useRef<HTMLElement>(null);
   const probe = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(total);
@@ -93,7 +93,8 @@ function useFittingCount(total: number, order: string, actions: unknown) {
     observer.observe(header);
     for (const child of header.children) observer.observe(child);
     return () => observer.disconnect();
-  }, [total, order, actions]);
+    // `shown`: the bar does not exist while the login is checked, so it is measured again once it appears.
+  }, [total, order, actions, shown]);
   return { bar, probe, fit };
 }
 
@@ -108,7 +109,7 @@ export function App() {
   const nav = useNavOrder();
   // Measured again when the page actions change, since they take room from the menu.
   const tools = useTopbarTools();
-  const { bar, probe, fit } = useFittingCount(NAV.length, nav.ids.join(), tools);
+  const { bar, probe, fit } = useFittingCount(NAV.length, nav.ids.join(), tools, phase === 'in');
   const [dragging, setDragging] = useState<string | null>(null);
   // Cash flow and net worth are views of the accounts page.
   const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page === 'status' ? 'settings' : route.page;

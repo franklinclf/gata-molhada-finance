@@ -55,6 +55,25 @@ test('a number that was not seen between two charges is placed by counting month
   assert.deepEqual([second.number, second.cycle, second.status, second.inferred], [2, '2026-08', 'paid', true]);
 });
 
+test('a bank that changes the text of a purchase halfway still gives one purchase, with nothing to plan', () => {
+  const first = series('Parcelamento de Compra', 4, 2500, [[1, '2026-07-02'], [2, '2026-08-02']]);
+  const rest = series('Parcelamento de Compra "Loja Exemplo"', 4, 2500, [[3, '2026-09-02'], [4, '2026-10-02']]);
+  const v = installments(seeded([...first, ...rest]), NOW);
+  assert.equal(v.purchases.length, 1);
+  assert.deepEqual(v.purchases[0]!.slots.map((s) => [s.number, s.cycle, s.inferred]), [[1, '2026-07', false], [2, '2026-08', false], [3, '2026-09', false], [4, '2026-10', false]]);
+});
+
+test('an installment purchase refunded right away plans no more installments', () => {
+  const store = seeded([...series('Farmacia Exemplo', 3, 3000, [[1, '2026-07-02']]), tx('refund', '2026-07-02', 3000, 'Farmacia Exemplo')]);
+  assert.equal(installments(store, NOW).purchases.length, 0);
+});
+
+test('a first installment that came as a plain charge is that installment, not one more to plan', () => {
+  const store = seeded([tx('plain', '2026-08-02', -2001, 'Farmacia Exemplo'), ...series('Farmacia Exemplo 2/2', 2, 2000, [[2, '2026-09-02']])]);
+  const p = installments(store, NOW).purchases[0]!;
+  assert.deepEqual(p.slots.map((s) => [s.number, s.cycle, s.inferred, s.day]), [[1, '2026-08', false, '2026-08-02'], [2, '2026-09', false, '2026-09-02']]);
+});
+
 test('an installment before the first one we hold counts as paid', () => {
   const store = seeded(series('Bike', 12, 5000, [[10, '2026-08-02'], [11, '2026-09-02'], [12, '2026-10-02']]));
   const p = installments(store, NOW).purchases[0]!;
