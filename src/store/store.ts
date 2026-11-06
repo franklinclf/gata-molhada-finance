@@ -302,6 +302,8 @@ export interface Store {
   /** Categories the owner renamed or merged: old name to new name. */
   listCategoryAliases(): Map<string, string>;
   setCategoryAlias(from: string, to: string | null, now: string): void;
+  /** Runs several store calls as one commit: if `work` throws, none of them is kept. Calls inside it join the same transaction. */
+  transaction(work: () => void): void;
   /** Moves the budgets of a category to its new name (a budget the new name already has is kept). */
   renameBudgetCategory(from: string, to: string): void;
   listCategoryParents(): Map<string, string>;
