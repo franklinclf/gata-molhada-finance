@@ -116,3 +116,29 @@ test('a card payment listed twice with two texts, or as a pending and a posted c
   assert.equal(duplicatePayments.length, 1, 'only the pair with different texts; two equal real payments are left alone');
   assert.deepEqual(duplicatePayments[0]!.members.map((m) => m.description), ['Pagamento recebido', 'PAGTO. POR DEB EM C/C']);
 });
+
+test('a gap equal to an installment the bank never listed, placed by the app in the next bill, says so', () => {
+  const phone = (id: string, day: string, number: number) => tx(id, day, -1000, { description: 'Phone', installment: { number, total: 6 } });
+  // Installment 2 never came. The app counts it in September, but the bank billed it in October.
+  const store = setup(BILLS, [tx('start', '2026-07-01', -100), tx('aug', '2026-07-20', -49000), phone('p1', '2026-07-25', 1), tx('sep', '2026-09-02', -80000), tx('oct', '2026-10-02', -66000), phone('p3', '2026-10-03', 3)]);
+  const items = billCheck(store, NOW).items;
+  const oct = items.find((i) => i.cycleKey === '2026-10')!;
+  assert.equal(oct.suggestion.kind, 'missing');
+  const unlisted = oct.suggestion.kind === 'missing' ? oct.suggestion.unlisted : undefined;
+  assert.deepEqual(unlisted?.map((u) => [u.description, u.number, u.total, u.amount, u.cycleKey]), [['Phone', 2, 6, 1000, '2026-09']]);
+  assert.equal(items.find((i) => i.cycleKey === '2026-09')?.suggestion.kind, 'extra');
+});
+
+test('a missing amount that matches no installment has no unlisted hint', () => {
+  const store = setup(BILLS, [tx('start', '2026-07-01', -100), tx('aug', '2026-07-20', -50000), tx('sep', '2026-09-02', -80000), tx('oct', '2026-10-02', -60000)]);
+  const s = billCheck(store, NOW).items[0]!.suggestion;
+  assert.equal('unlisted' in s, false);
+});
+
+test('a hidden card does not show up in the check', () => {
+  const store = setup(BILLS, [tx('start', '2026-07-01', -100), tx('aug', '2026-07-20', -50000), tx('sep', '2026-09-02', -80000), tx('oct', '2026-10-02', -60000)]);
+  assert.equal(billCheck(store, NOW).items.length, 1);
+  store.setAccountHidden('card1', true, NOW.toISOString());
+  const view = billCheck(store, NOW);
+  assert.deepEqual([view.items, view.duplicatePayments, view.setAside], [[], [], []]);
+});

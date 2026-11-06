@@ -253,6 +253,21 @@ test('data health flags a negative cycle and bills owed beyond the limit, and st
   assert.ok(issues.length > 0 || cards(broken.store, NOW).totals.outstanding > 0);
 });
 
+test('a payment beyond the bill shows as overpaid on that cycle and in data health, and exact payments do not', async () => {
+  const { dataHealth } = await import('../../src/api/views.ts');
+  const { store, card1 } = setup();
+  const octOf = () => cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-10')!;
+  assert.equal(octOf().overpaid, 0);
+  assert.deepEqual(dataHealth(store, NOW).filter((i) => i.id.startsWith('overpaid')), []);
+  // A second, different payment of the same bill: the excess is not moved anywhere, only reported.
+  store.replaceCanonicalTransactions([...store.listCanonicalTransactions(), tx('pay-oct-extra', 'card1', '2026-10-16', 5000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const oct = octOf();
+  assert.deepEqual([oct.paid, oct.overpaid, oct.outstanding, oct.status], [73000, 5000, 0, 'paid']);
+  const issues = dataHealth(store, NOW).filter((i) => i.id.startsWith('overpaid'));
+  assert.equal(issues.length, 1);
+  assert.match(issues[0]!.message, /R\$\s50,00 a mais/);
+});
+
 test('the open cycle leaves out installments that belong to later bills, which the issuer balance includes', () => {
   const { store, card1 } = setup();
   // Installment 4 of 6 was charged in October (bill due in November); 5 and 6 are still to come.

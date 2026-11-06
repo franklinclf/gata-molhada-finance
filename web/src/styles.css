@@ -570,3 +570,6 @@ body.wide .main { max-width: none; }
 .chart-legend { font-size: 13px; margin: 4px 0 8px; }
 .cal-tag { display: block; font-size: 10px; line-height: 1.2; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal-ahead { margin: 10px 0 4px; font-size: 14px; }
+/* ---------- faturas e previsão ---------- */
+/* Open bill with no purchases yet: a sentence in place of a big zero. */
+.big-empty { font-size: 18px; font-weight: 600; color: var(--muted); }

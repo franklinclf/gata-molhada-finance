@@ -15,22 +15,30 @@ export interface ForecastCard {
   installments: Cents;
   /** Charges that come back every month (subscriptions, bills), at their latest amount. Likely. */
   recurring: Cents;
-  /** Everything else, as the average of the last closed bills. A guess. */
+  /** Everything else, as the average of the last closed bills. A guess. Zero for a bill the issuer already published. */
   variable: Cents;
-  total: Cents;
+  /** What is sure: the published bill, or installments plus repeating charges (never below what the open bill already holds). */
+  certain: Cents;
+  /** `certain` plus the average of the usual spending. Equal to `certain` once the bill is published. */
+  estimated: Cents;
+  /** closed: the issuer published this bill, so it is not estimated. open: still adding charges. estimated: not out yet. */
+  state: 'closed' | 'open' | 'estimated';
 }
 
 export interface ForecastMonth {
   /** Due month (YYYY-MM). */
   key: string;
-  /** True for the bill still open, which already has some of its charges. */
+  /** True when at least one card still has its bill open for this month, so part of it is already counted. */
   open: boolean;
   installments: Cents;
   recurring: Cents;
   variable: Cents;
-  /** For the open bill: what is already counted. For later ones: the same as `total`. */
+  /** What is already real: published bills plus what the open bills hold so far. Zero for months nobody has a bill for. */
   known: Cents;
-  total: Cents;
+  /** Sum of the cards' `certain`: installments, repeating charges and published bills. No guess in it. */
+  certain: Cents;
+  /** Sum of the cards' `estimated`: `certain` plus the average of the usual spending. */
+  estimated: Cents;
   /** What the registered fixed income brings in the month. */
   income: Cents;
   cards: ForecastCard[];
@@ -57,7 +65,9 @@ const AVERAGE_OVER = 3;
  * Estimates the bills still to come. Three parts, from most to least certain: installments of purchases already
  * made (the plan knows each one), charges that repeat every month with a stable amount, and the usual spending,
  * taken as the average of what the last closed bills held besides those two. The open bill's total is shown with
- * what it already has, and its estimate is never below that.
+ * what it already has, and its estimate is never below that. A card whose bill for a month is already published uses that
+ * bill, because the cards close on different days and the first month can hold a closed bill of one card next to the open
+ * bill of another.
  */
 export function forecast(store: Store, now: Date, opts: ViewOptions = {}, horizon = 6): ForecastView {
   const accounts = visibleAccounts(store, opts);
@@ -77,11 +87,12 @@ export function forecast(store: Store, now: Date, opts: ViewOptions = {}, horizo
   const keys = Array.from({ length: horizon }, (_, i) => addMonthsToDay(`${firstKey}-01`, i).slice(0, 7));
 
   const recurring: RecurringCharge[] = [];
-  const months: ForecastMonth[] = keys.map((key, i) => ({ key, open: i === 0, installments: 0, recurring: 0, variable: 0, known: 0, total: 0, income: incomeIn(store.listIncome(), key), cards: [] }));
+  const months: ForecastMonth[] = keys.map((key) => ({ key, open: false, installments: 0, recurring: 0, variable: 0, known: 0, certain: 0, estimated: 0, income: incomeIn(store.listIncome(), key), cards: [] }));
   const basis: ForecastView['basis'] = [];
 
   for (const account of cardAccounts) {
-    const cycles = cyclesFor(store, account, transactions, today).filter((c) => c.status !== 'unknown');
+    const allCycles = cyclesFor(store, account, transactions, today);
+    const cycles = allCycles.filter((c) => c.status !== 'unknown');
     const own = transactions.filter((t) => t.accountId === account.id && !t.excluded && t.role === null);
 
     // Charges that come back: same text, a stable amount, in at least three different months of the last six bills.
@@ -115,18 +126,31 @@ export function forecast(store: Store, now: Date, opts: ViewOptions = {}, horizo
     basis.push({ card: label(account.id), bills: closed.length, average });
 
     const row = open.cards.find((c) => c.id === account.id);
-    months.forEach((m, i) => {
-      const inst = plan.purchases.filter((p) => p.accountId === account.id).reduce((s, p) => s + p.slots.filter((x) => x.cycle === m.key && x.status !== 'paid').length * p.amount, 0);
-      // Each card's open bill sits in its own due month, which is not always the first month of the forecast.
+    const slotsIn = (key: string, includePaid: boolean) => plan.purchases.filter((p) => p.accountId === account.id).reduce((s, p) => s + p.slots.filter((x) => x.cycle === key && (includePaid || x.status !== 'paid')).length * p.amount, 0);
+    months.forEach((m) => {
+      // Each card's bill sits in its own due month, which is not always the first month of the forecast.
+      const published = allCycles.find((c) => c.key === m.key && c.status !== 'open' && c.billTotal !== null);
       const isOpenMonth = row?.cycle?.key === m.key;
-      const known = isOpenMonth ? (row?.total ?? 0) : 0;
-      const total = isOpenMonth ? Math.max(known, inst + recurringMonthly + average) : inst + recurringMonthly + average;
-      m.cards.push({ id: account.id, label: label(account.id), installments: inst, recurring: recurringMonthly, variable: average, total });
-      m.installments += inst;
-      m.recurring += recurringMonthly;
-      m.variable += average;
-      m.known += known;
-      m.total += total;
+      let card: ForecastCard;
+      if (published) {
+        // The bank already said what this bill is; the repeating charges are inside it, so nothing is added on top.
+        const billTotal = published.billTotal ?? 0;
+        card = { id: account.id, label: label(account.id), installments: Math.min(slotsIn(m.key, true), billTotal), recurring: 0, variable: 0, certain: billTotal, estimated: billTotal, state: 'closed' };
+        m.known += billTotal;
+      } else {
+        const inst = slotsIn(m.key, false);
+        const sure = inst + recurringMonthly;
+        const known = isOpenMonth ? (row?.total ?? 0) : 0;
+        card = { id: account.id, label: label(account.id), installments: inst, recurring: recurringMonthly, variable: average, certain: Math.max(known, sure), estimated: Math.max(known, sure + average), state: isOpenMonth ? 'open' : 'estimated' };
+        m.known += known;
+        if (isOpenMonth) m.open = true;
+      }
+      m.cards.push(card);
+      m.installments += card.installments;
+      m.recurring += card.recurring;
+      m.variable += card.variable;
+      m.certain += card.certain;
+      m.estimated += card.estimated;
     });
   }
 

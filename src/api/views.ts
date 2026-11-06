@@ -424,6 +424,16 @@ export function dataHealth(store: Store, now: Date): HealthIssue[] {
     if (row.total < 0 || row.posted < -100) issues.push({ id: `negative-${row.id}`, message: `O ciclo em aberto do cartão ${row.institution}${row.last4 ? ` ${row.last4}` : ''} deu negativo. Provavelmente há créditos (pagamentos, estornos) lidos como compras ou o contrário.` });
     if (row.creditLimit !== null && row.outstanding > row.creditLimit) issues.push({ id: `owed-${row.id}`, message: `As faturas em aberto do cartão ${row.institution}${row.last4 ? ` ${row.last4}` : ''} somam mais que o limite dele. Confira se os pagamentos estão sendo reconhecidos.` });
   }
+  // Payments beyond a bill: a bill paid twice, or a late payment of an older bill counted in this window. Shown, never moved.
+  const today = localDay(now.toISOString());
+  const visible = visibleAccounts(store);
+  const transactions = effectiveTransactions(store, {}, visible);
+  for (const account of visible.filter((a) => a.kind === 'credit_card')) {
+    for (const c of cyclesFor(store, account, transactions, today)) {
+      if (c.overpaid <= 0 || c.dueDate < addDays(today, -OVERPAID_LOOKBACK_DAYS)) continue;
+      issues.push({ id: `overpaid-${account.id}-${c.key}`, message: `Os pagamentos do cartão ${account.institution}${account.last4 ? ` ${account.last4}` : ''} somam ${formatBRL(c.overpaid)} a mais que a fatura com vencimento em ${c.dueDate.split('-').reverse().join('/')}. Pode ser pagamento em dobro, ou pagamento de uma fatura anterior feito depois do fechamento desta.` });
+    }
+  }
   if (view.totals.outstanding > view.totals.creditLimit && view.totals.creditLimit > 0) issues.push({ id: 'owed-total', message: 'O total de faturas fechadas e não pagas passa do limite somado dos cartões. Isso indica pagamentos não reconhecidos.' });
   issues.push(...debtAboveIssuerBalance(view));
   issues.push(...silentAccounts(store, now));
@@ -530,6 +540,8 @@ const LATE_GRACE_HOURS = 6;
 export function isLate(lastUpdatedAt: string, now: Date, expectedHours = EXPECTED_READ_HOURS): boolean {
   return (now.getTime() - Date.parse(lastUpdatedAt)) / 3_600_000 > 2 * expectedHours + LATE_GRACE_HOURS;
 }
+/** Overpaid bills older than this are history, not a warning. */
+const OVERPAID_LOOKBACK_DAYS = 240;
 
 /** How long before a consent ends the owner is warned. */
 const CONSENT_WARNING_DAYS = 30;

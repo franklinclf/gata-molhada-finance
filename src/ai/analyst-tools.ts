@@ -23,6 +23,10 @@ const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MAX_TEXT = 80;
 const clip = (text: string): string => (text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}…` : text);
 
+/** Same words the Cartões screen uses for the state of a bill. */
+const STATUS: Record<string, string> = { open: 'em aberto', paid: 'paga', rolled: 'sobra rolou para a fatura seguinte', partial: 'paga em parte', unpaid: 'fechada, a pagar', overdue: 'vencida', empty: 'sem valor', unknown: 'pagamento não conferido' };
+const statusText = (status: string | undefined): string | null => (status === undefined ? null : (STATUS[status] ?? status));
+
 export class ToolError extends Error {}
 
 function day(args: Record<string, unknown>, key: string, fallback: string): string {
@@ -56,7 +60,7 @@ function range(args: Record<string, unknown>, today: string): { from: string; to
 export const TOOLS: Tool[] = [
   {
     name: 'summary',
-    help: 'summary {month?} : visão geral do mês (saldo nas contas, dívida de cartão, patrimônio, gastos, entradas e saídas, maiores categorias).',
+    help: 'summary {month?} : visão geral do mês (saldo nas contas, o que falta pagar nas faturas, saldo devedor dos emissores, patrimônio, gastos, entradas e saídas, maiores categorias).',
     run: (store, now, args) => {
       const today = localDay(now.toISOString());
       const m = month(args, today);
@@ -65,10 +69,14 @@ export const TOOLS: Tool[] = [
       const spend = views.spending(store, { from, to }, 'category', now);
       const flow = views.cashFlow(store, { from, to }, now);
       const worth = netWorth(store, now);
+      const bills = views.cards(store, now);
       return {
         mes: m,
         saldoNasContas: reais(views.balances(store, now).total),
-        dividaDeCartao: reais(views.cards(store, now).totals.reportedByIssuer),
+        // Same number as the Cartões screen ("A pagar"): open bills plus closed bills still unpaid. Installments of later bills are not in it.
+        aPagarNasFaturas: reais(bills.totals.toPay),
+        // What the issuers report as owed: bills plus every installment still to come. Larger than aPagarNasFaturas.
+        saldoDevedorNosEmissores: reais(bills.totals.reportedByIssuer),
         patrimonio: reais(worth.net),
         gastosDoMes: reais(spend.total),
         entradasNasContas: reais(flow.inflow),
@@ -123,19 +131,33 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'cards',
-    help: 'cards {} : cada cartão (fatura aberta, vencimento, limite, usado) e o total devido.',
+    help: 'cards {} : o que falta pagar de fatura (total, por mês de vencimento e por cartão, com vencimento e situação), fatura aberta, limite e saldo devedor dos emissores.',
     run: (store, now) => {
       const v = views.cards(store, now);
       return {
-        totalDevidoAosEmissores: reais(v.totals.reportedByIssuer), faturasFechadasNaoPagas: reais(v.totals.outstanding), parcelasDeFaturasFuturas: reais(v.totals.futureInstallments), limiteTotal: reais(v.totals.creditLimit), proximoVencimento: v.totals.nextDueDate,
-        cartoes: v.cards.map((c) => ({ cartao: `${c.institution}${c.last4 ? ` ${c.last4}` : ` ${c.name}`}`, faturaAberta: reais(c.total), vencimento: c.cycle?.dueDate ?? null, limite: c.creditLimit === null ? null : reais(c.creditLimit), emDivida: reais(c.balance) })),
+        // The figure the Cartões screen calls "A pagar": open bills plus closed bills still unpaid.
+        aPagarNasFaturas: reais(v.totals.toPay),
+        faturasFechadasNaoPagas: reais(v.totals.outstanding),
+        // Bills by due month, adding the cards that close on different days (the open bill of a card sits in its own due month).
+        faturasPorMesDeVencimento: Object.entries(v.totals.byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([mes, part]) => ({ mes, total: reais(part.total), cartoes: part.cards })),
+        // What the issuers report as owed: bills plus every installment still to come. Larger than aPagarNasFaturas.
+        saldoDevedorNosEmissores: reais(v.totals.reportedByIssuer),
+        parcelasDeFaturasFuturas: reais(v.totals.futureInstallments), limiteTotal: reais(v.totals.creditLimit), proximoVencimento: v.totals.nextDueDate,
+        cartoes: v.cards.map((c) => ({
+          cartao: `${c.institution}${c.last4 ? ` ${c.last4}` : ` ${c.name}`}`,
+          // aPagar: this card's open bill plus its closed bills still unpaid. venceEm: the oldest unpaid bill, else the open bill.
+          aPagar: reais(c.toPay), venceEm: c.nextDueDate, situacaoDaFaturaAberta: statusText(c.cycle?.status), faturasFechadasNaoPagas: reais(c.outstanding),
+          faturaAberta: reais(c.total), vencimentoDaFaturaAberta: c.cycle?.dueDate ?? null, limite: c.creditLimit === null ? null : reais(c.creditLimit), saldoDevedorNoEmissor: reais(c.balance),
+        })),
       };
     },
   },
   {
     name: 'card_forecast',
-    help: 'card_forecast {} : estimativa das próximas faturas de cartão (parcelas conhecidas, recorrentes e média do variável).',
-    run: (store, now) => ({ meses: forecast(store, now).months.map((m) => ({ mes: m.key, aberta: m.open, parcelas: reais(m.installments), recorrentes: reais(m.recurring), variavel: reais(m.variable), total: reais(m.total) })) }),
+    help: 'card_forecast {} : próximas faturas de cartão por mês de vencimento. previstoCerto = parcelas já compradas + cobranças que se repetem (ou a fatura já publicada); comMedia = previstoCerto + média do gasto de costume (um chute). A tela Futuras mostra previstoCerto, e comMedia quando a estimativa pela média está ligada.',
+    run: (store, now) => ({
+      meses: forecast(store, now).months.map((m) => ({ mes: m.key, aberta: m.open, parcelas: reais(m.installments), recorrentes: reais(m.recurring), mediaDoGastoDeCostume: reais(m.variable), previstoCerto: reais(m.certain), comMedia: reais(m.estimated) })),
+    }),
   },
   {
     name: 'budgets',
