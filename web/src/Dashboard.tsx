@@ -47,11 +47,12 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
     timer.current = setTimeout(() => void api.saveLayout({ version: 2, items: next }).catch(() => {}), 500);
   }
 
-  // The controls live in the top bar; they are handed over after every render so they always see the current state.
+  // The controls live in the top bar.
   const toolsRef = useRef<ComponentChildren>(null);
+  // Only when something the controls show changes: handing them over after every render would re-render the app, and so this page, forever.
   useEffect(() => {
     setTopbarTools(toolsRef.current);
-  });
+  }, [editing, wide, columns, items, narrow]);
   useEffect(() => () => setTopbarTools(null), []);
 
   if (!items) return <Loading error={saved.error} />;
