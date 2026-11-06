@@ -41,7 +41,7 @@ test('parseLayout rejects bad shapes: out of the grid, repeated ids, bad setting
     {},
     { version: 1, items: [] },
     { version: 2, items: 'x' },
-    { version: 2, items: [{ ...item, x: 10, w: 4 }] },
+    { version: 2, items: [{ ...item, x: 34, w: 4 }] },
     { version: 2, items: [{ ...item, w: 0 }] },
     { version: 2, items: [{ ...item, h: 1.5 }] },
     { version: 2, items: [{ ...item, id: 'bad id!' }] },

@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { Button } from './ds.tsx';
 import { api } from './api.ts';
 import type { TransactionDetail } from './api.ts';
 import { brl, dayMonth, foreignMoney, localDay, monthName } from './format.ts';
@@ -157,9 +158,9 @@ function CategorySection({ id, d, act }: { id: string; d: Detail; act: Act }) {
         <span>
           <strong>{d.transaction.category ?? 'Sem categoria'}</strong> <span class="muted">· {ORIGIN[d.transaction.categoryOrigin]}</span>
         </span>
-        <button class="small" disabled={act.busy} onClick={() => void ask()} title="Pergunta de novo à IA sobre a descrição desta transação">
+        <Button size="sm" disabled={act.busy} onClick={() => void ask()} title="Pergunta de novo à IA sobre a descrição desta transação">
           Perguntar à IA
-        </button>
+        </Button>
       </div>
       {d.transaction.categoryOrigin !== 'source' && d.transaction.sourceCategory !== null && <div class="hint">A fonte diz: {d.transaction.sourceCategory}</div>}
       {aiNote && <div class="hint" role="status">{aiNote}</div>}

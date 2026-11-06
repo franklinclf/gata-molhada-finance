@@ -373,3 +373,7 @@ Parcelas que o banco ainda não listou: uma parcela que o app sabe que vem (a 2/
 - **Grupos**: em Ajustes, Categorias, dá para criar, renomear, trocar os membros e desfazer um grupo. Uma categoria pode ficar num grupo com o mesmo nome.
 - **Menu**: os itens da barra superior se arrastam para mudar a ordem (guardado no navegador).
 - **Cache**: o servidor guarda cada leitura até o banco mudar ou passar um minuto, e o navegador mostra de imediato o que já carregou para a mesma tela.
+- **Largura total**: o painel passa a ter mais colunas (uma a cada cerca de 112 px, até 36), não slots esticados. Widgets salvos ficam onde estão e "Distribuir na largura" (em Personalizar painel) os reparte. O visual de cada widget (compacto, médio, cheio) vem do tamanho real em pixels.
+- **Sistema de design**: `web/src/ds.tsx` (Button, ButtonLink, Chip, Badge, Field, Panel) e as variáveis de cor em `styles.css`. Paletas e cor de destaque própria em Ajustes, Aparência (guardado no navegador, `web/src/theme.ts`).
+- **IA**: em Ajustes, IA, "Quem decidiu cada descrição" explica por que as sugestões diminuem: a IA decide por descrição, e a maioria já tem resposta de uma regra, da tradução da fonte ou de uma rodada anterior.
+- **Conferir**: cada fatura que não fecha tem "Perguntar à IA" (abre o analista com a pergunta pronta), "Lançar a diferença" e "Ver compras".

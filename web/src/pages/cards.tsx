@@ -3,17 +3,21 @@ import { api, type CardsView } from '../api.ts';
 import { Bars, Meter, StackedBars } from '../charts.tsx';
 import { brl, dayMonth, monthName } from '../format.ts';
 import { useLoad, useStoredFlag } from '../hooks.ts';
-import { patchParams, type Route } from '../router.ts';
+import { navigate, patchParams, type Route } from '../router.ts';
+import { Button } from '../ds.tsx';
+import { ManualForm } from '../ManualForm.tsx';
 import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
 import { Select } from '../Select.tsx';
 import { BillEditor } from '../BillEditor.tsx';
 import { patchParams as openParams } from '../router.ts';
 
+const brlText = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 const fullDay = (day: string) => `${dayMonth(day)}/${day.slice(0, 4)}`;
 
 /** Closed bills whose published total differs from what the app adds up, each with the likeliest cause and a way to fix it. */
-function CheckTab({ hidden }: { hidden: boolean }) {
+function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
+  const [manual, setManual] = useState<string | null>(null);
   const check = useLoad(() => api.billCheck(), []);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -72,6 +76,27 @@ function CheckTab({ hidden }: { hidden: boolean }) {
                     {s.kind === 'missing' && <div class="muted">O banco cobra {brl(s.amount, hidden)} que nenhuma compra perto do fechamento explica. Provavelmente uma compra, juros ou IOF que não chegaram: lance à mão em “+ Nova”.</div>}
                     {s.kind === 'extra' && <div class="muted">O app soma {brl(s.amount, hidden)} a mais do que o banco cobrou e nenhuma compra perto do fechamento explica. Pode ser uma pendente que o banco nunca lançou: abra a compra suspeita e ignore ou mude o status.</div>}
                   </div>
+                  <div class="actions">
+                    <Button size="sm" onClick={() => navigate('chat', { q: `A fatura do ${item.institution}${item.last4 ? ` final ${item.last4}` : ''} com vencimento em ${item.dueDate} veio ${brlText(item.billTotal)} no banco e o app soma ${brlText(item.ours)} (período ${item.from} a ${item.to}). O que pode explicar a diferença de ${brlText(item.gap)}? Consulte as transações do período e as parcelas.` })}>
+                      Perguntar à IA
+                    </Button>
+                    {s.kind !== 'move' && item.gap > 0 && (
+                      <Button size="sm" onClick={() => setManual(manual === key ? null : key)}>
+                        Lançar a diferença
+                      </Button>
+                    )}
+                    <Button size="sm" onClick={() => navigate('transactions', { accountId: item.accountId, cycle: item.cycleKey })}>
+                      Ver compras
+                    </Button>
+                  </div>
+                  {manual === key && (
+                    <ManualForm
+                      now={now}
+                      initial={{ accountId: item.accountId, day: item.to, amount: -Math.abs(item.gap), description: 'Ajuste de fatura', category: '' }}
+                      onCancel={() => setManual(null)}
+                      onSaved={() => { setManual(null); check.reload(); }}
+                    />
+                  )}
                   {s.kind === 'move' && (
                     <button class="primary small" disabled={busy === key} onClick={() => void apply(key, async () => { for (const m of s.moves) await api.setCycle(m.transactionId, m.toCycleKey); })}>
                       {busy === key ? 'Movendo...' : s.moves.length === 1 ? 'Mover a compra' : `Mover ${s.moves.length} compras`}
@@ -624,7 +649,7 @@ function LimitsPanel({ data, hidden }: { data: CardsView; hidden: boolean }) {
   );
 }
 
-export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: boolean }) {
+export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hidden: boolean }) {
   const cycle = route.params.get('cycle') ?? 'open';
   // Old links: installments now live under Futuras and limits under Faturas.
   const rawTab = route.params.get('tab') ?? 'cards';
@@ -675,7 +700,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
           <Select ariaLabel="Fatura" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...(data?.cycles ?? []).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
         </label>
       )}
-      {tab === 'check' && <CheckTab hidden={hidden} />}
+      {tab === 'check' && <CheckTab hidden={hidden} now={now} />}
       {tab === 'check' ? null : error || (loading && !data) ? (
         <Loading error={error} />
       ) : data ? (

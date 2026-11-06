@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { DEFAULT_SIZES, defaultLayout, WIDGET_IDS } from '../../src/api/layout.ts';
 import { api } from './api.ts';
 import type { LayoutItem, WidgetId } from './api.ts';
-import { freeSlot, sizeClass } from './grid.ts';
+import { freeSlot, reflow, sizeClassPx } from './grid.ts';
 import { Grid } from './Grid.tsx';
 import { useLoad, useStoredFlag } from './hooks.ts';
 import { Loading } from './ui.tsx';
@@ -26,6 +26,7 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
   const [items, setItems] = useState<LayoutItem[] | null>(null);
   const [editing, setEditing] = useState(false);
   const narrow = useNarrow();
+  const [columns, setColumns] = useState(12);
   const [wide, setWide] = useStoredFlag('gmf-wide', true);
   // The dashboard may use the whole width of the screen, not only the centered column the other pages use.
   useEffect(() => {
@@ -48,20 +49,20 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
 
   function add(widget: WidgetId) {
     const { w, h } = DEFAULT_SIZES[widget];
-    const slot = freeSlot(items!, w, h);
+    const slot = freeSlot(items!, w, h, columns);
     const id = `${widget}-${Date.now().toString(36)}`;
     update([...items!, { id, widget, ...slot, w, h }]);
   }
 
   const ordered = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
-  const render = (item: LayoutItem) => {
+  const render = (item: LayoutItem, pixels?: { width: number; height: number }) => {
     const { component: Component } = WIDGETS[item.widget];
     return (
       <Component
         item={item}
         now={now}
         hidden={hidden}
-        size={narrow ? 'md' : sizeClass(item.w, item.h)}
+        size={narrow || !pixels ? 'md' : sizeClassPx(pixels.width, pixels.height)}
         config={item.config ?? {}}
         setConfig={(patch) => update(items.map((i) => (i.id === item.id ? { ...i, config: { ...(i.config ?? {}), ...patch } } : i)))}
       />
@@ -84,6 +85,11 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
         {editing && !narrow && (
           <>
             <Select ariaLabel="Adicionar widget" value="" placeholder="+ Adicionar widget" onChange={(value) => value && add(value as WidgetId)} options={WIDGET_IDS.filter((id) => !items.some((i) => i.widget === id)).map((id) => ({ value: id, label: WIDGETS[id].title }))} />
+            {columns > 12 && (
+              <button class="icon" onClick={() => update(reflow(items, columns))} title="Reparte os widgets pelas colunas da tela">
+                Distribuir na largura
+              </button>
+            )}
             <button class="icon" onClick={() => update(defaultLayout().items)}>
               Restaurar padrão
             </button>
@@ -99,7 +105,7 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
           ))}
         </div>
       ) : (
-        <Grid items={items} editing={editing} canDrag={!narrow} onChange={update} renderItem={render} onRemove={(id) => update(items.filter((i) => i.id !== id))} titleOf={(i) => WIDGETS[i.widget].title} />
+        <Grid items={items} editing={editing} canDrag={!narrow} wide={wide} onColumns={setColumns} onChange={update} renderItem={render} onRemove={(id) => update(items.filter((i) => i.id !== id))} titleOf={(i) => WIDGETS[i.widget].title} />
       )}
       {items.length === 0 && <div class="empty page">O painel está vazio. Use “Personalizar painel” para adicionar widgets.</div>}
     </>

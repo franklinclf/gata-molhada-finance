@@ -4,6 +4,8 @@ export const WIDGET_IDS = ['balances', 'cards', 'cashflow', 'spending', 'install
 export type WidgetId = (typeof WIDGET_IDS)[number];
 
 export const GRID_COLUMNS = 12;
+/** A wide screen shows more columns; a saved widget may sit in any of them. */
+export const MAX_GRID_COLUMNS = 36;
 const MAX_ITEMS = 40;
 const MAX_ROWS = 500;
 const MAX_HEIGHT = 40;
@@ -116,7 +118,7 @@ export function parseLayout(value: unknown): Layout | null {
     if (raw === null || typeof raw !== 'object') return null;
     const { id, widget, x, y, w, h, config } = raw as Record<string, unknown>;
     if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(id) || ids.has(id)) return null;
-    if (!isInt(x, 0, GRID_COLUMNS - 1) || !isInt(y, 0, MAX_ROWS) || !isInt(w, 1, GRID_COLUMNS) || !isInt(h, 1, MAX_HEIGHT) || x + w > GRID_COLUMNS) return null;
+    if (!isInt(x, 0, MAX_GRID_COLUMNS - 1) || !isInt(y, 0, MAX_ROWS) || !isInt(w, 1, MAX_GRID_COLUMNS) || !isInt(h, 1, MAX_HEIGHT) || x + w > MAX_GRID_COLUMNS) return null;
     const parsedConfig = parseConfig(config);
     if (parsedConfig === null) return null;
     if (!isWidgetId(widget)) continue;
