@@ -11,6 +11,7 @@ import { InstallmentsWidget } from './installments.tsx';
 import { CalendarWidget } from './calendar.tsx';
 import { GoalsWidget } from './goals.tsx';
 import { NetWorthWidget } from './networth.tsx';
+import { OutlookWidget } from './outlook.tsx';
 import { RecentWidget } from './recent.tsx';
 import { ReviewWidget } from './review.tsx';
 import { SummaryWidget } from './summary.tsx';
@@ -29,6 +30,7 @@ export interface WidgetProps {
 }
 
 export const WIDGETS: Record<WidgetId, { title: string; component: FunctionComponent<WidgetProps> }> = {
+  outlook: { title: 'Mês em curso', component: OutlookWidget },
   balances: { title: 'Saldo em contas', component: BalancesWidget },
   cards: { title: 'Cartões e faturas', component: CardsWidget },
   cashflow: { title: 'Fluxo de caixa', component: CashflowWidget },

@@ -565,3 +565,18 @@ body.wide .main { max-width: none; }
 
 .topbar-actions { align-items: center; margin-left: auto; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 7px 9px; }
+
+/* ---------- consolidação do mês (livre para gastar e compromissos) ---------- */
+.outlook-sub { margin: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.outlook-rows li { align-items: flex-start; }
+.outlook-day { min-width: 38px; padding-top: 2px; }
+.outlook-name { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.outlook-name .badge { padding: 0 8px; }
+.outlook-origin { flex-basis: 100%; font-size: 12px; white-space: normal; }
+.outlook-amount { display: flex; flex-direction: column; align-items: flex-end; flex: none; text-align: right; }
+.outlook-amount small { font-size: 12px; white-space: nowrap; }
+.outlook-row.short { background: color-mix(in srgb, var(--bad) 8%, transparent); padding: 4px 6px; margin: 0 -6px; }
+.outlook-committed .facts { margin-top: 6px; }
+@media (max-width: 640px) {
+  .outlook-origin { display: none; }
+}

@@ -167,6 +167,7 @@ export function buildFixtures(now = new Date()): Fixtures {
     '/api/chat/conversations': call('/api/chat/conversations'),
     '/api/chat/conversations/1': call('/api/chat/conversations/1'),
     '/api/calendar': call('/api/calendar'),
+    '/api/outlook': call('/api/outlook'),
     '/api/spending/trend': call('/api/spending/trend', 'months=6'),
     '/api/findings': call('/api/findings'),
     '/api/categories': call('/api/categories'),

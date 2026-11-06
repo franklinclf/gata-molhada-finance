@@ -4,6 +4,7 @@ import { explore } from '../api/explorer.ts';
 import { forecast } from '../api/forecast.ts';
 import { listGoals } from '../api/goals.ts';
 import { netWorth } from '../api/networth.ts';
+import { outlook } from '../api/outlook.ts';
 import { detectRecurring } from '../api/recurring.ts';
 import { categoryTrend } from '../api/trends.ts';
 import * as views from '../api/views.ts';
@@ -170,6 +171,27 @@ export const TOOLS: Tool[] = [
       const months = args.months === 3 || args.months === 12 ? args.months : 6;
       const v = categoryTrend(store, now, months);
       return { meses: v.months, categorias: v.rows.slice(0, 15).map((r) => ({ nome: r.name, porMes: r.points.map(reais), mediaDosFechados: reais(r.average), mesAtual: reais(r.current) })) };
+    },
+  },
+  {
+    name: 'outlook',
+    help: 'outlook {} : o mês em curso: saldo agora, entradas esperadas, faturas e contas a vencer, livre para gastar até o fim do mês, linha do tempo de cobertura por vencimento e parte da renda comprometida.',
+    run: (store, now) => {
+      const v = outlook(store, now);
+      const event = (e: (typeof v.timeline)[number]) => ({ dia: e.day, nome: e.name, tipo: e.direction === 'in' ? 'entrada' : 'saida', valor: reais(e.amount), origem: e.origin, estimado: e.estimate, atrasado: e.late, saldoAntes: reais(e.balanceBefore), saldoDepois: reais(e.balanceAfter), cobre: e.covered, faltam: reais(e.shortfall), saiDaContaAteAqui: reais(e.cumulativeOut) });
+      return {
+        hoje: v.today,
+        fimDoMes: v.monthEnd,
+        saldoNasContas: reais(v.balance),
+        entradasEsperadas: { total: reais(v.expectedIn.total), origem: v.expectedIn.source, explicacao: v.expectedIn.explain, itens: v.expectedIn.items.map(event) },
+        aVencerAteOFimDoMes: { total: reais(v.dueOut.total), faturas: reais(v.dueOut.bills), recorrentesDasContas: reais(v.dueOut.recurring), explicacao: v.dueOut.explain, itens: v.dueOut.items.map(event) },
+        faturasDepoisDoFimDoMes: { total: reais(v.afterMonth.total), quantidade: v.afterMonth.count, primeiroVencimento: v.afterMonth.firstDay },
+        livreParaGastar: { valor: reais(v.free.value), porDia: v.free.perDay === null ? null : reais(v.free.perDay), diasRestantes: v.daysLeft, explicacao: v.free.explain },
+        menorSaldoProjetado: v.lowest === null ? null : { dia: v.lowest.day, valor: reais(v.lowest.value) },
+        primeiroVencimentoSemCobertura: v.firstUncovered === null ? null : event(v.firstUncovered),
+        linhaDoTempo: v.timeline.slice(0, 30).map(event),
+        rendaComprometida: { renda: v.committed.income.amount === null ? null : reais(v.committed.income.amount), origemDaRenda: v.committed.income.source, parcelas: reais(v.committed.installments), assinaturas: reais(v.committed.subscriptions), fixos: reais(v.committed.fixed), total: reais(v.committed.total), parte: v.committed.share, explicacao: v.committed.explain },
+      };
     },
   },
 ];
