@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { transactionsCsv } from '../../src/api/export.ts';
 import type { ExplorerRow } from '../../src/api/explorer.ts';
-import { decryptBackup, encryptBackup } from '../../src/backup/backup.ts';
+import { decryptBackup, encryptBackup, encryptBackupAsync } from '../../src/backup/backup.ts';
 import { localDay } from '../../src/core/time.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
@@ -45,6 +45,15 @@ test('a backup opens only with the right passphrase and detects any change', () 
   assert.throws(() => decryptBackup(header, 'uma frase bem longa'), /not a Gata Molhada backup/);
   assert.throws(() => encryptBackup(data, 'curta'), /at least 12/);
   assert.notDeepEqual(encryptBackup(data, 'uma frase bem longa'), file, 'a new salt and nonce each time');
+});
+
+test('the asynchronous backup opens with the same passphrase and key as the synchronous one', async () => {
+  const data = Buffer.from('SQLite format 3\0'.repeat(500));
+  const file = await encryptBackupAsync(data, 'uma frase bem longa');
+  assert.equal(file.subarray(0, 8).toString(), 'GMFBAK01');
+  assert.deepEqual(decryptBackup(file, 'uma frase bem longa'), data);
+  assert.throws(() => decryptBackup(file, 'outra frase bem longa'), /wrong passphrase/);
+  await assert.rejects(encryptBackupAsync(data, 'curta'), /at least 12/);
 });
 
 test('a real database survives the round trip through copyTo, encryption and a new file', () => {

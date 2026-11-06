@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BillEdit, IncomeItem, BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
+import type { BillEdit, IncomeItem, BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -1086,15 +1086,30 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return new Set((db.prepare('SELECT finding_id FROM dismissed_findings').all() as Array<{ finding_id: string }>).map((r) => r.finding_id));
     },
 
-    pruneUnseenSourceTransactions(sourceId: SourceId, from: string, to: string, seenAt: string, force = false): PruneResult {
-      const count = (extra: string, ...args: string[]) =>
-        (db.prepare(`SELECT COUNT(*) AS n FROM source_transactions WHERE source_id = ? AND occurred_at >= ? AND occurred_at <= ? ${extra}`).get(sourceId, from, to, ...args) as { n: number }).n;
-      const unseen = count('AND last_seen_at < ?', seenAt);
-      if (unseen === 0) return { removed: 0, skipped: false };
-      // More than half of a window gone at once is a failed or partial read, not a clean-up.
-      if (!force && unseen > 5 && unseen > count('') / 2) return { removed: 0, skipped: true };
-      db.prepare('DELETE FROM source_transactions WHERE source_id = ? AND occurred_at >= ? AND occurred_at <= ? AND last_seen_at < ?').run(sourceId, from, to, seenAt);
-      return { removed: unseen, skipped: false };
+    pruneUnseenSourceTransactions(sourceId: SourceId, accountIds: string[], from: string, to: string, seenAt: string, force = false): AccountPruneResult {
+      const skipped: AccountPruneResult['skipped'] = [];
+      let removed = 0;
+      for (const accountId of accountIds) {
+        const count = (extra: string, ...args: string[]) =>
+          (db.prepare(`SELECT COUNT(*) AS n FROM source_transactions WHERE source_id = ? AND account_external_id = ? AND occurred_at >= ? AND occurred_at <= ? ${extra}`).get(sourceId, accountId, from, to, ...args) as { n: number }).n;
+        const unseen = count('AND last_seen_at < ?', seenAt);
+        if (unseen === 0) continue;
+        const total = count('');
+        // An account that came back with nothing in the window is a failed or lagging read, not proof that every record is gone.
+        // Not even a forced removal clears it, because the owner's choices hang on these records.
+        if (total === unseen) {
+          skipped.push({ accountId, reason: 'empty', unseen });
+          continue;
+        }
+        // More than half of an account's window gone at once is a failed or partial read, not a clean-up.
+        if (!force && unseen > 5 && unseen > total / 2) {
+          skipped.push({ accountId, reason: 'dropped', unseen });
+          continue;
+        }
+        db.prepare('DELETE FROM source_transactions WHERE source_id = ? AND account_external_id = ? AND occurred_at >= ? AND occurred_at <= ? AND last_seen_at < ?').run(sourceId, accountId, from, to, seenAt);
+        removed += unseen;
+      }
+      return { removed, skipped };
     },
 
     pruneUnseenSourceAccounts(sourceId: SourceId, seenAt: string, force = false): PruneResult {
@@ -1252,6 +1267,56 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         });
       }
       return { sourceId, applied: apply, removed, moved: { categoryOverrides: categoryChoices.length, installmentOverrides: installmentChoices.length } };
+    },
+
+    pruneSnapshots(sourceId: SourceId, keepReads: number, gapMs: number): number {
+      const rows = db.prepare('SELECT id, fetched_at, http_status FROM raw_snapshots WHERE source_id = ? ORDER BY fetched_at, id').all(sourceId) as Array<{ id: number; fetched_at: string; http_status: number }>;
+      // A read is a run of snapshots with no long pause inside it (one sync stores many responses within a minute or two).
+      type Read = { ids: number[]; ok: boolean; month: string };
+      const reads: Read[] = [];
+      let lastAt = Number.NEGATIVE_INFINITY;
+      for (const row of rows) {
+        const at = Date.parse(row.fetched_at);
+        let read = reads.at(-1);
+        if (!read || !(at - lastAt <= gapMs)) {
+          read = { ids: [], ok: true, month: '' };
+          reads.push(read);
+        }
+        read.ids.push(row.id);
+        read.ok &&= row.http_status >= 200 && row.http_status < 300;
+        read.month = row.fetched_at.slice(0, 7);
+        lastAt = at;
+      }
+      // Only complete reads count toward what is kept, so a run of failed syncs cannot push out the last good answers.
+      const good = reads.filter((r) => r.ok);
+      if (good.length === 0) return 0;
+      const recent = good.slice(-Math.max(1, keepReads));
+      const keep = new Set<Read>(recent);
+      const monthly = new Map<string, Read>();
+      for (const r of good) monthly.set(r.month, r);
+      for (const r of monthly.values()) keep.add(r);
+      // Whatever came after the oldest kept read stays too, failed or not.
+      for (let i = reads.indexOf(recent[0]!); i < reads.length; i++) keep.add(reads[i]!);
+      let removed = 0;
+      inTransaction(() => {
+        const del = db.prepare('DELETE FROM raw_snapshots WHERE id = ?');
+        for (const r of reads) {
+          if (keep.has(r)) continue;
+          for (const id of r.ids) removed += Number(del.run(id).changes);
+        }
+      });
+      return removed;
+    },
+
+    reclaimSpace(now: string, minFreeShare = 0.3, minGapMs = 86_400_000): boolean {
+      const pages = Number((db.prepare('PRAGMA page_count').get() as { page_count: number }).page_count);
+      const free = Number((db.prepare('PRAGMA freelist_count').get() as { freelist_count: number }).freelist_count);
+      if (pages === 0 || free / pages < minFreeShare) return false;
+      const last = this.getSetting('last_vacuum_at');
+      if (last !== null && Date.parse(now) - Date.parse(last) < minGapMs) return false;
+      db.exec('VACUUM');
+      this.setSetting('last_vacuum_at', now, now);
+      return true;
     },
 
     copyTo(path: string): void {

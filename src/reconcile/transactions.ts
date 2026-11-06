@@ -17,6 +17,12 @@ import { institutionKey, normalizeName } from './names.ts';
 
 export { localDay };
 
+/** dd/mm of the local day, for texts the owner reads. */
+const dayMonth = (instant: string): string => {
+  const day = localDay(instant);
+  return `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+};
+
 export interface TransactionSource {
   sourceId: SourceId;
   /** A lower number wins when two sources describe the same transaction. */
@@ -278,7 +284,7 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
         'info',
         account,
         first.id,
-        `${account.institution} / ${account.name}: ${formatBRL(first.amount)} "${first.description}" in ${first.sourceIds[0]} on ${localDay(first.occurredAt)} may be the same as "${second.description}" in ${second.sourceIds[0]} on ${localDay(second.occurredAt)}`,
+        `${account.institution} / ${account.name}: ${formatBRL(first.amount)} "${first.description}" (${first.sourceIds[0]}, ${dayMonth(first.occurredAt)}) pode ser o mesmo lançamento que "${second.description}" (${second.sourceIds[0]}, ${dayMonth(second.occurredAt)})`,
         { occurredAt: first.occurredAt, amount: first.amount, sources: [first.sourceIds[0], second.sourceIds[0]], otherTransactionId: second.id },
       );
     }

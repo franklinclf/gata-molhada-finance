@@ -55,7 +55,7 @@ test('a soft reset keeps the records when most of them stop coming back (it look
   resetter.start('soft');
   const done = await finished(resetter);
   assert.equal(store.listSourceTransactions('pluggy').length, 12);
-  assert.match(done.summary ?? '', /none were removed/);
+  assert.match(done.summary ?? '', /Bank \/ Conta: .*nenhum dos 11 foi removido/);
 });
 
 test('a hard reset copies the database first and removes what the source no longer returns, even when most of it is gone', async () => {
@@ -80,9 +80,19 @@ test('a read that fails leaves the saved records untouched and says why', async 
       throw new Error('Pluggy is down');
     }
   }
-  const failing = createResetter({ store, adapter: new Down('pluggy', data), now: tick });
+  const failing = createResetter({ store, adapter: new Down('pluggy', data), now: tick, backup: () => '/data/backups/y.sqlite' });
   failing.start('hard');
   const done = await finished(failing);
   assert.deepEqual([done.result, done.error], ['failed', 'transactions: Pluggy is down']);
   assert.equal(store.listSourceTransactions('pluggy').length, 2);
+});
+
+test('a hard reset without a way to copy the database refuses to run and touches nothing', async () => {
+  const { store, data } = setup({ accounts: [account], transactions: [tx('a', '2026-10-10')] });
+  const noCopy = createResetter({ store, adapter: new FakeAdapter('pluggy', { ...data, transactions: [] }), now: tick });
+  noCopy.start('hard');
+  const done = await finished(noCopy);
+  assert.equal(done.result, 'failed');
+  assert.match(done.error ?? '', /cópia do banco/);
+  assert.equal(store.listSourceAccounts('pluggy').length, 0, 'the read never started');
 });

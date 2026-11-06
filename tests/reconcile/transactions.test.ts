@@ -143,6 +143,8 @@ test('single-source records of different sources with the same amount a few days
   const f = r.findings[0]!;
   assert.equal(f.kind, 'possible_match');
   assert.equal(f.severity, 'info');
+  // Portuguese, with the amount in reais and dd/mm dates, because the owner reads it on the screen.
+  assert.match(f.summary, /R\$\s*42,00 "Coffee" \(pierre, 10\/10\) pode ser o mesmo lançamento que "Coffee" \(pluggy, 13\/10\)$/);
   const first = r.transactions.find((t) => t.id === f.transactionId)!;
   assert.deepEqual(first.sourceIds, ['pierre']);
   assert.equal(r.transactions.find((t) => t.id === f.details.otherTransactionId)?.sourceIds[0], 'pluggy');

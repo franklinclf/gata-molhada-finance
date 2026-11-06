@@ -1,4 +1,4 @@
-import type { AdapterCapabilities, RefreshHandle, SourceAdapter } from '../../core/adapter.ts';
+import type { AdapterCapabilities, RefreshHandle, SourceAdapter, TransactionRead } from '../../core/adapter.ts';
 import {
   SourceFormatError,
   SourceHttpError,
@@ -76,6 +76,8 @@ export class PluggyAdapter implements SourceAdapter {
   private readonly baseUrl: string;
   private apiKey: string | null = null;
   private readonly kinds = new Map<string, AccountKind>();
+  /** Institution and account name by account id, for notes that must say which account had a problem. */
+  private readonly labels = new Map<string, string>();
   private warnings: string[] = [];
 
   constructor(config: PluggyConfig, deps: PluggyDeps) {
@@ -95,6 +97,7 @@ export class PluggyAdapter implements SourceAdapter {
   async fetchAccounts(): Promise<{ accounts: SourceAccount[]; freshness: Freshness[] }> {
     // Rebuilt on every read, so an account Pluggy dropped is not asked for again.
     this.kinds.clear();
+    this.labels.clear();
     const accounts: SourceAccount[] = [];
     const freshness: Freshness[] = [];
     const observedAt = this.now().toISOString();
@@ -107,6 +110,7 @@ export class PluggyAdapter implements SourceAdapter {
         try {
           const account = normalizeAccount(raw, item.label);
           this.kinds.set(account.externalId, account.kind);
+          this.labels.set(account.externalId, `${account.institution} / ${account.name}`);
           accounts.push(account);
         } catch (error) {
           if (!(error instanceof UnsupportedAccountError)) throw error;
@@ -139,32 +143,53 @@ export class PluggyAdapter implements SourceAdapter {
     };
   }
 
+  /** Strict read: any failing account fails the whole call. The sync uses fetchTransactionRead instead. */
   async fetchTransactions(since: Date): Promise<SourceTransaction[]> {
+    const read = await this.fetchTransactionRead(since);
+    if (read.failed.length > 0) throw read.failed[0]!.error;
+    return read.transactions;
+  }
+
+  async fetchTransactionRead(since: Date): Promise<TransactionRead> {
     if (this.kinds.size === 0) await this.fetchAccounts();
+    const transactions: SourceTransaction[] = [];
+    const readAccountIds: string[] = [];
+    const failed: TransactionRead['failed'] = [];
+
+    for (const [accountId, kind] of this.kinds) {
+      try {
+        transactions.push(...(await this.readAccountTransactions(accountId, kind, since)));
+        readAccountIds.push(accountId);
+      } catch (error) {
+        // Whatever this account returned before the failure is dropped, so a half-read account is never taken for a full one.
+        failed.push({ accountId, label: this.labels.get(accountId) ?? accountId, error });
+      }
+    }
+    return { transactions, readAccountIds, failed };
+  }
+
+  private async readAccountTransactions(accountId: string, kind: AccountKind, since: Date): Promise<SourceTransaction[]> {
     const from = since.toISOString().slice(0, 10);
     const to = this.now().toISOString().slice(0, 10);
     const out: SourceTransaction[] = [];
-
-    for (const [accountId, kind] of this.kinds) {
-      // Two reads, merged by id. The date window sees status changes of recent rows (pending to posted). The ingestion
-      // window sees rows Pluggy adds late but backdates, such as card bill payments dated to the bill close or merchants
-      // that settle weeks later, which the date window silently misses.
-      const seen = new Set<string>();
-      for (const query of [`dateFrom=${from}&dateTo=${to}`, `createdAtFrom=${encodeURIComponent(since.toISOString())}`]) {
-        let path = `/v2/transactions?accountId=${accountId}&${query}`;
-        for (let page = 1; ; page++) {
-          if (page > MAX_PAGES) throw new SourceFormatError(`pluggy.transactions: more than ${MAX_PAGES} pages for one account`);
-          const body = asRecord(await this.get(path), 'pluggy.transactions');
-          for (const raw of asArray(body.results, 'pluggy.transactions.results')) {
-            const transaction = normalizeTransaction(raw, kind);
-            if (seen.has(transaction.externalId)) continue;
-            seen.add(transaction.externalId);
-            out.push(transaction);
-          }
-          const next = optString(body, 'next');
-          if (next === null) break;
-          path = `/v2/transactions${next}`;
+    // Two reads, merged by id. The date window sees status changes of recent rows (pending to posted). The ingestion
+    // window sees rows Pluggy adds late but backdates, such as card bill payments dated to the bill close or merchants
+    // that settle weeks later, which the date window silently misses.
+    const seen = new Set<string>();
+    for (const query of [`dateFrom=${from}&dateTo=${to}`, `createdAtFrom=${encodeURIComponent(since.toISOString())}`]) {
+      let path = `/v2/transactions?accountId=${accountId}&${query}`;
+      for (let page = 1; ; page++) {
+        if (page > MAX_PAGES) throw new SourceFormatError(`pluggy.transactions: more than ${MAX_PAGES} pages for one account`);
+        const body = asRecord(await this.get(path), 'pluggy.transactions');
+        for (const raw of asArray(body.results, 'pluggy.transactions.results')) {
+          const transaction = normalizeTransaction(raw, kind);
+          if (seen.has(transaction.externalId)) continue;
+          seen.add(transaction.externalId);
+          out.push(transaction);
         }
+        const next = optString(body, 'next');
+        if (next === null) break;
+        path = `/v2/transactions${next}`;
       }
     }
     return out;
