@@ -223,6 +223,9 @@ export const api = {
   addCategory: (name: string) => request<{ ok: true }>('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
   setCategoryParent: (name: string, parent: string | null) =>
     request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/parent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parent }) }),
+  saveGroup: (current: string | null, name: string, members: string[]) =>
+    request<{ ok: true }>(current === null ? '/api/category-groups' : `/api/category-groups/${encodeURIComponent(current)}`, { method: current === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) }),
+  deleteGroup: (name: string) => request<{ ok: true }>(`/api/category-groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   renameCategory: (name: string, to: string) =>
     request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/rename`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to }) }),
   undoRenameCategory: (name: string) => request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/rename`, { method: 'DELETE' }),

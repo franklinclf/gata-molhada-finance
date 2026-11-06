@@ -1,7 +1,7 @@
 import { merchantOf } from '../core/merchant.ts';
 import type { TransactionState } from '../core/canonical.ts';
 import type { Cents } from '../core/money.ts';
-import { localDay } from '../core/time.ts';
+import { DATA_START, localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { detectRecurring, recurringKeyOf } from './recurring.ts';
@@ -42,6 +42,8 @@ export interface ExplorerQuery {
   limit: number;
   offset: number;
   includeExcluded?: boolean;
+  /** Show charges dated after today (planned installments). Left out unless a cycle or an end day is chosen. */
+  future?: boolean;
 }
 
 export interface ExplorerRow extends EffectiveTransaction {
@@ -90,6 +92,9 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     const account = byId.get(t.accountId);
     if (!account) return false;
     const day = localDay(t.occurredAt);
+    // Data from before the start stays in the database for installments and bills, but is not browsable, except as part of a chosen bill.
+    if (day < DATA_START && query.cycle === undefined) return false;
+    if (query.future !== true && query.cycle === undefined && query.to === undefined && day > today) return false;
     if (query.from !== undefined && day < query.from) return false;
     if (query.to !== undefined && day > query.to) return false;
     if (skip !== 'account' && query.accountIds?.length && !query.accountIds.includes(t.accountId)) return false;

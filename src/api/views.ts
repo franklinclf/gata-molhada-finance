@@ -100,6 +100,8 @@ export interface CardRow {
   futureInstallments: Cents;
   /** Closed bills still unpaid, whatever cycle is chosen. */
   outstanding: Cents;
+  /** What is still unpaid on the chosen view: the open bill (not paid yet by definition) plus the closed bills that were not paid. Zero for a card that owes nothing. */
+  toPay: Cents;
   /** Due date to pay next: the oldest unpaid bill, else the open cycle. */
   nextDueDate: string | null;
   minimumPayment: Cents | null;
@@ -110,7 +112,7 @@ export interface CardsView extends Stamped {
   cycle: string;
   /** Due months that exist for at least one card, newest first. */
   cycles: string[];
-  totals: { cycleTotal: Cents; /** The same total split by due month: cards close on different days, so one view holds bills of more than one month. */ byMonth: Record<string, { total: Cents; cards: number }>; /** Part of cycleTotal the issuer's balance implies but no listed charge explains (shared limits only). */ unexplained: Cents; outstanding: Cents; futureInstallments: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
+  totals: { cycleTotal: Cents; /** The same total split by due month: cards close on different days, so one view holds bills of more than one month. */ byMonth: Record<string, { total: Cents; cards: number }>; /** Part of cycleTotal the issuer's balance implies but no listed charge explains (shared limits only). */ unexplained: Cents; outstanding: Cents; /** Everything not yet paid in the chosen view: open bills plus closed bills still unpaid. */ toPay: Cents; futureInstallments: Cents; reportedByIssuer: Cents; creditLimit: Cents; used: Cents; available: Cents; nextDueDate: string | null };
   cards: CardRow[];
   /** Cards that share one limit appear here once, so the limit is not counted twice. */
   limitGroups: Array<{ id: string; institution: string; creditLimit: Cents; used: Cents; available: Cents; cardIds: string[]; openEstimate: Cents; unexplained: Cents }>;
@@ -177,6 +179,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       estimated,
       futureInstallments: cycleChoice === 'open' ? futureOf(a.id) : 0,
       outstanding,
+      toPay: outstanding + (cycle?.status === 'open' ? total : 0),
       nextDueDate: cycleChoice === 'open' ? (nextDueOf(a.id) ?? a.dueDate) : (cycle?.dueDate ?? null),
       minimumPayment: a.minimumPayment,
     };
@@ -200,6 +203,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     slot.total += amount;
     slot.cards += 1;
   };
+  let toPay = rows.reduce((s, r) => s + r.outstanding, 0);
   let unexplained = 0;
   const countedGroups = new Set<string>();
   for (const row of rows) {
@@ -209,9 +213,11 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       countedGroups.add(gid);
       cycleTotal += limitGroups.find((g) => g.id === gid)?.openEstimate ?? 0;
       addMonth(row.cycle.key, limitGroups.find((g) => g.id === gid)?.openEstimate ?? 0);
+      if (row.cycle.status === 'open') toPay += limitGroups.find((g) => g.id === gid)?.openEstimate ?? 0;
       unexplained += limitGroups.find((g) => g.id === gid)?.unexplained ?? 0;
     } else {
       cycleTotal += row.total;
+      if (row.cycle?.status === 'open') toPay += row.total;
       if (row.cycle !== null) addMonth(row.cycle.key, row.total);
     }
   }
@@ -228,6 +234,7 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       cycleTotal,
       byMonth,
       unexplained,
+      toPay,
       outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
       futureInstallments: rows.reduce((s, r) => s + r.futureInstallments, 0),
       reportedByIssuer: summary.cardOwed,

@@ -5,7 +5,7 @@ import { createPasskey, guessDeviceName, passkeysSupported } from '../passkey.ts
 import { brl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
-import { Go, Loading } from '../ui.tsx';
+import { CheckList, Go, Loading } from '../ui.tsx';
 import type { CategoryRow } from '../api.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { Select } from '../Select.tsx';
@@ -50,6 +50,57 @@ function AccountsTab({ hidden }: { hidden: boolean }) {
         </section>
       ))}
     </>
+  );
+}
+
+/** Create, rename, change the members of and dissolve the groups the categories sit in. */
+function GroupsPanel({ items, groups, run }: { items: CategoryRow[]; groups: string[]; run: (work: () => Promise<unknown>) => Promise<void> }) {
+  // `null` is the form for a new group; a name is the group being edited.
+  const [editing, setEditing] = useState<string | null | undefined>(undefined);
+  const [name, setName] = useState('');
+  const [members, setMembers] = useState<string[]>([]);
+  const open = (group: string | null) => {
+    setEditing(group);
+    setName(group ?? '');
+    setMembers(group === null ? [] : items.filter((c) => c.parent === group).map((c) => c.name));
+  };
+  const options = [...items].sort((a, b) => a.name.localeCompare(b.name)).map((c) => ({ value: c.name, label: c.parent && c.parent !== editing ? `${c.name} (hoje em ${c.parent})` : c.name }));
+  return (
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Grupos ({groups.length})</h2>
+        <button class="chip" onClick={() => open(null)}>+ Novo grupo</button>
+      </div>
+      <ul class="rows">
+        {groups.map((g) => (
+          <li key={g}>
+            <span class="grow clip">{g}</span>
+            <span class="muted">{items.filter((c) => c.parent === g).length} categorias</span>
+            <button class="link" onClick={() => open(g)}>Editar</button>
+            <button class="link" onClick={() => void run(() => api.deleteGroup(g))}>Desfazer grupo</button>
+          </li>
+        ))}
+      </ul>
+      {editing !== undefined && (
+        <form
+          class="recat group-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(async () => {
+              await api.saveGroup(editing, name.trim(), members);
+              setEditing(undefined);
+            });
+          }}
+        >
+          <input aria-label="Nome do grupo" placeholder="Nome do grupo" value={name} maxLength={60} onInput={(e) => setName((e.currentTarget as HTMLInputElement).value)} />
+          <CheckList options={options} selected={members} onChange={setMembers} />
+          <div class="row-actions">
+            <button class="primary" disabled={name.trim() === '' || members.length === 0}>Salvar</button>
+            <button type="button" class="link" onClick={() => setEditing(undefined)}>Cancelar</button>
+          </div>
+        </form>
+      )}
+    </section>
   );
 }
 
@@ -145,6 +196,7 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
         </button>
       </form>
       {message && <div class="error">{message}</div>}
+      <GroupsPanel items={data.items.filter((c) => !c.fromSource)} groups={groups} run={run} />
       {orphans.length > 0 && (
         <section class="panel">
           <h2>Sem equivalente ({orphans.length})</h2>

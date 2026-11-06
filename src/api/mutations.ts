@@ -97,7 +97,7 @@ export function renameCategory(store: Store, from: unknown, to: unknown, now: Da
   if (!listed.some((c) => c.name === oldName)) return { ok: false, status: 404, error: 'not_found' };
   if (FIXED_NAMES.has(oldName) || FIXED_NAMES.has(newName)) return { ok: false, status: 400, error: 'this name means card payment, move between your accounts or investment, and stays as it is' };
   const parents = categoryParents(store);
-  if ([...parents.values()].includes(oldName) || [...parents.values()].includes(newName)) return { ok: false, status: 400, error: 'this name is a group that holds other categories' };
+  if (holdsOthers(parents, oldName) || holdsOthers(parents, newName)) return { ok: false, status: 400, error: 'this name is a group that holds other categories' };
   if (resolveAlias(store.listCategoryAliases(), newName) === oldName) return { ok: false, status: 400, error: 'that would make a loop' };
   const at = now.toISOString();
   const target = resolveAlias(store.listCategoryAliases(), newName);
@@ -126,6 +126,11 @@ export function addCategory(store: Store, name: unknown, now: Date): MutationRes
   return { ok: true };
 }
 
+/** True when another category than the one named sits in the group of that name. */
+function holdsOthers(parents: Map<string, string>, group: string): boolean {
+  return [...parents].some(([category, parent]) => parent === group && category !== group);
+}
+
 /** Puts a category in a group, or takes it out (`parent` null). Groups are one level deep: a group cannot sit in another group. */
 export function setCategoryParent(store: Store, category: string, parent: unknown, now: Date): MutationResult {
   if (!listCategories(store).some((c) => c.name === category)) return { ok: false, status: 404, error: 'not_found' };
@@ -136,11 +141,38 @@ export function setCategoryParent(store: Store, category: string, parent: unknow
   }
   const name = cleanCategoryName(parent);
   if (name === null) return { ok: false, status: 400, error: `parent must be text of 1 to ${MAX_NAME} characters or null` };
-  if (name === category) return { ok: false, status: 400, error: 'a category cannot sit inside itself' };
   const parents = categoryParents(store);
-  if (parents.has(name)) return { ok: false, status: 400, error: 'a group cannot sit inside another group' };
-  if ([...parents.values()].includes(category)) return { ok: false, status: 400, error: 'this name is a group that holds other categories' };
+  // A category may sit in a group of the same name (the group Compras holds the category Compras).
+  if (name !== category && parents.has(name) && parents.get(name) !== name) return { ok: false, status: 400, error: 'a group cannot sit inside another group' };
+  if (name !== category && holdsOthers(parents, category)) return { ok: false, status: 400, error: 'this name is a group that holds other categories' };
   store.setCategoryParent(category, name, now.toISOString());
+  return { ok: true };
+}
+
+/** Creates a group or changes it: its name and the exact list of categories in it. Categories left out of the list leave the group. */
+export function saveGroup(store: Store, current: string | null, input: { name?: unknown; members?: unknown }, now: Date): MutationResult {
+  const name = cleanCategoryName(input.name ?? current);
+  if (name === null) return { ok: false, status: 400, error: `name must be text of 1 to ${MAX_NAME} characters` };
+  if (!Array.isArray(input.members) || input.members.some((m) => typeof m !== 'string')) return { ok: false, status: 400, error: 'members must be a list of category names' };
+  const members = new Set(input.members as string[]);
+  const known = new Set(listCategories(store).map((c) => c.name));
+  if (current === null && categoryParents(store).has(name) && ![...categoryParents(store).values()].includes(name)) return { ok: false, status: 400, error: 'a category already sits in a group with this name' };
+  if ([...members].some((m) => !known.has(m))) return { ok: false, status: 404, error: 'not_found' };
+  const at = now.toISOString();
+  const parents = categoryParents(store);
+  // A group cannot be a member of a group.
+  const groupNames = new Set(parents.values());
+  if ([...members].some((m) => m !== name && groupNames.has(m) && m !== current)) return { ok: false, status: 400, error: 'a group cannot sit inside another group' };
+  for (const [category, parent] of parents) if (parent === (current ?? name) && !members.has(category)) store.setCategoryParent(category, '', at);
+  for (const m of members) store.setCategoryParent(m, name, at);
+  return { ok: true };
+}
+
+/** Dissolves a group: its categories stay, without a group. */
+export function removeGroup(store: Store, name: string, now: Date): MutationResult {
+  const members = [...categoryParents(store)].filter(([, parent]) => parent === name).map(([category]) => category);
+  if (members.length === 0) return { ok: false, status: 404, error: 'not_found' };
+  for (const category of members) store.setCategoryParent(category, '', now.toISOString());
   return { ok: true };
 }
 

@@ -17,7 +17,7 @@ import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rul
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck } from './bill-check.ts';
-import { addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, renameCategory, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
+import { addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, removeGroup, renameCategory, saveGroup, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -108,6 +108,7 @@ export function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
       limit: (limit as { value: number }).value,
       offset: (offset as { value: number }).value,
       includeExcluded: params.get('includeExcluded') === 'true',
+      future: params.get('future') === 'true',
     },
   };
 }
@@ -446,6 +447,21 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         return fromMutation(setAccountHidden(store, id, input.hidden, now));
       }
       return null;
+    }
+    case 'category-groups': {
+      let name: string | null = null;
+      if (parts.length === 3 && id !== undefined) {
+        try {
+          name = decodeURIComponent(id);
+        } catch {
+          return badRequest('bad group name');
+        }
+      }
+      if (method === 'DELETE' && name !== null) return fromMutation(removeGroup(store, name, now));
+      if (method !== 'PUT' && method !== 'POST') return methodNotAllowed();
+      const input = parseBody(body);
+      if (!input) return badRequest('body must be { name, members }');
+      return fromMutation(saveGroup(store, method === 'PUT' ? name : null, input, now));
     }
     case 'categories': {
       if (parts.length === 2) {

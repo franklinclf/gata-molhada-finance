@@ -12,8 +12,9 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
   const bills = useLoad(() => api.bills(), [], 300_000);
   const options = [{ id: 'open', label: 'Em aberto' }, ...(data?.cycles ?? []).map((c) => ({ id: c, label: `Venc. ${monthName(c)}` }))];
   const used = data && data.totals.creditLimit > 0 ? data.totals.used / data.totals.creditLimit : 0;
-  // A card that has no bill in the chosen month is left out of the list.
-  const shown = data?.cards.filter((c) => cycle === 'open' || c.cycle !== null) ?? [];
+  // Only what is still unpaid is listed: a card with nothing to pay, or no bill in the chosen month, is left out.
+  const shown = data?.cards.filter((c) => c.toPay > 0) ?? [];
+  const closedUnpaid = data?.cards.reduce((s, c) => s + c.outstanding, 0) ?? 0;
   return (
     <Widget
       title="Faturas"
@@ -26,13 +27,13 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
       head={
         data && (
           <>
-            <div class="big">{brl(data.totals.cycleTotal, hidden)}</div>
+            <div class="big">{brl(data.totals.toPay, hidden)}</div>
             <div class="muted">
-              {cycle === 'open' ? 'Fatura em aberto' : `Faturas com vencimento em ${monthName(cycle)}`}
+              {cycle === 'open' ? 'A pagar (faturas abertas e fechadas não pagas)' : `A pagar das faturas com vencimento em ${monthName(cycle)}`}
               {data.totals.nextDueDate ? ` · ${cycle === 'open' ? 'próximo vencimento' : 'vencimento'} ${dayMonth(data.totals.nextDueDate)}` : ''}
             </div>
+            {closedUnpaid > 0 && <div class="muted">{brl(data.totals.toPay - closedUnpaid, hidden)} em fatura aberta + {brl(closedUnpaid, hidden)} em fatura fechada não paga</div>}
             {cycle === 'open' && data.totals.futureInstallments > 0 && <div class="muted">fora desse valor: {brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras · saldo devedor total {brl(data.totals.reportedByIssuer, hidden)}</div>}
-            {data.totals.outstanding > 0 && <div class="badge warn">{cycle === 'open' ? 'Fechadas e não pagas' : 'Falta pagar nesta fatura'}: {brl(data.totals.outstanding, hidden)}</div>}
             {size !== 'sm' && bills.data && (
               <Bars
                 hidden={hidden}
@@ -81,10 +82,10 @@ export function CardsWidget({ now, hidden, size, config, setConfig }: WidgetProp
                     {c.cycle?.adjusted ? (c.cycle.adjusted.by === 'auto' ? ' · sobra rolou' : ' · ajustada') : ''}
                   </div>
                 </div>
-                <strong>{brl(c.total, hidden)}</strong>
+                <strong>{brl(c.toPay, hidden)}</strong>
               </li>
             ))}
-            {shown.length === 0 && <li class="muted">Nenhum cartão tem fatura neste mês.</li>}
+            {shown.length === 0 && <li class="muted">Nada a pagar {cycle === 'open' ? 'agora' : 'neste mês'}.</li>}
           </ul>
         </>
       )}
