@@ -61,7 +61,7 @@ export function netWorth(store: Store, now: Date, opts: ViewOptions = {}, months
   const items: NetWorthItem[] = [
     ...bank.map((a): NetWorthItem => ({ name: `${a.institution} · ${a.name}`, kind: 'bank', value: Math.max(a.balance, 0), liability: false })),
     ...bank.filter((a) => a.balance < 0).map((a): NetWorthItem => ({ name: `${a.institution} · ${a.name} (saldo negativo)`, kind: 'bank', value: -a.balance, liability: true })),
-    ...(debtNow > 0 ? [{ name: 'Faturas de cartão', kind: 'card' as const, value: debtNow, liability: true }] : []),
+    ...(debtNow > 0 ? [{ name: 'Dívida no cartão (saldo informado pelo banco)', kind: 'card' as const, value: debtNow, liability: true }] : []),
     ...active.flatMap((a): NetWorthItem[] => {
       const value = valueOn(a.values, today);
       return value === null ? [] : [{ name: a.name, kind: 'manual', value, liability: a.kind === 'liability', assetId: a.id }];
@@ -72,7 +72,8 @@ export function netWorth(store: Store, now: Date, opts: ViewOptions = {}, months
 
   // Going back in time from today's balances: undo every posted transaction after the day.
   // A card's issuer balance already holds the purchases of the open statement, which Meu Pluggy keeps pending, so for cards they are undone too.
-  const posted = effectiveTransactions(store, opts).filter((t) => !t.excluded && (t.status === 'posted' || cardIds.has(t.accountId))).map((t) => ({ day: localDay(t.occurredAt), amount: t.amount, accountId: t.accountId }));
+  // Only what is dated up to today is in today's balances: a charge dated ahead (a planned installment) was never added, so it is not undone.
+  const posted = effectiveTransactions(store, opts).filter((t) => !t.excluded && (t.status === 'posted' || cardIds.has(t.accountId)) && localDay(t.occurredAt) <= today).map((t) => ({ day: localDay(t.occurredAt), amount: t.amount, accountId: t.accountId }));
   const bankNow = bank.reduce((s, a) => s + a.balance, 0);
   const firstDay = posted.reduce((min, t) => (t.day < min ? t.day : min), today);
   const firstMonth = [firstDay.slice(0, 7), DATA_START_MONTH].sort().at(-1)!;
@@ -92,7 +93,8 @@ export function netWorth(store: Store, now: Date, opts: ViewOptions = {}, months
       if (asset.kind === 'asset') a += v;
       else l += v;
     }
-    history.push({ day, assets: a, liabilities: l, net: a - l });
+    // The last point is today, so it is the headline figure itself and the chart ends where the title says.
+    history.push(m === currentMonth ? { day, assets, liabilities, net: assets - liabilities } : { day, assets: a, liabilities: l, net: a - l });
   }
   return { generatedAt: now.toISOString(), assets, liabilities, net: assets - liabilities, items, history, manual };
 }

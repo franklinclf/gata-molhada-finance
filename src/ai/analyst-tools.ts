@@ -90,11 +90,11 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'cashflow',
-    help: 'cashflow {from?, to?} : o que entrou e saiu das contas bancárias no período (compras no cartão só contam quando a fatura é paga).',
+    help: 'cashflow {from?, to?} : o que entrou e saiu das contas bancárias no período (compras no cartão só contam quando a fatura é paga; aplicações e resgates de investimento ficam de fora e aparecem em investidoNoPeriodo).',
     run: (store, now, args) => {
       const r = range(args, localDay(now.toISOString()));
       const flow = views.cashFlow(store, r, now);
-      return { de: r.from, ate: r.to, entrou: reais(flow.inflow), saiu: reais(flow.outflow), saldoDoPeriodo: reais(flow.net) };
+      return { de: r.from, ate: r.to, entrou: reais(flow.inflow), saiu: reais(flow.outflow), saldoDoPeriodo: reais(flow.net), investidoNoPeriodo: reais(flow.invested) };
     },
   },
   {

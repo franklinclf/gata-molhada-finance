@@ -68,6 +68,9 @@ export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {})
     if (name.length < 2) continue;
     const key = `${t.amount < 0 ? 'out' : 'in'}|${name.toLowerCase()}`;
     const day = localDay(t.occurredAt);
+    // A charge dated ahead (scheduled debit, planned entry) has not happened: counting it as the last one would push the next
+    // expected date a month ahead, and the calendar would show neither the real charge nor the expected one.
+    if (day > today) continue;
     groups.set(key, [...(groups.get(key) ?? []), { day: dayNumber(day), amount: Math.abs(t.amount), category: t.category, name, month: day.slice(0, 7), card: cardIds.has(t.accountId) }]);
   }
   const marks = store.listRecurringMarks();

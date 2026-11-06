@@ -1,6 +1,6 @@
-import { localDay } from '../core/time.ts';
+import { DATA_START_MONTH, localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
-import { addMonths, monthActuals } from './budgets.ts';
+import { addMonths, monthActuals, NOT_SPENDING_CATEGORIES } from './budgets.ts';
 import { categoryParents } from './category-groups.ts';
 
 export interface TrendRow {
@@ -19,23 +19,25 @@ export interface TrendView {
   rows: TrendRow[];
 }
 
-const NOT_SPENDING = new Set(['Estorno', 'Renda', 'Sem categoria']);
+const UNCATEGORIZED = 'Sem categoria';
 
 /** Spending per category over the last months, so a category that is creeping up shows. */
 export function categoryTrend(store: Store, now: Date, months: number): TrendView {
   const currentMonth = localDay(now.toISOString()).slice(0, 7);
-  const list = Array.from({ length: months }, (_, i) => addMonths(currentMonth, i - (months - 1)));
+  // Months before the first day the app holds data for would show only the tail of bills that fall due later.
+  const list = Array.from({ length: months }, (_, i) => addMonths(currentMonth, i - (months - 1))).filter((m) => m >= DATA_START_MONTH);
   const perMonth = list.map((m) => monthActuals(store, m, now).byCategory);
   const parents = categoryParents(store);
   const names = new Set(perMonth.flatMap((m) => [...m.keys()]));
   const rows: TrendRow[] = [...names]
-    .filter((name) => !NOT_SPENDING.has(name))
+    // Uncategorized spending stays out of the sort and closes the list, so the rows still add up to Gastos.
+    .filter((name) => name === UNCATEGORIZED || !NOT_SPENDING_CATEGORIES.has(name))
     .map((name) => {
       const points = perMonth.map((m) => Math.max(0, m.get(name) ?? 0));
       const complete = points.slice(0, -1);
       return { name, parent: parents.get(name) ?? null, points, current: points.at(-1) ?? 0, average: complete.length > 0 ? Math.round(complete.reduce((s, v) => s + v, 0) / complete.length) : 0 };
     })
     .filter((r) => r.points.some((p) => p > 0))
-    .sort((a, b) => b.points.reduce((s, v) => s + v, 0) - a.points.reduce((s, v) => s + v, 0) || a.name.localeCompare(b.name));
+    .sort((a, b) => Number(a.name === UNCATEGORIZED) - Number(b.name === UNCATEGORIZED) || b.points.reduce((s, v) => s + v, 0) - a.points.reduce((s, v) => s + v, 0) || a.name.localeCompare(b.name));
   return { months: list, rows };
 }

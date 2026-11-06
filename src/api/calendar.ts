@@ -65,13 +65,17 @@ function projectedByDay(store: Store, recurring: RecurringItem[], now: Date, opt
   }
   const accounts = visibleAccounts(store, opts).filter((a) => a.kind === 'credit_card');
   const transactions = effectiveTransactions(store, opts);
-  const openTotal = new Map(cards(store, now, opts, 'open').cards.map((c) => [c.id, c.total]));
+  const view = cards(store, now, opts, 'open');
+  const openTotal = new Map(view.cards.map((c) => [c.id, c.total]));
+  // Cards on a shared limit have one open total, the same estimate the cards screen uses. It is counted once, on the first card.
+  for (const g of view.limitGroups) g.cardIds.forEach((id, i) => openTotal.set(id, i === 0 ? g.openEstimate : 0));
   for (const account of accounts) {
     for (const cycle of cyclesFor(store, account, transactions, today)) {
       const label = `Fatura ${account.institution}${account.last4 ? ` ${account.last4}` : ''}`;
       if (cycle.status === 'open') {
         const total = openTotal.get(account.id) ?? 0;
-        if (total > 100 && cycle.dueDate >= today) add(cycle.dueDate, { name: label, amount: total, direction: 'out', kind: 'bill', late: false });
+        // An open bill already past its due date is late like a closed one: `add` moves it to today.
+        if (total > 100) add(cycle.dueDate, { name: label, amount: total, direction: 'out', kind: 'bill', late: cycle.dueDate < today });
       } else if (cycle.outstanding > 100 && (cycle.status === 'unpaid' || cycle.status === 'overdue' || cycle.status === 'partial')) {
         add(cycle.dueDate, { name: label, amount: cycle.outstanding, direction: 'out', kind: 'bill', late: cycle.dueDate < today });
       }
