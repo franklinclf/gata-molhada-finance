@@ -533,3 +533,10 @@ body.wide .main { max-width: none; }
 .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card); border-radius: 16px; position: sticky; top: 8px; z-index: 5; }
 .tx.picked { background: color-mix(in srgb, var(--card) 85%, var(--accent) 15%); }
 .tx > input[type=checkbox] { flex: none; width: 18px; height: 18px; }
+
+.bar-track { gap: 2px; }
+.bar-track .bar-fill { flex: 1; width: auto; min-width: 0; }
+.section-title { font-size: 16px; margin: 10px 0 0; color: var(--muted); }
+
+.navlink.dragging { opacity: 0.4; }
+.navlink[draggable=true] { cursor: grab; }

@@ -94,24 +94,36 @@ export interface BarDatum {
 export function Bars({ data, hidden, selected, onSelect, height = 130 }: { data: BarDatum[]; hidden: boolean; selected?: string | null; onSelect?: (key: string) => void; height?: number }) {
   const max = Math.max(1, ...data.map((d) => d.value));
   const Tag = onSelect ? 'button' : 'div';
+  // Bars that share a group (the in and out bars of a month) sit side by side under one label, so the label stays centered under the pair.
+  const columns: BarDatum[][] = [];
+  for (const d of data) {
+    const last = columns[columns.length - 1];
+    if (d.group !== undefined && last && last[0]!.group === d.group) last.push(d);
+    else columns.push([d]);
+  }
   return (
     <div class="bars" style={{ height: `${height}px` }} role="group">
-      {data.map((d) => {
-        const id = d.group ?? d.key;
+      {columns.map((column) => {
+        const first = column[0]!;
+        const id = first.group ?? first.key;
         const on = selected === undefined || selected === null || selected === id;
+        const paired = column.length > 1;
+        const label = column.map((d) => d.label).find((l) => l !== '') ?? '';
         return (
           <Tag
-            key={d.key}
+            key={first.key}
             class={onSelect ? (on ? 'bar clickable on' : 'bar clickable') : 'bar'}
-            data-tip={hidden ? d.label : (d.tip ?? `${d.label}: ${brl(d.value)}`)}
+            data-tip={hidden ? label : paired ? column.map((d) => d.tip ?? `${d.label}: ${brl(d.value)}`).join('\n') : (first.tip ?? `${first.label}: ${brl(first.value)}`)}
             onClick={() => onSelect?.(id)}
             aria-pressed={onSelect ? selected === id : undefined}
           >
-            <span class="bar-value">{brlShort(d.value, hidden)}</span>
+            {!paired && <span class="bar-value">{brlShort(first.value, hidden)}</span>}
             <span class="bar-track">
-              <span class="bar-fill" style={{ height: `${(d.value / max) * 100}%`, background: d.color ?? 'var(--accent)', opacity: on ? 1 : 0.35 }} />
+              {column.map((d) => (
+                <span key={d.key} class="bar-fill" style={{ height: `${(d.value / max) * 100}%`, background: d.color ?? 'var(--accent)', opacity: on ? 1 : 0.35 }} />
+              ))}
             </span>
-            <span class="bar-label">{d.label}</span>
+            <span class="bar-label">{label}</span>
           </Tag>
         );
       })}
