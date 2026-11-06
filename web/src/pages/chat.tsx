@@ -37,7 +37,7 @@ export function ChatPage({ route, hidden }: { route: Route; hidden: boolean }) {
   const conversations = useLoad(() => api.chatConversations(), []);
   const current = route.params.get('c') ? Number(route.params.get('c')) : null;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [text, setText] = useState('');
+  const [text, setText] = useState(route.params.get('q') ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const end = useRef<HTMLDivElement>(null);

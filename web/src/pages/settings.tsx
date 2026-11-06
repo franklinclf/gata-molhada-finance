@@ -9,6 +9,8 @@ import { CheckList, Go, Loading } from '../ui.tsx';
 import type { CategoryRow } from '../api.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { Select } from '../Select.tsx';
+import { Button, ButtonLink } from '../ds.tsx';
+import { chooseAccent, choosePalette, PALETTES, savedAccent, savedPalette } from '../theme.ts';
 import { RulesTab } from './rules.tsx';
 
 const KIND: Record<string, string> = { checking: 'Conta corrente', savings: 'Poupança', credit_card: 'Cartão de crédito' };
@@ -521,6 +523,10 @@ function AiTab({ hidden }: { hidden: boolean }) {
           </dd>
           <dt>Já aplicadas</dt>
           <dd>{data.applied} descrições, com confiança alta</dd>
+          <dt>Quem decidiu cada descrição</dt>
+          <dd>
+            Das {data.coverage.descriptions} descrições diferentes: {data.coverage.byRule} por sua escolha ou regra, {data.coverage.bySource} pela tradução do que o banco diz, {data.coverage.byAi} pela IA, {data.coverage.waiting} esperando você, {data.coverage.rejected} que você ou a IA recusou e {data.coverage.open} ainda sem decisão. A IA decide por descrição, não por transação; por isso as sugestões diminuem quando as descrições já têm resposta. Só as {data.coverage.open} sem decisão entram numa nova rodada.
+          </dd>
         </dl>
         <div class="note">
           O modelo recebe o texto da descrição, o sentido (entrou ou saiu), o banco e o tipo da conta, os rótulos da fonte, o código do estabelecimento (MCC), quantas vezes e em quantos meses o texto aparece, uma faixa de valor (nunca o valor), a parcela e a forma (Pix, TED, boleto). Também recebe como você categorizou textos parecidos (até 40) e as respostas que você rejeitou (até 15). Categorias que você escolher ou regras que você criar sempre valem mais que a IA, e sugestões de confiança média ou baixa só valem depois que você aceita.
@@ -528,12 +534,12 @@ function AiTab({ hidden }: { hidden: boolean }) {
         <div class="row-head">
           <span class="muted">{running ?? 'Roda sob demanda, além da rodada automática a cada 10 minutos.'}</span>
           <span class="actions">
-            <button class="small" disabled={busy} onClick={() => void runAi('pending')}>
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => void runAi('pending')}>
               Rodar agora
-            </button>
-            <button class="small" disabled={busy} onClick={() => void runAi('all')} title="Esquece as respostas da IA e pergunta tudo de novo. O que você aceitou ou rejeitou fica.">
+            </Button>
+            <Button size="sm" disabled={busy} onClick={() => void runAi('all')} title="Esquece as respostas da IA e pergunta tudo de novo. O que você aceitou ou rejeitou fica.">
               Reanalisar tudo
-            </button>
+            </Button>
           </span>
         </div>
       </section>
@@ -728,6 +734,41 @@ function DataTab() {
   );
 }
 
+/** Color palette of the app, kept in this browser. */
+function AppearanceTab() {
+  const [palette, setPalette] = useState(savedPalette());
+  const [accent, setAccent] = useState(savedAccent());
+  return (
+    <section class="panel">
+      <h2>Paleta de cores</h2>
+      <div class="muted">A escolha vale só neste navegador.</div>
+      <div class="palette-grid">
+        {PALETTES.map((p) => (
+          <button key={p.id} class="palette-card" aria-pressed={palette === p.id && accent === null} onClick={() => { choosePalette(p.id); setPalette(p.id); setAccent(null); }}>
+            <span class="palette-swatches">
+              {['--bg', '--card', '--accent', '--good', '--bad'].map((v) => (
+                <i key={v} style={{ background: p.vars[v] }} />
+              ))}
+            </span>
+            {p.name}
+          </button>
+        ))}
+      </div>
+      <div class="row-head">
+        <label class="field">
+          <span class="muted">Cor de destaque própria</span>
+          <input type="color" value={accent ?? PALETTES.find((p) => p.id === palette)!.vars['--accent']} onChange={(e) => { const value = (e.currentTarget as HTMLInputElement).value; chooseAccent(value); setAccent(value); }} />
+        </label>
+        {accent !== null && (
+          <Button size="sm" onClick={() => { chooseAccent(null); setAccent(null); }}>
+            Voltar à cor da paleta
+          </Button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boolean; now: Date }) {
   const tab = route.params.get('tab') ?? 'accounts';
   return (
@@ -749,11 +790,14 @@ export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boo
         <button class={tab === 'data' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'data' })}>
           Dados
         </button>
+        <button class={tab === 'appearance' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'appearance' })}>
+          Aparência
+        </button>
         <button class={tab === 'security' ? 'tab on' : 'tab'} onClick={() => patchParams({ tab: 'security' })}>
           Segurança
         </button>
       </div>
-      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'data' ? <DataTab /> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : <AccountsTab hidden={hidden} />}
+      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'data' ? <DataTab /> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : tab === 'appearance' ? <AppearanceTab /> : <AccountsTab hidden={hidden} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import type { ComponentChildren } from 'preact';
-import { useRef, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import type { LayoutItem } from './api.ts';
-import { COLUMNS, place, type Box } from './grid.ts';
+import { columnsFor, COLUMNS, place, type Box } from './grid.ts';
 
 export const ROW_HEIGHT = 72;
 export const GAP = 14;
@@ -22,7 +22,10 @@ interface Props {
   /** Widgets can be moved and resized from a small handle at any time, not only while editing. */
   canDrag?: boolean;
   onChange: (items: LayoutItem[]) => void;
-  renderItem: (item: LayoutItem) => ComponentChildren;
+  renderItem: (item: LayoutItem, pixels: { width: number; height: number }) => ComponentChildren;
+  /** Use as many columns as the screen holds (about one per 112 px) instead of 12. */
+  wide?: boolean;
+  onColumns?: (columns: number) => void;
   onRemove: (id: string) => void;
   titleOf: (item: LayoutItem) => string;
 }
@@ -31,11 +34,26 @@ interface Props {
  * Dashboard grid. While editing, a widget moves by its top bar and resizes by its corner; neighbours make room.
  * The draft is kept in state during the gesture and saved when the pointer is released.
  */
-export function Grid({ items, editing, canDrag = true, onChange, renderItem, onRemove, titleOf }: Props) {
+export function Grid({ items, editing, canDrag = true, wide = false, onColumns, onChange, renderItem, onRemove, titleOf }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<LayoutItem[] | null>(null);
   const drag = useRef<Drag | null>(null);
-  const shown = draft ?? items;
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = container.current;
+    if (!el) return;
+    const measure = () => setWidth(el.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const columns = wide && width > 0 ? columnsFor(width, GAP) : COLUMNS;
+  useEffect(() => onColumns?.(columns), [columns]);
+  const cellWidth = width > 0 ? (width + GAP) / columns : 0;
+  // A widget saved on a wider screen is shown inside the columns there are now.
+  const fitted = (list: LayoutItem[]) => list.map((i) => (i.x + i.w > columns ? { ...i, w: Math.min(i.w, columns), x: Math.max(0, Math.min(i.x, columns - Math.min(i.w, columns))) } : i));
+  const shown = fitted(draft ?? items);
 
   function start(event: PointerEvent, item: LayoutItem, mode: Drag['mode']) {
     const box = container.current?.getBoundingClientRect();
@@ -47,7 +65,7 @@ export function Grid({ items, editing, canDrag = true, onChange, renderItem, onR
       mode,
       startX: event.clientX,
       startY: event.clientY,
-      cellW: (box.width + GAP) / COLUMNS,
+      cellW: (box.width + GAP) / columns,
       cellH: ROW_HEIGHT + GAP,
       origin: { id: item.id, x: item.x, y: item.y, w: item.w, h: item.h },
     };
@@ -59,7 +77,7 @@ export function Grid({ items, editing, canDrag = true, onChange, renderItem, onR
     const dx = Math.round((event.clientX - d.startX) / d.cellW);
     const dy = Math.round((event.clientY - d.startY) / d.cellH);
     const target = d.mode === 'move' ? { x: d.origin.x + dx, y: d.origin.y + dy } : { w: d.origin.w + dx, h: d.origin.h + dy };
-    setDraft(place(items, d.id, target));
+    setDraft(place(fitted(items), d.id, target, columns));
   }
 
   function end() {
@@ -70,7 +88,7 @@ export function Grid({ items, editing, canDrag = true, onChange, renderItem, onR
   }
 
   return (
-    <div ref={container} class={editing ? 'grid12 editing' : 'grid12'} style={{ '--row': `${ROW_HEIGHT}px`, '--gap': `${GAP}px` }}>
+    <div ref={container} class={editing ? 'grid12 editing' : 'grid12'} style={{ '--row': `${ROW_HEIGHT}px`, '--gap': `${GAP}px`, '--cols': columns }}>
       {shown.map((item) => (
         <div
           key={item.id}
@@ -91,7 +109,7 @@ export function Grid({ items, editing, canDrag = true, onChange, renderItem, onR
             </div>
           )}
           {!editing && canDrag && <div class="mini-grip" onPointerDown={(e) => start(e, item, 'move')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para mover" aria-label={`Mover ${titleOf(item)}`}>⠿</div>}
-          {renderItem(item)}
+          {renderItem(item, { width: item.w * cellWidth - GAP, height: item.h * (ROW_HEIGHT + GAP) - GAP })}
           {!editing && canDrag && <div class="resize quiet" onPointerDown={(e) => start(e, item, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para redimensionar" />}
           {editing && <div class="resize" onPointerDown={(e) => start(e, item, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para redimensionar" />}
         </div>

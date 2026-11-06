@@ -30,6 +30,8 @@ export interface AiView {
   monthlyBudget: number | null;
   /** Descriptions the AI categorized by itself, and ones waiting for the user. */
   applied: number;
+  /** Who decided the category of each distinct description, so a drop in suggestions can be explained. */
+  coverage: { descriptions: number; byRule: number; bySource: number; byAi: number; waiting: number; rejected: number; open: number };
   suggestions: Suggestion[];
   matches: {
     /** Pairs the AI joined by itself, newest first. Each can be separated. */
@@ -138,6 +140,18 @@ export function aiView(store: Store, now: Date): AiView {
     if (t.occurredAt > row.at) Object.assign(row, { id: t.id, sourceCategory: t.sourceCategory, at: t.occurredAt });
     byKey.set(key, row);
   }
+  const rules = store.listCategoryRules();
+  const byKeyEntry = new Map(entries.map((e) => [e.matchKey, e]));
+  const coverage = { descriptions: byKey.size, byRule: 0, bySource: 0, byAi: 0, waiting: 0, rejected: 0, open: 0 };
+  for (const [key, row] of byKey) {
+    const entry = byKeyEntry.get(key);
+    if (rules.has(key) || entry?.status === 'accepted') coverage.byRule++;
+    else if (row.settled) coverage.bySource++;
+    else if (entry?.status === 'applied') coverage.byAi++;
+    else if (entry?.status === 'suggested') coverage.waiting++;
+    else if (entry?.status === 'rejected' || entry?.status === 'skipped') coverage.rejected++;
+    else coverage.open++;
+  }
   const suggestions = entries
     .filter((e) => e.status === 'suggested' && byKey.has(e.matchKey) && !byKey.get(e.matchKey)!.settled)
     .map((e) => ({ key: e.matchKey, sample: e.sample, category: e.category, confidence: e.confidence, count: byKey.get(e.matchKey)!.count, sourceCategory: byKey.get(e.matchKey)!.sourceCategory, sampleTransactionId: byKey.get(e.matchKey)!.id }))
@@ -150,6 +164,7 @@ export function aiView(store: Store, now: Date): AiView {
     keyThisMonth: spend.keyTotal !== null && spend.keyFetchedAt !== null ? { usd: spend.keyTotal, at: spend.keyFetchedAt } : null,
     monthlyBudget: (job as { monthlyBudget?: number }).monthlyBudget ?? null,
     applied: entries.filter((e) => e.status === 'applied').length,
+    coverage,
     suggestions,
     matches: matchesView(store),
   };

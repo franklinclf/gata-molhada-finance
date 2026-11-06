@@ -82,6 +82,28 @@ export function sizeClass(w: number, h: number): SizeClass {
   return w >= 6 && h >= 7 ? 'lg' : 'md';
 }
 
+/** The same choice from the size on screen, so a widget fits its real room whatever the column width is. A wide, short widget still gets the fuller look. */
+export function sizeClassPx(width: number, height: number): SizeClass {
+  if (width <= 360 || (height <= 260 && width < 600)) return 'sm';
+  if ((width >= 880 && height >= 500) || (width >= 660 && height >= 590)) return 'lg';
+  return 'md';
+}
+
+/** Columns that fit a container: about as wide as the 12 of the normal layout, never fewer than 12. */
+export function columnsFor(width: number, gap: number, slot = 112, max = 36): number {
+  return Math.min(max, Math.max(COLUMNS, Math.floor((width + gap) / (slot + gap))));
+}
+
+/** Spreads boxes over the given number of columns, keeping their sizes and reading order. */
+export function reflow<T extends Box>(items: T[], columns: number): T[] {
+  const placed: T[] = [];
+  for (const item of [...items].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    const w = Math.min(item.w, columns);
+    placed.push({ ...item, w, ...freeSlot(placed, w, item.h, columns) });
+  }
+  return items.map((i) => placed.find((p) => p.id === i.id)!);
+}
+
 /** How many list rows fit in a widget of this height, after the header, the key figure and the footer. */
 export function rowsFit(h: number, reserved = 3): number {
   return Math.max(Math.floor((h - reserved) * 1.6), 0);

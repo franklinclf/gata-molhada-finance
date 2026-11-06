@@ -1,4 +1,5 @@
 import { useState } from 'preact/hooks';
+import { ButtonLink } from '../ds.tsx';
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { ago, isStale, maskMoney } from '../format.ts';
@@ -55,9 +56,9 @@ export function StatusPage({ now, hidden }: { now: Date; hidden: boolean }) {
                 <span class="grow">
                   {a.institution}: {alertText(a.event, a.code)} <span class="muted">({ago(a.at, now)})</span>
                 </span>
-                <a class="small" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer noopener">
+                <ButtonLink size="sm" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer noopener">
                   Abrir o Meu Pluggy
-                </a>
+                </ButtonLink>
               </li>
             ))}
           </ul>
@@ -82,9 +83,9 @@ export function StatusPage({ now, hidden }: { now: Date; hidden: boolean }) {
                 </span>
                 {s.quotaExhausted && <span class="badge bad">limite do banco atingido</span>}
                 <span class={isStale(s.lastUpdatedAt, now) ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>
-                <a class="small" href={s.link} target="_blank" rel="noreferrer noopener" title="Abre a conexão no Meu Pluggy, onde dá para atualizar agora">
+                <ButtonLink size="sm" href={s.link} target="_blank" rel="noreferrer noopener" title="Abre a conexão no Meu Pluggy, onde dá para atualizar agora">
                   Atualizar
-                </a>
+                </ButtonLink>
               </li>
             ))}
           </ul>
