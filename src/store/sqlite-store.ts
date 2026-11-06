@@ -1171,6 +1171,10 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       });
     },
 
+    changeCount(): number {
+      return Number((db.prepare('SELECT total_changes() AS n').get() as { n: number | bigint }).n);
+    },
+
     getSetting(key: string): string | null {
       const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
       return row ? row.value : null;

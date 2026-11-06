@@ -88,3 +88,12 @@ test('a retired source keeps its records but stops reporting freshness, and come
   store.registerSource({ id: 'old', kind: 'test', capabilities: {} }, '2026-10-02T00:00:00Z');
   assert.equal(store.listFreshness().length, 2);
 });
+
+test('the change count grows with every write and stays put when only reading', () => {
+  const store = openSqliteStore(':memory:', fileURLToPath(new URL('../../migrations', import.meta.url)));
+  const before = store.changeCount();
+  store.getSetting('x');
+  assert.equal(store.changeCount(), before);
+  store.setSetting('x', '1', '2026-10-27T00:00:00Z');
+  assert.ok(store.changeCount() > before);
+});

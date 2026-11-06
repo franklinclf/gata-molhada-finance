@@ -394,6 +394,8 @@ export interface Store {
   setReversalLink(chargeId: string, refundId: string, linked: boolean | null, now: string): boolean;
   /** Restores pending transactions that a card bill proved real: they count again. */
   markTransactionsBilled(ids: string[]): void;
+  /** Counts every row the database changed since it was opened, so a view computed at one count is stale at another. */
+  changeCount(): number;
   getSetting(key: string): string | null;
   setSetting(key: string, value: string, updatedAt: string): void;
   /** Writes a consistent copy of the whole database to a new file (VACUUM INTO). */
