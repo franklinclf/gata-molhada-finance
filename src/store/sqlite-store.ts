@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
-import type { BillEdit, BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
+import type { BillEdit, IncomeItem, BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -756,6 +756,23 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
           else db.prepare('INSERT INTO transaction_overrides (source_id, external_id, status, cycle_key, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET status = excluded.status, cycle_key = excluded.cycle_key, updated_at = excluded.updated_at').run(l.source_id, l.external_id, status, cycleKey, now);
         }
       });
+    },
+
+    listIncome(): IncomeItem[] {
+      const rows = db.prepare('SELECT id, name, amount, day_of_month, from_month, until_month FROM income_items ORDER BY day_of_month, id').all() as Array<{ id: number; name: string; amount: number; day_of_month: number; from_month: string | null; until_month: string | null }>;
+      return rows.map((r) => ({ id: r.id, name: r.name, amount: r.amount, dayOfMonth: r.day_of_month, fromMonth: r.from_month, untilMonth: r.until_month }));
+    },
+
+    saveIncome(item: Omit<IncomeItem, 'id'> & { id?: number }, now: string): number {
+      if (item.id !== undefined) {
+        db.prepare('UPDATE income_items SET name = ?, amount = ?, day_of_month = ?, from_month = ?, until_month = ?, updated_at = ? WHERE id = ?').run(item.name, item.amount, item.dayOfMonth, item.fromMonth, item.untilMonth, now, item.id);
+        return item.id;
+      }
+      return Number(db.prepare('INSERT INTO income_items (name, amount, day_of_month, from_month, until_month, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(item.name, item.amount, item.dayOfMonth, item.fromMonth, item.untilMonth, now, now).lastInsertRowid);
+    },
+
+    deleteIncome(id: number): boolean {
+      return Number(db.prepare('DELETE FROM income_items WHERE id = ?').run(id).changes) > 0;
     },
 
     listBillEdits(): Map<string, BillEdit> {

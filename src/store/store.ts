@@ -187,6 +187,16 @@ export interface BillEdit {
   status: 'paid' | 'unpaid' | null;
 }
 
+/** A regular income the owner typed in. It repeats every month from `fromMonth` to `untilMonth` (both optional, YYYY-MM). */
+export interface IncomeItem {
+  id: number;
+  name: string;
+  amount: number;
+  dayOfMonth: number;
+  fromMonth: string | null;
+  untilMonth: string | null;
+}
+
 export interface PruneResult {
   removed: number;
   /** True when the removal was refused because it looked like a failed read. */
@@ -385,6 +395,10 @@ export interface Store {
   /** Sets the given fields and leaves the others alone; `null` clears a field. */
   setTransactionOverride(transactionId: string, patch: Partial<TransactionOverride>, now: string): void;
   /** Edits the owner made to card bills, by `accountId|cycleKey`. */
+  listIncome(): IncomeItem[];
+  /** Adds an item (no id) or replaces one (with id). Returns the id. */
+  saveIncome(item: Omit<IncomeItem, 'id'> & { id?: number }, now: string): number;
+  deleteIncome(id: number): boolean;
   listBillEdits(): Map<string, BillEdit>;
   /** Saves the edit of one bill; `null` forgets all of it. */
   setBillEdit(accountId: string, cycleKey: string, edit: BillEdit | null, now: string): void;

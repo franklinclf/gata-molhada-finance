@@ -361,3 +361,15 @@ Qualquer alteração feita no app (salvar, pedido que muda dados) recarrega as t
 - **Ver um ciclo anterior** mostra só aquele ciclo: o total, o que falta pagar, o vencimento e o status são das faturas com aquele vencimento. Limite, saldo do emissor, parcelas de faturas futuras e a "próxima fatura a vencer" só aparecem na visão "Em aberto". As barras do gráfico passaram a incluir as faturas de pagamento não conferido, então o total da barra bate com o total da tela.
 
 Parcelas que o banco ainda não listou: uma parcela que o app sabe que vem (a 2/2 de uma compra cuja 1/2 já apareceu) pertence a uma fatura mesmo antes de o banco listá-la como compra. Ela entra em "Parcelas desta fatura ainda não listadas" de qualquer fatura, aberta ou fechada, e entra no que o app soma para conferir o total do banco em Conferir; assim a diferença que ela explica deixa de ser apontada como "falta".
+
+## Painel, contas e futuras (nov/2026)
+
+- **Faturas, a pagar**: o total e a lista de Faturas somam só o que ainda não foi pago: as faturas abertas e as fechadas não pagas. Cartão sem nada a pagar fica fora da lista. Ao escolher um mês, entram as faturas daquele vencimento que faltam pagar.
+- **Transações**: lançamentos com data futura (parcelas previstas) não aparecem na lista, a menos que se marque "Incluir lançamentos com data futura" ou se escolha uma fatura. Dados anteriores a 2026-01-01 ficam no banco só para contar parcelas e faturas e não podem ser consultados na lista, na busca nem na gaveta. Selecionar permite mudar categoria, status ou ignorar várias de uma vez (`POST /api/transactions/bulk`).
+- **Painel**: cada widget aparece uma vez (o seletor de adicionar só lista os que faltam). O painel pode usar a largura inteira da tela e os widgets se movem ou mudam de tamanho por alças que aparecem ao passar o mouse, sem entrar em "Personalizar painel".
+- **Contas** reúne Saldos, Fluxo de caixa e Patrimônio. **Cartões** tem Faturas (com Limites no fim), Conferir e Futuras e parcelas. As barras de limite enchem com o valor usado.
+- **Futuras e parcelas**: parcelas em andamento, cobranças que se repetem e a previsão por mês. A estimativa pela média do gasto de costume vem desligada e se liga numa caixa de seleção.
+- **Renda fixa** (`income_items`, migration 032): salário e outras entradas mensais. Em Futuras, a tabela mostra a renda, as faturas previstas e o que sobra.
+- **Grupos**: em Ajustes, Categorias, dá para criar, renomear, trocar os membros e desfazer um grupo. Uma categoria pode ficar num grupo com o mesmo nome.
+- **Menu**: os itens da barra superior se arrastam para mudar a ordem (guardado no navegador).
+- **Cache**: o servidor guarda cada leitura até o banco mudar ou passar um minuto, e o navegador mostra de imediato o que já carregou para a mesma tela.
