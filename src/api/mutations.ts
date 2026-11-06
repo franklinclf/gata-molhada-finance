@@ -3,6 +3,7 @@ import { runReconciliation } from '../reconcile/run.ts';
 import type { Store } from '../store/store.ts';
 import { isManualId, manualNumber } from './manual.ts';
 import { categoryParents } from './category-groups.ts';
+import { overlapWith, removeGroupBudget, renameGroupBudget, rowsAfterGroupRename } from './budgets.ts';
 import { effectiveTransactions, resolveAlias, ruleKey } from './scope.ts';
 import { cyclesFor } from './cycles.ts';
 import { localDay } from '../core/time.ts';
@@ -18,6 +19,15 @@ export function cleanCategoryName(value: unknown): string | null {
   return name.length >= 1 && name.length <= MAX_NAME && name.toLowerCase() !== 'sem categoria' ? name : null;
 }
 
+/** A category that does not exist yet cannot take the name of a group that holds other categories. Every path that creates a category asks this. */
+export function newCategoryError(store: Store, name: string, known: ReadonlySet<string | null>): string | null {
+  if (known.has(name)) return null;
+  return holdsOthers(categoryParents(store), name) ? 'this name is a group that holds other categories' : null;
+}
+
+/** The name a category answers to now: a renamed or merged one goes to its new name. Names that mean a role are never renamed. */
+const resolveName = (store: Store, name: string): string => (FIXED_NAMES.has(name) ? name : resolveAlias(store.listCategoryAliases(), name));
+
 /** Sets or clears the category of one transaction. `applyToSimilar` also saves a rule for its description. */
 export function setTransactionCategory(store: Store, transactionId: string, category: unknown, applyToSimilar: boolean, now: Date): MutationResult {
   const transaction = effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).find((t) => t.id === transactionId);
@@ -27,9 +37,16 @@ export function setTransactionCategory(store: Store, transactionId: string, cate
   if (isManualId(transactionId)) {
     const manual = store.listManualTransactions().find((m) => m.id === manualNumber(transactionId));
     if (!manual) return { ok: false, status: 404, error: 'not_found' };
-    const name = category === null ? null : cleanCategoryName(category);
-    if (category !== null && name === null) return { ok: false, status: 400, error: `category must be text of 1 to ${MAX_NAME} characters` };
-    if (name !== null && !store.listCustomCategories().includes(name)) store.addCustomCategory(name, at);
+    const typed = category === null ? null : cleanCategoryName(category);
+    if (category !== null && typed === null) return { ok: false, status: 400, error: `category must be text of 1 to ${MAX_NAME} characters` };
+    // A name the owner renamed goes to what it became, or the old category would come back.
+    const name = typed === null ? null : resolveName(store, typed);
+    if (name !== null && !store.listCustomCategories().includes(name)) {
+      const known = new Set([...effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).map((t) => t.category), ...store.listCustomCategories()]);
+      const refused = newCategoryError(store, name, known);
+      if (refused) return { ok: false, status: 400, error: refused };
+      store.addCustomCategory(name, at);
+    }
     store.saveManualTransaction({ ...manual, category: name }, at);
     if (applyToSimilar) store.setCategoryRule(ruleKey(transaction.description), name, at);
     rebuild(store, now);
@@ -40,9 +57,12 @@ export function setTransactionCategory(store: Store, transactionId: string, cate
     if (applyToSimilar) store.setCategoryRule(ruleKey(transaction.description), null, at);
     return { ok: true };
   }
-  const name = cleanCategoryName(category);
-  if (name === null) return { ok: false, status: 400, error: `category must be text of 1 to ${MAX_NAME} characters` };
+  const typed = cleanCategoryName(category);
+  if (typed === null) return { ok: false, status: 400, error: `category must be text of 1 to ${MAX_NAME} characters` };
+  const name = resolveName(store, typed);
   const known = new Set([...effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).map((t) => t.category), ...store.listCustomCategories()]);
+  const refused = newCategoryError(store, name, known);
+  if (refused) return { ok: false, status: 400, error: refused };
   if (!known.has(name)) store.addCustomCategory(name, at);
   store.setCategoryOverride(transactionId, name, at);
   if (applyToSimilar) store.setCategoryRule(ruleKey(transaction.description), name, at);
@@ -122,6 +142,8 @@ export function undoRename(store: Store, from: unknown): MutationResult {
 export function addCategory(store: Store, name: unknown, now: Date): MutationResult {
   const clean = cleanCategoryName(name);
   if (clean === null) return { ok: false, status: 400, error: `name must be text of 1 to ${MAX_NAME} characters` };
+  const refused = newCategoryError(store, clean, new Set(listCategories(store).map((c) => c.name)));
+  if (refused) return { ok: false, status: 400, error: refused };
   store.addCustomCategory(clean, now.toISOString());
   return { ok: true };
 }
@@ -145,6 +167,12 @@ export function setCategoryParent(store: Store, category: string, parent: unknow
   // A category may sit in a group of the same name (the group Compras holds the category Compras).
   if (name !== category && parents.has(name) && parents.get(name) !== name) return { ok: false, status: 400, error: 'a group cannot sit inside another group' };
   if (name !== category && holdsOthers(parents, category)) return { ok: false, status: 400, error: 'this name is a group that holds other categories' };
+  // Moving a category into a group that has a budget would count its spending in both lines.
+  if (parents.get(category) !== name) {
+    const rows = store.listBudgets();
+    const clash = rows.some((r) => r.scope === 'category' && r.name === category) ? overlapWith(rows, new Map(parents).set(category, name), 'category', category) : null;
+    if (clash) return { ok: false, status: 409, error: clash };
+  }
   store.setCategoryParent(category, name, now.toISOString());
   return { ok: true };
 }
@@ -156,15 +184,32 @@ export function saveGroup(store: Store, current: string | null, input: { name?: 
   if (!Array.isArray(input.members) || input.members.some((m) => typeof m !== 'string')) return { ok: false, status: 400, error: 'members must be a list of category names' };
   const members = new Set(input.members as string[]);
   const known = new Set(listCategories(store).map((c) => c.name));
-  if (current === null && categoryParents(store).has(name) && ![...categoryParents(store).values()].includes(name)) return { ok: false, status: 400, error: 'a category already sits in a group with this name' };
+  const parents = categoryParents(store);
+  const groupNames = new Set(parents.values());
+  if (current === null && parents.has(name) && !groupNames.has(name)) return { ok: false, status: 400, error: 'a category already sits in a group with this name' };
+  // Renaming onto another group would merge the two silently, and there is no undo for groups.
+  if (name !== current && groupNames.has(name)) return { ok: false, status: 409, error: 'já existe um grupo com esse nome; escolha outro nome ou use a edição desse grupo para incluir as categorias' };
+  // A standalone category of that name would show twice in the lists, unless it joins the group (the group Compras holds the category Compras).
+  if (name !== current && known.has(name) && !members.has(name)) return { ok: false, status: 400, error: 'já existe uma categoria com esse nome; inclua-a no grupo ou escolha outro nome' };
   if ([...members].some((m) => !known.has(m))) return { ok: false, status: 404, error: 'not_found' };
   const at = now.toISOString();
-  const parents = categoryParents(store);
   // A group cannot be a member of a group.
-  const groupNames = new Set(parents.values());
   if ([...members].some((m) => m !== name && groupNames.has(m) && m !== current)) return { ok: false, status: 400, error: 'a group cannot sit inside another group' };
-  for (const [category, parent] of parents) if (parent === (current ?? name) && !members.has(category)) store.setCategoryParent(category, '', at);
-  for (const m of members) store.setCategoryParent(m, name, at);
+  // A member that comes in with a budget of its own must not land in a group that has one (the group keeps its budget when renamed).
+  const after = new Map(parents);
+  for (const [category, parent] of parents) if (parent === (current ?? name) && !members.has(category)) after.delete(category);
+  const moved = [...members].filter((m) => parents.get(m) !== (current ?? name));
+  for (const m of members) after.set(m, name);
+  const budgets = rowsAfterGroupRename(store.listBudgets(), current, name);
+  for (const m of moved) {
+    const clash = budgets.some((r) => r.scope === 'category' && r.name === m) ? overlapWith(budgets, after, 'category', m) : null;
+    if (clash) return { ok: false, status: 409, error: clash };
+  }
+  store.transaction(() => {
+    for (const [category, parent] of parents) if (parent === (current ?? name) && !members.has(category)) store.setCategoryParent(category, '', at);
+    for (const m of members) store.setCategoryParent(m, name, at);
+    if (current !== null && current !== name) renameGroupBudget(store, current, name, now);
+  });
   return { ok: true };
 }
 
@@ -172,7 +217,10 @@ export function saveGroup(store: Store, current: string | null, input: { name?: 
 export function removeGroup(store: Store, name: string, now: Date): MutationResult {
   const members = [...categoryParents(store)].filter(([, parent]) => parent === name).map(([category]) => category);
   if (members.length === 0) return { ok: false, status: 404, error: 'not_found' };
-  for (const category of members) store.setCategoryParent(category, '', now.toISOString());
+  store.transaction(() => {
+    for (const category of members) store.setCategoryParent(category, '', now.toISOString());
+    removeGroupBudget(store, name, now);
+  });
   return { ok: true };
 }
 
@@ -260,11 +308,21 @@ export interface BulkChange {
   cycleKey?: unknown;
 }
 
-/** Applies one change to many transactions at once. The reads are done once, not once per transaction. */
-export function bulkEdit(store: Store, ids: unknown, change: BulkChange, now: Date): MutationResult & { changed?: number; skipped?: number } {
+export interface BulkOptions {
+  /** With a category: also save a rule so every transaction with the same description (and the ones that arrive later) gets it. */
+  applyToSimilar?: unknown;
+}
+
+/**
+ * Applies one change to many transactions at once. The reads are done once, not once per transaction, and the writes
+ * are one commit: a failure in the middle leaves nothing half applied. The rebuild runs after the commit because it opens its own.
+ */
+export function bulkEdit(store: Store, ids: unknown, change: BulkChange, now: Date, options: BulkOptions = {}): MutationResult & { changed?: number; skipped?: number; ruled?: number } {
   if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || ids.some((i) => typeof i !== 'string')) return { ok: false, status: 400, error: 'ids must be a list of 1 to 500 transaction ids' };
   const keys = (['category', 'ignored', 'status', 'cycleKey'] as const).filter((k) => k in change);
   if (keys.length !== 1) return { ok: false, status: 400, error: 'send exactly one of category, ignored, status or cycleKey' };
+  if (options.applyToSimilar !== undefined && typeof options.applyToSimilar !== 'boolean') return { ok: false, status: 400, error: 'applyToSimilar must be true or false' };
+  if (options.applyToSimilar === true && !('category' in change)) return { ok: false, status: 400, error: 'applyToSimilar only goes with category' };
   const wanted = new Set(ids as string[]);
   const all = effectiveTransactions(store, { includeHidden: true, includeExcluded: true });
   const picked = all.filter((t) => wanted.has(t.id));
@@ -272,32 +330,56 @@ export function bulkEdit(store: Store, ids: unknown, change: BulkChange, now: Da
   const at = now.toISOString();
   const cards = new Set(store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card').map((a) => a.id));
   let changed = 0;
+  let ruled = 0;
   let rebuilds = false;
   if ('category' in change) {
-    const name = change.category === null ? null : cleanCategoryName(change.category);
-    if (change.category !== null && name === null) return { ok: false, status: 400, error: `category must be text of 1 to ${MAX_NAME} characters` };
-    if (name !== null && !new Set([...all.map((t) => t.category), ...store.listCustomCategories()]).has(name)) store.addCustomCategory(name, at);
-    for (const t of picked) {
-      if (isManualId(t.id)) {
-        const manual = store.listManualTransactions().find((m) => m.id === manualNumber(t.id));
-        if (!manual) continue;
-        store.saveManualTransaction({ ...manual, category: name }, at);
-        rebuilds = true;
-      } else store.setCategoryOverride(t.id, name, at);
-      changed++;
+    const typed = change.category === null ? null : cleanCategoryName(change.category);
+    if (change.category !== null && typed === null) return { ok: false, status: 400, error: `category must be text of 1 to ${MAX_NAME} characters` };
+    // A renamed name goes to what it became, or the old category would be created again.
+    const name = typed === null ? null : resolveName(store, typed);
+    const known = new Set([...all.map((t) => t.category), ...store.listCustomCategories()]);
+    if (name !== null) {
+      const refused = newCategoryError(store, name, known);
+      if (refused) return { ok: false, status: 400, error: refused };
     }
+    const manuals = new Map(store.listManualTransactions().map((m) => [m.id, m]));
+    store.transaction(() => {
+      if (name !== null && !known.has(name)) store.addCustomCategory(name, at);
+      const ruleKeys = new Set<string>();
+      for (const t of picked) {
+        if (isManualId(t.id)) {
+          const manual = manuals.get(manualNumber(t.id));
+          if (!manual) continue;
+          store.saveManualTransaction({ ...manual, category: name }, at);
+          rebuilds = true;
+        } else store.setCategoryOverride(t.id, name, at);
+        if (options.applyToSimilar === true) ruleKeys.add(ruleKey(t.description));
+        changed++;
+      }
+      for (const key of ruleKeys) store.setCategoryRule(key, name, at);
+      ruled = ruleKeys.size;
+    });
   } else if ('ignored' in change) {
     if (typeof change.ignored !== 'boolean') return { ok: false, status: 400, error: 'ignored must be true or false' };
-    for (const t of picked) if (!isManualId(t.id)) { store.setTransactionIgnored(t.id, change.ignored, at); changed++; rebuilds = true; }
+    const ignored = change.ignored;
+    store.transaction(() => {
+      for (const t of picked) if (!isManualId(t.id)) { store.setTransactionIgnored(t.id, ignored, at); changed++; rebuilds = true; }
+    });
   } else if ('status' in change) {
     if (change.status !== 'pending' && change.status !== 'posted' && change.status !== null) return { ok: false, status: 400, error: 'status must be pending, posted or null' };
-    for (const t of picked) if (!isManualId(t.id)) { store.setTransactionOverride(t.id, { status: change.status }, at); changed++; rebuilds = true; }
+    const status = change.status;
+    store.transaction(() => {
+      for (const t of picked) if (!isManualId(t.id)) { store.setTransactionOverride(t.id, { status }, at); changed++; rebuilds = true; }
+    });
   } else {
     if (change.cycleKey !== null && (typeof change.cycleKey !== 'string' || !/^\d{4}-\d{2}$/.test(change.cycleKey))) return { ok: false, status: 400, error: 'cycleKey must be YYYY-MM or null' };
-    for (const t of picked) if (!isManualId(t.id) && cards.has(t.accountId)) { store.setTransactionOverride(t.id, { cycleKey: change.cycleKey }, at); changed++; }
+    const cycleKey = change.cycleKey;
+    store.transaction(() => {
+      for (const t of picked) if (!isManualId(t.id) && cards.has(t.accountId)) { store.setTransactionOverride(t.id, { cycleKey }, at); changed++; }
+    });
   }
   if (rebuilds) rebuild(store, now);
-  return { ok: true, changed, skipped: wanted.size - changed };
+  return { ok: true, changed, skipped: wanted.size - changed, ...(options.applyToSimilar === true ? { ruled } : {}) };
 }
 
 /** "This is not the same transaction": the suggestion does not come back. */

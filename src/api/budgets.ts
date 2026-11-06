@@ -119,9 +119,7 @@ function checkTarget(store: Store, scope: unknown, nameInput: unknown): BudgetRe
 }
 
 /** A category and the group it sits in must not both have a budget, or the same money would be counted twice. */
-function overlapError(store: Store, scope: BudgetScope, name: string): string | null {
-  const rows = store.listBudgets();
-  const parents = categoryParents(store);
+export function overlapWith(rows: readonly BudgetRow[], parents: ReadonlyMap<string, string>, scope: BudgetScope, name: string): string | null {
   if (scope === 'category') {
     const parent = parents.get(name);
     if (parent && rows.some((r) => r.scope === 'group' && r.name === parent)) return `o grupo ${parent} já tem orçamento; use um ou outro`;
@@ -130,6 +128,32 @@ function overlapError(store: Store, scope: BudgetScope, name: string): string | 
     if (child) return `a categoria ${child.name}, que está neste grupo, já tem orçamento; use um ou outro`;
   }
   return null;
+}
+
+function overlapError(store: Store, scope: BudgetScope, name: string): string | null {
+  return overlapWith(store.listBudgets(), categoryParents(store), scope, name);
+}
+
+/** The group budget rows, as they would be after `from` is renamed to `to` (all rows when nothing is renamed). */
+export function rowsAfterGroupRename(rows: readonly BudgetRow[], from: string | null, to: string): BudgetRow[] {
+  return rows.map((r) => (from !== null && r.scope === 'group' && r.name === from ? { ...r, name: to } : r));
+}
+
+/** Moves the budget of a group to its new name. Months the new name already has keep the amount it has. */
+export function renameGroupBudget(store: Store, from: string, to: string, now: Date): void {
+  if (from === to) return;
+  const rows = store.listBudgets();
+  const at = now.toISOString();
+  for (const r of rows) {
+    if (r.scope !== 'group' || r.name !== from) continue;
+    if (!rows.some((o) => o.scope === 'group' && o.name === to && o.month === r.month)) store.setBudget('group', to, r.month, r.amount, r.recurring, at);
+    store.setBudget('group', from, r.month, null, false, at);
+  }
+}
+
+/** Drops the budget of a group that no longer exists, so no line keeps showing it with zero spending. */
+export function removeGroupBudget(store: Store, name: string, now: Date): void {
+  for (const r of store.listBudgets()) if (r.scope === 'group' && r.name === name) store.setBudget('group', name, r.month, null, false, now.toISOString());
 }
 
 export function setBudget(store: Store, body: Record<string, unknown>, now: Date): BudgetResult {

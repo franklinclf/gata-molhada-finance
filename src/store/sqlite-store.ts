@@ -189,19 +189,27 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
   if (path !== ':memory:') db.exec('PRAGMA journal_mode = WAL');
   migrate(db, migrationsDir);
 
+  // Re-entrant: a call made inside an open transaction joins it, so callers can group several store calls into one commit.
+  let depth = 0;
   function inTransaction(work: () => void): void {
+    if (depth > 0) return work();
     db.exec('BEGIN');
+    depth++;
     try {
       work();
       db.exec('COMMIT');
     } catch (error) {
       db.exec('ROLLBACK');
       throw error;
+    } finally {
+      depth--;
     }
   }
 
   return {
     schemaVersion: () => currentVersion(db),
+
+    transaction: inTransaction,
 
     registerSource(source: SourceRegistration, now: string): void {
       db.prepare(

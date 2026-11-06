@@ -3,7 +3,8 @@ import { CATEGORY_NAMES } from '../ai/taxonomy.ts';
 import { localMonth } from '../core/time.ts';
 import { monthSpend } from '../ai/spend.ts';
 import type { AiStatus, Store } from '../store/store.ts';
-import { cleanCategoryName, type MutationResult } from './mutations.ts';
+import { categoryForMcc } from './mcc.ts';
+import { cleanCategoryName, newCategoryError, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, ruleKey } from './scope.ts';
 
 export interface Suggestion {
@@ -96,7 +97,9 @@ export function decide(store: Store, key: unknown, action: unknown, category: un
   if (action === 'accept') {
     const chosen = category === undefined || category === null ? entry.category : cleanCategoryName(category);
     if (chosen === null) return { ok: false, status: 400, error: 'category must be text of 1 to 60 characters' };
-    const known = new Set([...effectiveTransactions(store, { includeHidden: true }).map((t) => t.category), ...store.listCustomCategories()]);
+    const known = new Set<string>([...effectiveTransactions(store, { includeHidden: true }).flatMap((t) => (t.category === null ? [] : [t.category])), ...store.listCustomCategories()]);
+    const refused = isBuiltin(chosen) ? null : newCategoryError(store, chosen, known);
+    if (refused) return { ok: false, status: 400, error: refused };
     if (!known.has(chosen) && !isBuiltin(chosen)) store.addCustomCategory(chosen, iso);
     store.setCategoryRule(key, chosen, iso);
     store.setAiCategoryStatus(key, 'accepted');
@@ -126,28 +129,42 @@ export function resetDecisions(store: Store, statuses: unknown, now: Date): { ok
   return { ok: true, reset: store.deleteAiCategoriesByStatus(wanted) };
 }
 
+type Decider = 'rule' | 'source' | 'ai' | 'none';
+
+/** Who decided the category of one transaction, following the order of decision in scope.ts (override or rule, source facts, AI). */
+function deciderOf(t: ReturnType<typeof effectiveTransactions>[number]): Decider {
+  if (t.categoryOrigin === 'override' || t.categoryOrigin === 'rule') return 'rule';
+  if (t.categoryOrigin === 'ai') return 'ai';
+  // Source label tables, Pix or TED to a person and the merchant code all decide before the AI and keep the origin 'source'.
+  const person = /^(pix|ted)$/i.test(t.operation ?? '') && t.counterparty?.kind === 'person' && !t.counterparty.isOwner;
+  return t.sourceLabels.some((l) => mapSourceCategory(l) !== null) || person || categoryForMcc(t.mcc) !== null || t.role !== null ? 'source' : 'none';
+}
+
 export function aiView(store: Store, now: Date): AiView {
   const raw = store.getSetting(AI_JOB_KEY);
   const job = raw ? (JSON.parse(raw) as AiView['job'] & { monthlyBudget?: number }) : { enabled: false, model: null, lastRunAt: null, lastResult: null };
   const entries = [...store.listAiCategories().values()];
   const transactions = effectiveTransactions(store, { includeHidden: true });
-  const byKey = new Map<string, { count: number; id: string; sourceCategory: string | null; at: string; settled: boolean }>();
+  // Each description is judged by the latest transaction that carries it, using the origin the category pipeline
+  // itself reported (scope.ts), so the split follows the real order of decision. `settled` (no suggestion needed) is true
+  // if any of them has a rule, a role or a source fact behind its category.
+  const byKey = new Map<string, { count: number; id: string; sourceCategory: string | null; at: string; settled: boolean; decider: Decider }>();
   for (const t of transactions) {
     const key = ruleKey(t.description);
-    // A description whose label a table translates, or that has a role, no longer needs a suggestion.
-    const row = byKey.get(key) ?? { count: 0, id: t.id, sourceCategory: t.sourceCategory, at: t.occurredAt, settled: t.sourceLabels.some((l) => mapSourceCategory(l) !== null) || t.role !== null };
+    const decider = deciderOf(t);
+    const row = byKey.get(key) ?? { count: 0, id: t.id, sourceCategory: t.sourceCategory, at: t.occurredAt, settled: false, decider };
     row.count += 1;
-    if (t.occurredAt > row.at) Object.assign(row, { id: t.id, sourceCategory: t.sourceCategory, at: t.occurredAt });
+    if (decider === 'source' || t.categoryOrigin === 'rule') row.settled = true;
+    if (t.occurredAt > row.at) Object.assign(row, { id: t.id, sourceCategory: t.sourceCategory, at: t.occurredAt, decider });
     byKey.set(key, row);
   }
-  const rules = store.listCategoryRules();
   const byKeyEntry = new Map(entries.map((e) => [e.matchKey, e]));
   const coverage = { descriptions: byKey.size, byRule: 0, bySource: 0, byAi: 0, waiting: 0, rejected: 0, open: 0 };
   for (const [key, row] of byKey) {
     const entry = byKeyEntry.get(key);
-    if (rules.has(key) || entry?.status === 'accepted') coverage.byRule++;
+    if (row.decider === 'rule') coverage.byRule++;
     else if (row.settled) coverage.bySource++;
-    else if (entry?.status === 'applied') coverage.byAi++;
+    else if (row.decider === 'ai') coverage.byAi++;
     else if (entry?.status === 'suggested') coverage.waiting++;
     else if (entry?.status === 'rejected' || entry?.status === 'skipped') coverage.rejected++;
     else coverage.open++;
@@ -163,7 +180,8 @@ export function aiView(store: Store, now: Date): AiView {
     recordedThisMonth: spend.recorded,
     keyThisMonth: spend.keyTotal !== null && spend.keyFetchedAt !== null ? { usd: spend.keyTotal, at: spend.keyFetchedAt } : null,
     monthlyBudget: (job as { monthlyBudget?: number }).monthlyBudget ?? null,
-    applied: entries.filter((e) => e.status === 'applied').length,
+    // Same base as coverage.byAi: descriptions whose current category the AI really decided.
+    applied: coverage.byAi,
     coverage,
     suggestions,
     matches: matchesView(store),
@@ -190,7 +208,9 @@ export function acceptSuggestion(store: Store, key: unknown, category: unknown, 
   if (!entry || entry.status !== 'suggested') return { ok: false, status: 404, error: 'not_found' };
   const chosen = category === undefined || category === null ? entry.category : cleanCategoryName(category);
   if (chosen === null) return { ok: false, status: 400, error: 'category must be text of 1 to 60 characters' };
-  const known = new Set([...effectiveTransactions(store, { includeHidden: true }).map((t) => t.category), ...store.listCustomCategories()]);
+  const known = new Set<string>([...effectiveTransactions(store, { includeHidden: true }).flatMap((t) => (t.category === null ? [] : [t.category])), ...store.listCustomCategories()]);
+  const refused = isBuiltin(chosen) ? null : newCategoryError(store, chosen, known);
+  if (refused) return { ok: false, status: 400, error: refused };
   if (!known.has(chosen) && !isBuiltin(chosen)) store.addCustomCategory(chosen, now.toISOString());
   store.setCategoryRule(key, chosen, now.toISOString());
   store.setAiCategoryStatus(key, 'accepted');

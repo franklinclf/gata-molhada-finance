@@ -386,9 +386,9 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         if (method !== 'POST') return methodNotAllowed();
         const input = parseBody(body);
         if (!input) return badRequest('body must be { ids, category | ignored | status | cycleKey }');
-        const { ids, ...change } = input;
-        const result = bulkEdit(store, ids, change, now);
-        return result.ok ? { status: 200, body: { ok: true, changed: result.changed, skipped: result.skipped } } : fromMutation(result);
+        const { ids, applyToSimilar, ...change } = input;
+        const result = bulkEdit(store, ids, change, now, { applyToSimilar });
+        return result.ok ? { status: 200, body: { ok: true, changed: result.changed, skipped: result.skipped, ...(result.ruled !== undefined ? { ruled: result.ruled } : {}) } } : fromMutation(result);
       }
       if (parts.length === 3 && id !== undefined) {
         if (method !== 'GET') return methodNotAllowed();
@@ -473,6 +473,8 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       return null;
     }
     case 'category-groups': {
+      // POST /api/category-groups creates; PUT and DELETE name the group in the path. Any other shape is not a route.
+      if (parts.length !== (method === 'POST' ? 2 : 3)) return method === 'POST' || method === 'PUT' || method === 'DELETE' ? null : methodNotAllowed();
       let name: string | null = null;
       if (parts.length === 3 && id !== undefined) {
         try {
