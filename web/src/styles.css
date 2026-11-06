@@ -521,3 +521,15 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .correct { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .bill-editor { display: flex; flex-direction: column; gap: 10px; background: var(--card-2); border-radius: 14px; padding: 12px; }
 .bill-editor input { background: var(--card); border: 1px solid var(--track); border-radius: 10px; padding: 6px 10px; min-height: 36px; }
+
+/* The dashboard can use the whole screen, and widgets move or resize from handles that show only on hover. */
+body.wide .main { max-width: none; }
+.mini-grip { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); z-index: 3; padding: 0 10px; line-height: 14px; font-size: 14px; color: var(--muted); background: var(--card-2); border-radius: 8px; cursor: grab; touch-action: none; user-select: none; opacity: 0; transition: opacity 0.15s; }
+.cell:hover .mini-grip, .cell.dragging .mini-grip { opacity: 1; }
+.resize.quiet { opacity: 0; transition: opacity 0.15s; }
+.cell:hover .resize.quiet, .cell.dragging .resize.quiet { opacity: 0.8; }
+@media (hover: none) { .mini-grip, .resize.quiet { display: none; } }
+
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; background: var(--card); border-radius: 16px; position: sticky; top: 8px; z-index: 5; }
+.tx.picked { background: color-mix(in srgb, var(--card) 85%, var(--accent) 15%); }
+.tx > input[type=checkbox] { flex: none; width: 18px; height: 18px; }

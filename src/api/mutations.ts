@@ -253,6 +253,53 @@ export function setTransactionCycle(store: Store, id: string, cycleKey: unknown,
   return { ok: true };
 }
 
+export interface BulkChange {
+  category?: unknown;
+  ignored?: unknown;
+  status?: unknown;
+  cycleKey?: unknown;
+}
+
+/** Applies one change to many transactions at once. The reads are done once, not once per transaction. */
+export function bulkEdit(store: Store, ids: unknown, change: BulkChange, now: Date): MutationResult & { changed?: number; skipped?: number } {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || ids.some((i) => typeof i !== 'string')) return { ok: false, status: 400, error: 'ids must be a list of 1 to 500 transaction ids' };
+  const keys = (['category', 'ignored', 'status', 'cycleKey'] as const).filter((k) => k in change);
+  if (keys.length !== 1) return { ok: false, status: 400, error: 'send exactly one of category, ignored, status or cycleKey' };
+  const wanted = new Set(ids as string[]);
+  const all = effectiveTransactions(store, { includeHidden: true, includeExcluded: true });
+  const picked = all.filter((t) => wanted.has(t.id));
+  if (picked.length === 0) return { ok: false, status: 404, error: 'not_found' };
+  const at = now.toISOString();
+  const cards = new Set(store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card').map((a) => a.id));
+  let changed = 0;
+  let rebuilds = false;
+  if ('category' in change) {
+    const name = change.category === null ? null : cleanCategoryName(change.category);
+    if (change.category !== null && name === null) return { ok: false, status: 400, error: `category must be text of 1 to ${MAX_NAME} characters` };
+    if (name !== null && !new Set([...all.map((t) => t.category), ...store.listCustomCategories()]).has(name)) store.addCustomCategory(name, at);
+    for (const t of picked) {
+      if (isManualId(t.id)) {
+        const manual = store.listManualTransactions().find((m) => m.id === manualNumber(t.id));
+        if (!manual) continue;
+        store.saveManualTransaction({ ...manual, category: name }, at);
+        rebuilds = true;
+      } else store.setCategoryOverride(t.id, name, at);
+      changed++;
+    }
+  } else if ('ignored' in change) {
+    if (typeof change.ignored !== 'boolean') return { ok: false, status: 400, error: 'ignored must be true or false' };
+    for (const t of picked) if (!isManualId(t.id)) { store.setTransactionIgnored(t.id, change.ignored, at); changed++; rebuilds = true; }
+  } else if ('status' in change) {
+    if (change.status !== 'pending' && change.status !== 'posted' && change.status !== null) return { ok: false, status: 400, error: 'status must be pending, posted or null' };
+    for (const t of picked) if (!isManualId(t.id)) { store.setTransactionOverride(t.id, { status: change.status }, at); changed++; rebuilds = true; }
+  } else {
+    if (change.cycleKey !== null && (typeof change.cycleKey !== 'string' || !/^\d{4}-\d{2}$/.test(change.cycleKey))) return { ok: false, status: 400, error: 'cycleKey must be YYYY-MM or null' };
+    for (const t of picked) if (!isManualId(t.id) && cards.has(t.accountId)) { store.setTransactionOverride(t.id, { cycleKey: change.cycleKey }, at); changed++; }
+  }
+  if (rebuilds) rebuild(store, now);
+  return { ok: true, changed, skipped: wanted.size - changed };
+}
+
 /** "This is not the same transaction": the suggestion does not come back. */
 export function dismissSuggestion(store: Store, findingId: string, now: Date): MutationResult {
   if (!store.listFindings().some((f) => f.id === findingId)) return { ok: false, status: 404, error: 'not_found' };

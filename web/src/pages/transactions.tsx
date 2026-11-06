@@ -6,6 +6,7 @@ import { ManualForm } from '../ManualForm.tsx';
 import { Select } from '../Select.tsx';
 import { PeriodPicker } from '../period.tsx';
 import { navigate, patchParams, type Route } from '../router.ts';
+import { CategorySelect } from '../CategorySelect.tsx';
 import { CheckList, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
 
 const STATES = ['confirmed', 'single_source', 'billed', 'stale_pending', 'ignored'].map((value) => ({ value, label: STATE_LABEL[value] ?? value }));
@@ -33,10 +34,14 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const [sheet, setSheet] = useState(false);
   const [adding, setAdding] = useState(p.get('new') === '1');
   const [version, setVersion] = useState(0);
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [note, setNote] = useState<string | null>(null);
   const key = [...p.entries()].filter(([k]) => k !== 'tx').map(([k, v]) => `${k}=${v}`).sort().join('&');
 
   // Changing a filter starts again from the first page.
   useEffect(() => setLimit(PAGE), [key]);
+  useEffect(() => setPicked([]), [key]);
   useEffect(() => setText(p.get('q') ?? ''), [p.get('q')]);
   useEffect(() => {
     if (text === (p.get('q') ?? '')) return;
@@ -54,6 +59,16 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const { data, error, loading } = useLoad(() => api.explore(query), [query.toString(), version]);
   const cards = useLoad(() => api.cards(), []);
 
+  const bulk = async (change: Parameters<typeof api.bulkEdit>[1]) => {
+    setNote(null);
+    try {
+      const r = await api.bulkEdit(picked, change);
+      setNote(`${r.changed} alterada${r.changed === 1 ? '' : 's'}${r.skipped > 0 ? `, ${r.skipped} não se aplica${r.skipped === 1 ? '' : 'm'}` : ''}.`);
+      setPicked([]);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Não foi possível alterar.');
+    }
+  };
   const set = (updates: Record<string, string | string[] | null | undefined>) => patchParams(updates);
   const kind = p.get('kind') ?? 'all';
   const categories = p.getAll('category');
@@ -157,10 +172,27 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         <button class={active.length > 0 ? 'chip on filter-toggle' : 'chip filter-toggle'} onClick={() => setSheet(true)}>
           Filtros{active.length > 0 ? ` (${active.length})` : ''}
         </button>
+        <button class={picking ? 'chip on' : 'chip'} onClick={() => { setPicking(!picking); setPicked([]); }} aria-pressed={picking}>
+          Selecionar
+        </button>
         <button class="chip" onClick={() => setAdding(!adding)}>
           + Nova
         </button>
       </div>
+
+      {picking && (
+        <div class="bulk-bar">
+          <strong>{picked.length} selecionada{picked.length === 1 ? '' : 's'}</strong>
+          <button class="link" onClick={() => setPicked(data?.items.map((t) => t.id) ?? [])}>Selecionar as {data?.items.length ?? 0} exibidas</button>
+          {picked.length > 0 && <button class="link" onClick={() => setPicked([])}>Limpar</button>}
+          <CategorySelect ariaLabel="Categoria das selecionadas" placeholder="Mudar categoria para..." value="" onChange={(category) => category !== '' && picked.length > 0 && void bulk({ category })} />
+          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: 'posted' })}>Marcar lançadas</button>
+          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: 'pending' })}>Marcar pendentes</button>
+          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ ignored: true })}>Ignorar</button>
+          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ ignored: false })}>Restaurar</button>
+          {note && <span class="muted">{note}</span>}
+        </div>
+      )}
 
       {active.length > 0 && (
         <div class="active">
@@ -203,7 +235,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
               ) : (
                 <ul class="rows tall tx-list panel">
                   {data.items.map((t) => (
-                    <TxRow key={t.id} t={t} hidden={hidden} onOpen={(id) => patchParams({ tx: id })} />
+                    <TxRow key={t.id} t={t} hidden={hidden} onOpen={(id) => patchParams({ tx: id })} pick={picking ? { on: picked.includes(t.id), toggle: () => setPicked(picked.includes(t.id) ? picked.filter((x) => x !== t.id) : [...picked, t.id]) } : undefined} />
                   ))}
                 </ul>
               )}
