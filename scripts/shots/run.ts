@@ -1,12 +1,15 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { buildFixtures } from './fixtures.ts';
+import { buildFixtures, type FixtureVariant } from './fixtures.ts';
 
 /**
  * Photographs the app at several screen sizes with the Chrome installed on the machine, using invented data.
- * No server and no login are needed. Usage: npm run shots [-- <route> ...] [--size desktop|laptop|tablet|phone]
- * Photos go to shots/ (not committed). Tall pages are photographed with a tall window.
+ * No server and no login are needed.
+ * Usage: npm run shots [-- <route> ...] [--size desktop,laptop,tablet,phone] [--scenario <name>]
+ * Scenarios: `default` (values hidden, as a new device opens), `visible` (values shown), `light` (light palette),
+ * `empty` (nothing connected yet), `dense` (more cards, long names, large values).
+ * Photos go to shots/<scenario>/ (not committed). Tall pages are photographed with a tall window.
  */
 const root = resolve(import.meta.dirname, '../..');
 const out = resolve(root, 'shots');
@@ -29,8 +32,16 @@ function findBrowser(): string {
 const chrome = findBrowser();
 
 const SIZES: Record<string, [number, number]> = { desktop: [1440, 1000], laptop: [1024, 768], tablet: [768, 1024], phone: [390, 844] };
+const SCENARIOS: Record<string, { fixtures: FixtureVariant; storage: Record<string, string> }> = {
+  default: { fixtures: 'default', storage: {} },
+  visible: { fixtures: 'default', storage: { 'gmf.hidden': '0' } },
+  light: { fixtures: 'default', storage: { 'gmf.hidden': '0', 'gmf-palette': 'claro' } },
+  empty: { fixtures: 'empty', storage: { 'gmf.hidden': '0' } },
+  dense: { fixtures: 'dense', storage: { 'gmf.hidden': '0' } },
+};
 const ROUTES: Array<[string, string, number]> = [
   ['painel', '', 1500],
+  ['painel-personalizar', `?__clickText=${encodeURIComponent('Personalizar painel')}`, 1500],
   ['painel-calendario-dia', `?__click=${encodeURIComponent('.mini-day[aria-label^="15/"]')}`, 3200],
   ['transacoes', 'transactions', 1300],
   ['gastos', 'spending', 1500],
@@ -38,19 +49,20 @@ const ROUTES: Array<[string, string, number]> = [
   ['cartoes', 'cards', 1500],
   ['cartoes-conferir', 'cards?tab=check', 1300],
   ['cartoes-futuras', 'cards?tab=forecast', 1500],
-  ['cartoes-parcelas', 'cards?tab=installments', 1500],
   ['orcamento', 'budgets', 1300],
-  ['patrimonio', 'networth', 1200],
+  ['patrimonio', 'accounts?view=networth', 1200],
   ['metas', 'goals', 1200],
   ['analista', 'chat?c=1', 1100],
   ['calendario', 'calendar', 1500],
   ['contas', 'accounts', 1200],
-  ['fluxo', 'cashflow', 1500],
-  ['fontes', 'status', 1300],
+  ['fluxo', 'accounts?view=cashflow', 1500],
+  ['transacoes-selecao', `transactions?__clickText=${encodeURIComponent('Selecionar')}`, 1300],
   ['ajustes-contas', 'settings', 1100],
   ['ajustes-categorias', 'settings?tab=categories', 1600],
   ['ajustes-regras', 'settings?tab=rules', 1100],
   ['ajustes-ia', 'settings?tab=ai', 1500],
+  ['ajustes-dados', 'settings?tab=data', 2200],
+  ['ajustes-aparencia', 'settings?tab=appearance', 1300],
   ['ajustes-seguranca', 'settings?tab=security', 1100],
   ['detalhe', 'transactions?tx=detail', 1300],
   ['seletor-categoria', `transactions?tx=detail&__click=${encodeURIComponent('.select-btn[aria-label="Categoria"]')}`, 1300],
@@ -58,24 +70,32 @@ const ROUTES: Array<[string, string, number]> = [
 ];
 
 const args = process.argv.slice(2);
-const sizeFlag = args.indexOf('--size');
-const sizes = sizeFlag >= 0 ? [args[sizeFlag + 1]!] : Object.keys(SIZES);
-const wanted = args.filter((a, i) => !a.startsWith('--') && (sizeFlag < 0 || i !== sizeFlag + 1));
+const flag = (name: string) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : undefined);
+const sizes = flag('--size') ? flag('--size')!.split(',') : Object.keys(SIZES);
+const scenarioName = flag('--scenario') ?? 'default';
+const scenario = SCENARIOS[scenarioName];
+if (!scenario) throw new Error(`unknown scenario ${scenarioName}; use ${Object.keys(SCENARIOS).join(', ')}`);
+const flagValues = new Set(['--size', '--scenario'].map((f) => args.indexOf(f) + 1).filter((i) => i > 0));
+const wanted = args.filter((a, i) => !a.startsWith('--') && !flagValues.has(i));
 
 console.log('building the app for photos...');
 execFileSync('npx', ['vite', 'build', '--config', 'web/vite.config.ts', '--base', './', '--outDir', '../dist/shots', '--emptyOutDir'], { cwd: root, stdio: 'ignore' });
-const fixtures = buildFixtures();
-const html = readFileSync(resolve(site, 'index.html'), 'utf8').replace('<head>', `<head><script>window.__FIXTURES__=${JSON.stringify(fixtures).replace(/</g, '\\u003c')};</script><script>${readFileSync(resolve(import.meta.dirname, 'mock.js'), 'utf8')}</script>`);
+const fixtures = buildFixtures(new Date(), scenario.fixtures);
+// The preferences a device would have saved (values shown, palette), set before the app reads them.
+const storage = `<script>localStorage.clear();${Object.entries(scenario.storage).map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)},${JSON.stringify(v)});`).join('')}</script>`;
+const html = readFileSync(resolve(site, 'index.html'), 'utf8').replace('<head>', `<head>${storage}<script>window.__FIXTURES__=${JSON.stringify(fixtures).replace(/</g, '\\u003c')};</script><script>${readFileSync(resolve(import.meta.dirname, 'mock.js'), 'utf8')}</script>`);
 writeFileSync(resolve(site, 'index.html'), html);
+if (fixtures.pastCycle) ROUTES.push(['cartoes-ciclo-passado', `cards?cycle=${fixtures.pastCycle}`, 1500]);
 
-rmSync(out, { recursive: true, force: true });
-mkdirSync(out, { recursive: true });
+const dir = resolve(out, scenarioName);
+rmSync(dir, { recursive: true, force: true });
+mkdirSync(dir, { recursive: true });
 let count = 0;
 for (const size of sizes) {
   const [width, baseHeight] = SIZES[size]!;
   for (const [name, route, tall] of ROUTES) {
     if (wanted.length > 0 && !wanted.includes(name)) continue;
-    const file = resolve(out, `${name}-${size}.png`);
+    const file = resolve(dir, `${name}-${size}.png`);
     const height = size === 'phone' || size === 'tablet' ? Math.max(baseHeight, tall + 700) : Math.max(baseHeight, tall);
     try {
       execFileSync(chrome, ['--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--allow-file-access-from-files', '--force-device-scale-factor=1', `--window-size=${width},${height}`, '--virtual-time-budget=6000', `--screenshot=${file}`, `file://${site}/index.html#/${route}`], { stdio: 'ignore', timeout: 60_000 });
@@ -85,4 +105,4 @@ for (const size of sizes) {
     }
   }
 }
-console.log(`${count} photos in ${out}`);
+console.log(`${count} photos in ${dir}`);
