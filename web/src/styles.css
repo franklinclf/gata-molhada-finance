@@ -573,3 +573,29 @@ body.wide .main { max-width: none; }
 /* ---------- faturas e previsão ---------- */
 /* Open bill with no purchases yet: a sentence in place of a big zero. */
 .big-empty { font-size: 18px; font-weight: 600; color: var(--muted); }
+/* ---------- gastos: o que mudou no mês e tela de Gastos ---------- */
+/* Trend rows: fixed columns so the sparklines line up whatever the text beside them says. */
+.rows li.trend-row { display: grid; grid-template-columns: minmax(0, 1fr) 80px 128px 112px 116px; align-items: center; column-gap: 12px; }
+.trend-row .spark { justify-self: center; }
+.trend-row > span, .trend-row > strong { text-align: right; }
+.trend-row > .clip { text-align: left; }
+.trend-note { white-space: nowrap; font-size: 12px; }
+@media (max-width: 760px) {
+  .trend-row { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 2px; }
+  .trend-row > .clip { grid-column: 1 / -1; }
+  .trend-row .spark { display: none; }
+  .trend-row > :nth-child(3) { text-align: left; }
+}
+.changes-list li { align-items: flex-start; }
+.changes-list li > span { flex: 1; min-width: 0; white-space: normal; line-height: 1.45; }
+.chart-caption { margin-top: 4px; font-size: 12px; }
+.bar-value { font-size: 11px; }
+.bars.sel-values .bar-value { overflow: visible; text-overflow: clip; display: flex; justify-content: center; }
+@media (max-width: 760px) {
+  .bars.sel-values .bar:not([aria-pressed='true']) .bar-value { visibility: hidden; }
+}
+.ring-center { pointer-events: none; text-align: center; padding: 0 28px; }
+.ring-label { font-size: 11px; color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ring-total { font-size: 15px; font-variant-numeric: tabular-nums; max-width: 100%; white-space: nowrap; }
+.trend-widget-row { gap: 8px; }
+.trend-widget-total { margin-top: 8px; font-size: 12px; white-space: normal; }

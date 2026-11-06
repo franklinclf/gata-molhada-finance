@@ -15,6 +15,7 @@ import type { ChatConversation, ChatMessage } from '../../src/store/store.ts';
 import type { GoalView } from '../../src/api/goals.ts';
 import type { CalendarView, CalendarDay } from '../../src/api/calendar.ts';
 import type { RecurringItem } from '../../src/api/recurring.ts';
+import type { CompareView } from '../../src/api/compare.ts';
 import type { TrendView } from '../../src/api/trends.ts';
 import type { NetWorthView } from '../../src/api/networth.ts';
 import type { BudgetsView, BudgetLine, SuggestionLine } from '../../src/api/budgets.ts';
@@ -23,7 +24,7 @@ import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts'
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, CompareView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -187,6 +188,7 @@ export const api = {
     request<{ ok: true }>('/api/recurring/mark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, label }) }),
   ignoreRecurring: (key: string, ignored: boolean) =>
     request<{ ok: true }>('/api/recurring/ignore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, ignored }) }),
+  spendingCompare: (month?: string) => request<CompareView>(`/api/spending/compare${query({ month })}`),
   spendingTrend: (months: number) => request<TrendView>(`/api/spending/trend${query({ months })}`),
   netWorth: () => request<NetWorthView>('/api/networth'),
   addAsset: (name: string, kind: 'asset' | 'liability', value: number | null) =>
