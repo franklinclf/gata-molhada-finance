@@ -356,18 +356,24 @@ export interface SpendingView extends Stamped, DateRange {
   daily: Array<{ day: string; amount: Cents }>;
 }
 
+/** The transactions the spending view counts: no card payments or own moves, and no bank money in except a refund paired with its purchase. */
+export function spendingTransactions(store: Store, range: DateRange, opts: ViewOptions = {}): EffectiveTransaction[] {
+  const bankIds = new Set(visibleAccounts(store, opts).filter(isBank).map((a) => a.id));
+  return liveTransactions(store, range, opts).filter((t) => {
+    if (isNonSpending(t)) return false;
+    // Money coming into a bank account is income. Only card credits (refunds) reduce spending.
+    // A refund paired with its purchase is not income: it returns what the purchase spent.
+    return !(t.amount > 0 && bankIds.has(t.accountId) && !t.reversal);
+  });
+}
+
 /** What was spent, dated by purchase (accrual): card purchases on the purchase day, bank outflows on their day. Refunds subtract. */
 export function spending(store: Store, range: DateRange, groupBy: SpendingGroup, now: Date, opts: ViewOptions = {}): SpendingView {
   const accounts = visibleAccounts(store, opts);
-  const bankIds = new Set(accounts.filter(isBank).map((a) => a.id));
   const parents = categoryParents(store);
   const rows = new Map<string, { amount: Cents; count: number }>();
   const perDay = new Map<string, Cents>();
-  for (const t of liveTransactions(store, range, opts)) {
-    if (isNonSpending(t)) continue;
-    // Money coming into a bank account is income. Only card credits (refunds) reduce spending.
-    // A refund paired with its purchase is not income: it returns what the purchase spent.
-    if (t.amount > 0 && bankIds.has(t.accountId) && !t.reversal) continue;
+  for (const t of spendingTransactions(store, range, opts)) {
     const day = localDay(t.occurredAt);
     perDay.set(day, (perDay.get(day) ?? 0) - t.amount);
     const name = groupBy === 'category' ? (t.category ?? 'Sem categoria') : merchantOf(t);

@@ -11,6 +11,7 @@ import { createGoal, deleteGoal, listGoals, updateGoal, type GoalResult } from '
 import { calendar } from './calendar.ts';
 import { detectRecurring, ignoreRecurring, markRecurring } from './recurring.ts';
 import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
+import { compareMonths, isMonth } from './compare.ts';
 import { categoryTrend } from './trends.ts';
 import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type AssetResult } from './networth.ts';
 import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type BudgetResult } from './budgets.ts';
@@ -365,6 +366,13 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const months = Number(params.get('months') ?? '6');
         if (![3, 6, 12].includes(months)) return badRequest('months must be 3, 6 or 12');
         return { status: 200, body: categoryTrend(store, now, months) };
+      }
+      if (resource === 'spending' && parts.length === 3 && id === 'compare') {
+        if (method !== 'GET') return methodNotAllowed();
+        const thisMonth = localDay(now.toISOString()).slice(0, 7);
+        const month = params.get('month') ?? thisMonth;
+        if (!isMonth(month) || month > thisMonth) return badRequest('month must be YYYY-MM and not in the future');
+        return { status: 200, body: compareMonths(store, month, now, opts) };
       }
       if (parts.length !== 2) return null;
       if (method !== 'GET') return methodNotAllowed();

@@ -1,33 +1,54 @@
 import { api } from '../api.ts';
-import { Sparkline } from '../charts.tsx';
-import { brl, percent } from '../format.ts';
+import { brl, monthName, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Go } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
-/** The categories whose spending this month is furthest above their average of the closed months. */
+/** A rise smaller than this (R$ 20) is noise, not news. */
+const MIN_RISE = 2000;
+
+/** The categories that rose most against the same days of last month, with the merchants behind each rise. */
 export function TrendWidget({ now, hidden, size }: WidgetProps) {
-  const { data, error, loading } = useLoad(() => api.spendingTrend(6), [], 300_000);
-  const rows = (data?.rows ?? [])
-    .filter((r) => r.average > 0 && r.current > r.average * 1.25 && r.current - r.average >= 2000)
-    .sort((a, b) => b.current - b.average - (a.current - a.average))
-    .slice(0, size === 'lg' ? 8 : 4);
+  const { data, error, loading } = useLoad(() => api.spendingCompare(), [], 300_000);
+  const limit = size === 'sm' ? 1 : size === 'md' ? 3 : 8;
+  const rises = (data?.categories ?? []).filter((l) => l.delta >= MIN_RISE).slice(0, limit);
+  const drivers = new Map((data?.drivers ?? []).map((d) => [d.category, d.merchants]));
+  const prevName = data ? monthName(data.previous.from.slice(0, 7)) : '';
+  const day = data ? Number(data.to.slice(8, 10)) : 0;
+  const link = (name: string) => ({ category: name, from: data?.from, to: data?.to, netSpending: 'true' });
   return (
-    <Widget title="Maiores altas" to={{ page: 'spending', params: { by: 'trend' } }} now={now} loading={loading && !data} error={error} head={data && <div class="muted">categorias bem acima da média dos meses fechados</div>}>
+    <Widget
+      title="Maiores altas"
+      to={{ page: 'spending', params: { by: 'trend' } }}
+      now={now}
+      loading={loading && !data}
+      error={error}
+      head={data && <div class="muted">{size === 'lg' ? `até o dia ${day}, contra os mesmos dias de ${prevName}` : `contra os mesmos dias de ${prevName}`}</div>}
+    >
       <ul class="rows tall">
-        {rows.map((r) => (
-          <li key={r.name}>
-            <Go class="grow clip" page="spending" params={{ by: 'trend' }}>
-              {r.name}
-            </Go>
-            {size !== 'sm' && <Sparkline points={r.points} />}
-            <strong>{brl(r.current, hidden)}</strong>
-            <span class="bad-text">▲ {percent(r.current / r.average - 1)}</span>
-          </li>
-        ))}
-        {data && rows.length === 0 && <li class="empty">Nenhuma categoria muito acima da média.</li>}
+        {rises.map((r) => {
+          const top = size === 'sm' ? undefined : drivers.get(r.name)?.[0];
+          return (
+            <li key={r.name} class={size === 'sm' ? undefined : 'trend-widget-row'}>
+              <span class="grow clip">
+                <Go page="transactions" params={link(r.name)}>
+                  {r.name}
+                </Go>
+                {top && <span class="muted"> · por {top.name}</span>}
+              </span>
+              <strong>{brl(r.delta, hidden)}</strong>
+              <span class="bad-text">{r.previous > 0 ? `▲ ${percent(r.current / r.previous - 1)}` : 'novo'}</span>
+            </li>
+          );
+        })}
+        {data && rises.length === 0 && <li class="empty">Nenhuma categoria gastou bem mais que no mesmo trecho de {prevName}.</li>}
       </ul>
+      {data && size === 'lg' && (
+        <div class="muted trend-widget-total">
+          Total até o dia {day}: {brl(data.total.current, hidden)}, {brl(Math.abs(data.total.delta), hidden)} {data.total.delta >= 0 ? 'a mais' : 'a menos'} que em {prevName}.
+        </div>
+      )}
     </Widget>
   );
 }
