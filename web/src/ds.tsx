@@ -2,9 +2,19 @@ import type { ComponentChildren, JSX } from 'preact';
 
 /**
  * The few building blocks every screen uses, so a button or a label looks the same everywhere.
- * Styles live in styles.css under "design system"; colors come from the palette variables.
+ * Styles live in styles.css under "design system e cores"; colors come from the palette variables.
+ *
+ * Which control to use:
+ * - Button variant="primary": the one main action of a form or card. Same look as the older `.primary` class.
+ * - Button variant="secondary" (default): any other action. `size="sm"` matches the older `.small` class.
+ * - Button variant="ghost" or "link": a quiet text action inside a row or a sentence. "link" matches the older `.link` class.
+ * - Button variant="danger": delete or discard.
+ * - Chip: a toggle that filters or selects, like a period or "Selecionar". Replaces the older `.chip` buttons.
+ * - `.icon` and `.icon-btn` stay for the top bar, where the button holds only a symbol.
+ * The older classes (`.primary`, `.small`, `.link`, `.chip`, `.icon`) share the same radius, padding and hover as these in styles.css,
+ * so a screen that still uses them looks the same; new code should use the components.
  */
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'link';
 export type ButtonSize = 'sm' | 'md';
 
 const buttonClass = (variant: ButtonVariant, size: ButtonSize, extra?: string) => `btn btn-${variant}${size === 'sm' ? ' btn-sm' : ''}${extra ? ` ${extra}` : ''}`;
