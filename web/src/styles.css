@@ -565,3 +565,8 @@ body.wide .main { max-width: none; }
 
 .topbar-actions { align-items: center; margin-left: auto; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 7px 9px; }
+
+/* ---------- análises e consolidação ---------- */
+.chart-legend { font-size: 13px; margin: 4px 0 8px; }
+.cal-tag { display: block; font-size: 10px; line-height: 1.2; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-ahead { margin: 10px 0 4px; font-size: 14px; }

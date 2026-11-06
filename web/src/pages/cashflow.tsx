@@ -55,10 +55,19 @@ export function CashflowPage({ route, now, hidden, embedded = false }: { route: 
               <span class="muted">Saídas</span>
               <strong class="bad-text">{brl(flow.data.outflow, hidden)}</strong>
             </div>
+            {flow.data.invested !== 0 && (
+              <div>
+                <span class="muted">{flow.data.invested > 0 ? 'Investido no período' : 'Resgatado no período'}</span>
+                <strong>{brl(Math.abs(flow.data.invested), hidden)}</strong>
+              </div>
+            )}
           </div>
           <div class="panel">
+            <div class="muted chart-legend">Um ponto por dia do período: verde quando entrou mais do que saiu, vermelho quando saiu mais, cinza quando nada se moveu. Passe o mouse ou toque para ver os valores.</div>
             <DayDots days={flow.data.days} from={flow.data.from} to={flow.data.to} hidden={hidden} onSelect={(day) => patchParams({ from: day, to: day })} />
             <h3>Últimos 12 meses (clique em um mês)</h3>
+            {perMonth.size > 0 && [...perMonth.values()].every((r) => r.inflow === 0 && r.outflow === 0) && !yearAgo.loading && <div class="muted chart-legend">Nenhuma entrada ou saída nas contas nestes 12 meses.</div>}
+            <div class="muted chart-legend">Barras verdes são o que entrou no mês e vermelhas o que saiu. Os valores aparecem ao passar o mouse ou tocar.</div>
             <Bars
               hidden={hidden}
               height={150}
@@ -69,7 +78,7 @@ export function CashflowPage({ route, now, hidden, embedded = false }: { route: 
                 { key: `${m}:out`, group: m, label: '', value: perMonth.get(m)!.outflow, color: 'var(--bad)', tip: `${monthName(m)}\nSaiu ${hidden ? '••••' : brl(perMonth.get(m)!.outflow)}` },
               ])}
             />
-            <div class="note">Considera só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga. Transferências entre suas contas ficam de fora.</div>
+            <div class="note">Considera só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga. Transferências entre suas contas e aplicações ou resgates de investimento ficam de fora; o líquido investido aparece à parte.</div>
           </div>
           <div class="tabs">
             {[['all', 'Tudo'], ['in', 'Entradas'], ['out', 'Saídas']].map(([id, label]) => (

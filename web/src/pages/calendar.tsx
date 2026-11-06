@@ -17,6 +17,8 @@ const addMonths = (month: string, n: number): string => {
 function Cell({ d, today, picked, onPick, hidden }: { d: CalendarDay; today: string; picked: boolean; onPick: () => void; hidden: boolean }) {
   const out = d.projected.filter((p) => p.direction === 'out').reduce((s, p) => s + p.amount, 0);
   const inn = d.projected.filter((p) => p.direction === 'in').reduce((s, p) => s + p.amount, 0);
+  const bills = d.projected.filter((p) => p.kind === 'bill').length;
+  const late = d.projected.some((p) => p.kind === 'bill' && p.late);
   const className = ['cal-cell', d.day === today ? 'today' : '', picked ? 'picked' : '', d.day < today ? 'past' : ''].filter(Boolean).join(' ');
   return (
     <button class={className} onClick={onPick} aria-label={`${dayMonth(d.day)}`} aria-pressed={picked}>
@@ -25,6 +27,7 @@ function Cell({ d, today, picked, onPick, hidden }: { d: CalendarDay; today: str
       {d.outflow > 0 && <span class="cal-out">−{hidden ? '••' : brl(d.outflow).replace(/\s?R\$\s?/, '')}</span>}
       {inn > 0 && <span class="cal-in soft">+{hidden ? '••' : brl(inn).replace(/\s?R\$\s?/, '')}</span>}
       {out > 0 && <span class="cal-out soft">−{hidden ? '••' : brl(out).replace(/\s?R\$\s?/, '')}</span>}
+      {bills > 0 && <span class={late ? 'cal-tag bad-text' : 'cal-tag'}>{bills === 1 ? 'fatura' : `${bills} faturas`}</span>}
     </button>
   );
 }
@@ -47,6 +50,8 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
   if (error || (loading && !data)) return <div class="page-body"><h1 class="page-title">Calendário</h1><Loading error={error} /></div>;
   if (!data) return null;
   const first = new Date(`${month}-01T00:00:00Z`).getUTCDay();
+  const expected = data.days.filter((d) => d.day >= data.today).flatMap((d) => d.projected);
+  const ahead = { out: expected.filter((p) => p.direction === 'out').reduce((s, p) => s + p.amount, 0), in: expected.filter((p) => p.direction === 'in').reduce((s, p) => s + p.amount, 0) };
   return (
     <div class="page-body">
       <h1 class="page-title">Calendário</h1>
@@ -78,7 +83,12 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
             <Cell key={d.day} d={d} today={data.today} picked={picked !== null && d.day >= picked.from && d.day <= picked.to} hidden={hidden} onPick={() => tap(d.day)} />
           ))}
         </div>
-        <div class="note">Em cinza claro e itálico, o que se espera a partir de hoje: contas que se repetem todo mês e as faturas de cartão no vencimento. Só entram cobranças que saem da conta; o que vai no cartão já está na fatura.</div>
+        {ahead.out + ahead.in > 0 && (
+          <div class="cal-ahead">
+            Previsto de hoje até o fim do mês: saem {brl(ahead.out, hidden)} e entram {brl(ahead.in, hidden)}.
+          </div>
+        )}
+        <div class="note">Os números em cor forte são o que passou pela conta no dia. Em cinza claro e itálico, o que se espera a partir de hoje: contas que se repetem todo mês e as faturas de cartão no vencimento. Uma fatura vencida e ainda não paga aparece em hoje, marcada como atrasada, e pode somar vários cartões. Só entram cobranças que saem da conta; o que vai no cartão já está na fatura.</div>
       </div>
       {picked && <Selection from={picked.from} to={picked.to} days={data.days} hidden={hidden} onClear={() => setPicked(null)} />}
       <section class="panel">

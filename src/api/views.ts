@@ -1,9 +1,10 @@
-import type { CanonicalAccount, CanonicalTransaction } from '../core/canonical.ts';
-import type { Cents } from '../core/money.ts';
+import type { CanonicalAccount } from '../core/canonical.ts';
+import { formatBRL, type Cents } from '../core/money.ts';
 import { institutionKey } from '../core/names.ts';
 import { categoryParents } from './category-groups.ts';
 import { merchantOf } from '../core/merchant.ts';
-import { localDay } from '../core/time.ts';
+import { addDays } from '../core/dates.ts';
+import { DATA_START, localDay } from '../core/time.ts';
 import { summarizeAccounts } from '../reconcile/accounts.ts';
 import { cyclesFor, type Cycle } from './cycles.ts';
 import { installments } from './installments.ts';
@@ -32,13 +33,23 @@ export function monthRange(now: Date): DateRange {
   return { from: `${today.slice(0, 7)}-01`, to: today };
 }
 
-function inRange(t: CanonicalTransaction, range: DateRange): boolean {
-  const day = localDay(t.occurredAt);
-  return day >= range.from && day <= range.to;
+/**
+ * The one date window of the analysis views (spending, cash flow, trends, budgets, calendar) and of the explorer: nothing
+ * before DATA_START, because older records only exist for installments and bills. The ceiling is the range's own `to`, so
+ * a caller that means "so far" passes today (see `untilToday`) and a caller that looks ahead on purpose passes a later day.
+ */
+export function inWindow(day: string, range: DateRange): boolean {
+  return day >= DATA_START && day >= range.from && day <= range.to;
+}
+
+/** A range cut at today, for views that must not count purchases dated in the future (planned installments). */
+export function untilToday(range: DateRange, now: Date): DateRange {
+  const today = localDay(now.toISOString());
+  return { from: range.from, to: range.to < today ? range.to : today };
 }
 
 function liveTransactions(store: Store, range: DateRange, opts: ViewOptions): EffectiveTransaction[] {
-  return effectiveTransactions(store, opts).filter((t) => !t.excluded && inRange(t, range));
+  return effectiveTransactions(store, opts).filter((t) => !t.excluded && inWindow(localDay(t.occurredAt), range));
 }
 
 // ---------- balances ----------
@@ -320,16 +331,27 @@ export interface CashFlowView extends Stamped, DateRange {
   inflow: Cents;
   outflow: Cents;
   net: Cents;
+  /** Net money put into investments in the period (applications minus redemptions); negative when more was redeemed. Not in `inflow`, `outflow` or `net`. */
+  invested: Cents;
   days: Array<{ day: string; inflow: Cents; outflow: Cents }>;
 }
 
-/** Money that enters and leaves bank accounts. Card purchases count when the bill is paid; moves between own accounts are left out. */
+/**
+ * Money that enters and leaves bank accounts. Card purchases count when the bill is paid, so card payments stay in.
+ * Moves between own accounts are left out, and so are investments: putting money away or taking it back is not spending
+ * or income, and it is reported apart in `invested`.
+ */
 export function cashFlow(store: Store, range: DateRange, now: Date, opts: ViewOptions = {}): CashFlowView {
   const accounts = visibleAccounts(store, opts);
   const bankIds = new Set(accounts.filter(isBank).map((a) => a.id));
   const perDay = new Map<string, { inflow: Cents; outflow: Cents }>();
+  let invested = 0;
   for (const t of liveTransactions(store, range, opts)) {
     if (!bankIds.has(t.accountId) || isOwnTransfer(t)) continue;
+    if (t.role === 'investment') {
+      invested -= t.amount;
+      continue;
+    }
     const day = localDay(t.occurredAt);
     const row = perDay.get(day) ?? { inflow: 0, outflow: 0 };
     if (t.amount >= 0) row.inflow += t.amount;
@@ -339,7 +361,7 @@ export function cashFlow(store: Store, range: DateRange, now: Date, opts: ViewOp
   const days = [...perDay].sort(([a], [b]) => a.localeCompare(b)).map(([day, v]) => ({ day, ...v }));
   const inflow = days.reduce((s, d) => s + d.inflow, 0);
   const outflow = days.reduce((s, d) => s + d.outflow, 0);
-  return { ...stamp(accounts.filter(isBank), now), ...range, inflow, outflow, net: inflow - outflow, days };
+  return { ...stamp(accounts.filter(isBank), now), ...range, inflow, outflow, net: inflow - outflow, invested, days };
 }
 
 // ---------- spending ----------
@@ -403,6 +425,15 @@ export function dataHealth(store: Store, now: Date): HealthIssue[] {
     if (row.creditLimit !== null && row.outstanding > row.creditLimit) issues.push({ id: `owed-${row.id}`, message: `As faturas em aberto do cartão ${row.institution}${row.last4 ? ` ${row.last4}` : ''} somam mais que o limite dele. Confira se os pagamentos estão sendo reconhecidos.` });
   }
   if (view.totals.outstanding > view.totals.creditLimit && view.totals.creditLimit > 0) issues.push({ id: 'owed-total', message: 'O total de faturas fechadas e não pagas passa do limite somado dos cartões. Isso indica pagamentos não reconhecidos.' });
+  issues.push(...debtAboveIssuerBalance(view));
+  issues.push(...silentAccounts(store, now));
+  // A source that has not been read for far longer than its daily rhythm means the sync is stuck, not that nothing happened.
+  for (const f of store.listFreshness()) {
+    if (f.consentExpiresAt && Date.parse(f.consentExpiresAt) < now.getTime()) continue;
+    if (!isLate(f.lastUpdatedAt, now)) continue;
+    const days = Math.floor((now.getTime() - Date.parse(f.lastUpdatedAt)) / 86_400_000);
+    issues.push({ id: `stale-${f.sourceId}`, message: `Os dados de ${f.institution} não são atualizados há ${days < 1 ? 'mais de 3 dias' : `${days} dia${days === 1 ? '' : 's'}`}, mais do que o esperado para uma leitura por dia. Abra o Meu Pluggy e confira se a conexão está ativa.` });
+  }
   // A consent that ends makes the provider return empty reads without an error, so the owner is told ahead of time.
   for (const f of store.listFreshness()) {
     if (!f.consentExpiresAt) continue;
@@ -413,13 +444,100 @@ export function dataHealth(store: Store, now: Date): HealthIssue[] {
   return issues;
 }
 
+/** Money can be off by a few cents or a rounding on the issuer's side; below this the two figures count as equal. */
+const DEBT_TOLERANCE_CENTS = 1000;
+const DEBT_TOLERANCE_SHARE = 0.02;
+
+/**
+ * The issuer's balance holds everything a card owes: open bill, closed bills not paid and installments still to come. So what
+ * the app adds up for a card (or for a group that shares one limit, which reports a single balance) cannot be more than that
+ * balance. When it is, a payment was probably not recognized, was made twice, or a bill was published wrong.
+ */
+function debtAboveIssuerBalance(view: CardsView): HealthIssue[] {
+  const issues: HealthIssue[] = [];
+  const nameOf = (row: CardRow) => `${row.institution}${row.last4 ? ` ${row.last4}` : ''}`;
+  const check = (id: string, label: string, appOwes: Cents, issuerOwes: Cents) => {
+    if (appOwes <= issuerOwes + Math.max(DEBT_TOLERANCE_CENTS, issuerOwes * DEBT_TOLERANCE_SHARE)) return false;
+    issues.push({ id, message: `O app soma ${formatBRL(appOwes)} de dívida ${label}, mas o banco informa que você deve ${formatBRL(issuerOwes)}. Confira se há fatura paga que não foi reconhecida, pagamento em dobro ou fatura publicada com valor errado.` });
+    return true;
+  };
+  const grouped = new Set(view.limitGroups.flatMap((g) => g.cardIds));
+  const openPart = (row: CardRow) => (row.cycle?.status === 'open' ? row.posted + row.plannedInstallments : 0);
+  let any = false;
+  for (const row of view.cards) {
+    if (grouped.has(row.id) || row.cycle === null) continue;
+    any = check(`debt-${row.id}`, `no cartão ${nameOf(row)}`, row.outstanding + row.futureInstallments + openPart(row), row.balance) || any;
+  }
+  for (const g of view.limitGroups) {
+    const members = view.cards.filter((r) => g.cardIds.includes(r.id));
+    const first = members[0];
+    if (!first || members.some((r) => r.cycle === null)) continue;
+    const appOwes = members.reduce((s, r) => s + r.outstanding + r.futureInstallments + openPart(r), 0);
+    any = check(`debt-group-${g.id}`, `nos cartões de ${g.institution} que dividem o mesmo limite`, appOwes, first.balance) || any;
+  }
+  // The same comparison for the whole app, shown on its own only when no single card already explains it.
+  if (!any) check('debt-total', 'em faturas fechadas e não pagas', view.totals.outstanding, view.totals.reportedByIssuer);
+  return issues;
+}
+
+/** A card or account that gets no new transactions for a month while another account of the same bank does. */
+const SILENT_DAYS = 35;
+const SIBLING_ACTIVE_DAYS = 7;
+const CARD_BILL_LOOKBACK_DAYS = 90;
+/** An account with fewer transactions than this has no pace to fall behind (a savings account used once a year). */
+const MIN_HISTORY = 3;
+
+function silentAccounts(store: Store, now: Date): HealthIssue[] {
+  const today = localDay(now.toISOString());
+  const accounts = visibleAccounts(store, {});
+  const transactions = effectiveTransactions(store, {}, accounts).filter((t) => !t.excluded);
+  const lastOf = new Map<string, { day: string; count: number }>();
+  for (const t of transactions) {
+    const day = localDay(t.occurredAt);
+    if (day > today) continue;
+    const prev = lastOf.get(t.accountId);
+    lastOf.set(t.accountId, { day: prev && prev.day > day ? prev.day : day, count: (prev?.count ?? 0) + 1 });
+  }
+  const silentSince = addDays(today, -SILENT_DAYS);
+  const siblingSince = addDays(today, -SIBLING_ACTIVE_DAYS);
+  const billsSince = addDays(today, -CARD_BILL_LOOKBACK_DAYS);
+  const issues: HealthIssue[] = [];
+  for (const a of accounts) {
+    const mine = lastOf.get(a.id);
+    if (mine && mine.day >= silentSince) continue;
+    const hasPace = a.kind === 'credit_card'
+      ? cyclesFor(store, a, transactions, today).some((c) => c.billTotal !== null && c.billTotal > 0 && c.dueDate >= billsSince)
+      : (mine?.count ?? 0) >= MIN_HISTORY;
+    if (!hasPace) continue;
+    const key = institutionKey(a.institution);
+    const siblingActive = accounts.some((o) => o.id !== a.id && institutionKey(o.institution) === key && (lastOf.get(o.id)?.day ?? '') >= siblingSince);
+    if (!siblingActive) continue;
+    const name = `${a.kind === 'credit_card' ? 'O cartão' : 'A conta'} ${a.institution}${a.last4 ? ` ${a.last4}` : ` ${a.name}`}`;
+    issues.push({ id: `silent-${a.id}`, message: `${name} não recebe transações novas ${mine ? `desde ${mine.day.split('-').reverse().join('/')}` : `há mais de ${SILENT_DAYS} dias`}, enquanto outras contas do mesmo banco recebem. Confira no Meu Pluggy se esse item ainda está conectado.` });
+  }
+  return issues;
+}
+
+/**
+ * Hours between two reads that a source is expected to keep: Meu Pluggy reads each bank once a day (around 14:30 UTC),
+ * and the read shown can be a day and a half old before the next one. Used when there is no better history.
+ */
+export const EXPECTED_READ_HOURS = 36;
+/** Extra hours granted on top of two expected intervals before a source counts as late. */
+const LATE_GRACE_HOURS = 6;
+
+/** A source is late when it is older than two expected intervals plus a grace, not merely older than a few hours. */
+export function isLate(lastUpdatedAt: string, now: Date, expectedHours = EXPECTED_READ_HOURS): boolean {
+  return (now.getTime() - Date.parse(lastUpdatedAt)) / 3_600_000 > 2 * expectedHours + LATE_GRACE_HOURS;
+}
+
 /** How long before a consent ends the owner is warned. */
 const CONSENT_WARNING_DAYS = 30;
 
 export interface FreshnessView {
   generatedAt: string;
   health: HealthIssue[];
-  sources: Array<{ sourceId: string; institution: string; lastUpdatedAt: string; observedAt: string; quotaExhausted: boolean; consentExpiresAt: string | null; nextSyncAt: string | null; /** The page of this connection at Meu Pluggy, where the owner can update it. */ link: string }>;
+  sources: Array<{ sourceId: string; institution: string; lastUpdatedAt: string; observedAt: string; quotaExhausted: boolean; consentExpiresAt: string | null; nextSyncAt: string | null; /** Hours between reads the source is expected to keep. */ expectedEveryHours: number; /** The last read is older than the expected rhythm allows: the sync is stuck, not just a day old. */ late: boolean; /** The page of this connection at Meu Pluggy, where the owner can update it. */ link: string }>;
   /** Connections the provider said need the owner (login expired, consent to renew). */
   connectionAlerts: Array<{ institution: string; event: string; code: string | null; message: string | null; at: string }>;
   quota: ReturnType<typeof quotaReport>;
@@ -443,7 +561,7 @@ export function freshness(store: Store, now: Date): FreshnessView {
   return {
     generatedAt: now.toISOString(),
     health: dataHealth(store, now),
-    sources: store.listFreshness().map((f) => ({ sourceId: f.sourceId, institution: f.institution, lastUpdatedAt: f.lastUpdatedAt, observedAt: f.observedAt, quotaExhausted: f.quotaExhausted === true, consentExpiresAt: f.consentExpiresAt ?? null, nextSyncAt: f.nextSyncAt ?? null, link: meuPluggyLinks(store)[f.institution] ?? MEU_PLUGGY_CONNECTIONS })),
+    sources: store.listFreshness().map((f) => ({ sourceId: f.sourceId, institution: f.institution, lastUpdatedAt: f.lastUpdatedAt, observedAt: f.observedAt, quotaExhausted: f.quotaExhausted === true, consentExpiresAt: f.consentExpiresAt ?? null, nextSyncAt: f.nextSyncAt ?? null, expectedEveryHours: EXPECTED_READ_HOURS, late: isLate(f.lastUpdatedAt, now), link: meuPluggyLinks(store)[f.institution] ?? MEU_PLUGGY_CONNECTIONS })),
     connectionAlerts: Object.values(readAlerts(store)).sort((a, b) => a.institution.localeCompare(b.institution)),
     quota: quotaReport(store, now),
   };
