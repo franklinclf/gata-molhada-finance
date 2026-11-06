@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { transactionDetail } from '../../src/api/detail.ts';
 import { explore, type ExplorerQuery } from '../../src/api/explorer.ts';
-import { addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
+import { saveGroup, removeGroup, addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import * as views from '../../src/api/views.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -232,7 +232,9 @@ test('categories sit in groups: built-in defaults, the user can move them, and g
   assert.equal(views.spending(store, { from: '2026-10-01', to: '2026-10-31' }, 'category', NOW).groups.find((g) => g.name === 'Supermercado')?.parent, 'Casa');
   assert.deepEqual(setCategoryParent(store, 'Supermercado', null, NOW), { ok: true });
   assert.equal(parentOf('Supermercado'), null);
-  assert.equal(setCategoryParent(store, 'Supermercado', 'Supermercado', NOW).ok, false);
+  // A category may sit in a group with its own name: the group Compras holds the category Compras.
+  assert.deepEqual(setCategoryParent(store, 'Compras', 'Compras', NOW), { ok: true });
+  assert.equal(parentOf('Compras'), 'Compras');
   assert.equal(setCategoryParent(store, 'Compras', 'Moradia', NOW).ok, false, 'Moradia already sits in Casa');
   assert.equal(setCategoryParent(store, 'Casa', 'Compras', NOW).ok, false, 'Casa is a group that holds categories');
   assert.equal(setCategoryParent(store, 'Nao existe', 'Casa', NOW).ok, false);
@@ -277,4 +279,33 @@ test('the budget of a renamed category follows it', () => {
   store.setBudget('category', 'Supermercado', '2026-10', 100000, true, NOW.toISOString());
   renameCategory(store, 'Supermercado', 'Mercado', NOW);
   assert.deepEqual(store.listBudgets().map((b) => [b.scope, b.name]), [['category', 'Mercado']]);
+});
+
+test('groups can be created, renamed with their members, and dissolved', () => {
+  const store = seeded();
+  const parentOf = (name: string) => listCategories(store).find((c) => c.name === name)?.parent;
+  assert.deepEqual(saveGroup(store, null, { name: 'Mercado', members: ['Supermercado', 'Farmácia'] }, NOW), { ok: true });
+  assert.equal(parentOf('Farmácia'), 'Mercado');
+  assert.deepEqual(saveGroup(store, 'Mercado', { name: 'Compras do dia', members: ['Supermercado'] }, NOW), { ok: true });
+  assert.equal(parentOf('Supermercado'), 'Compras do dia');
+  assert.equal(parentOf('Farmácia'), null, 'left out of the list');
+  assert.equal(saveGroup(store, null, { name: 'X', members: ['Nao existe'] }, NOW).ok, false);
+  assert.deepEqual(removeGroup(store, 'Compras do dia', NOW), { ok: true });
+  assert.equal(parentOf('Supermercado'), null);
+  assert.equal(removeGroup(store, 'Compras do dia', NOW).ok, false);
+});
+
+test('explorer: planned future charges and data from before the start are not listed unless asked', () => {
+  const store = seeded();
+  const extra = [
+    txn('future', { description: 'Amazon 3/5', accountId: 'card', occurredAt: '2026-12-10T15:00:00Z', status: 'pending' }),
+    txn('old', { description: 'Old', occurredAt: '2025-11-10T15:00:00Z' }),
+  ];
+  const all = store.listCanonicalTransactions({ includeExcluded: true });
+  store.replaceCanonicalTransactions([...all, ...extra], [], NOW.toISOString());
+  assert.equal(ids(explore(store, base, NOW)).includes('future'), false);
+  assert.equal(ids(explore(store, base, NOW)).includes('old'), false);
+  assert.equal(ids(explore(store, { ...base, future: true }, NOW)).includes('future'), true);
+  assert.equal(ids(explore(store, { ...base, future: true }, NOW)).includes('old'), false);
+  assert.equal(transactionDetail(store, 'old', NOW), null);
 });

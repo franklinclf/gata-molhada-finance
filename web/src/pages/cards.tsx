@@ -223,6 +223,14 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
   );
 }
 
+/** One row per limit: cards that share a limit count once, and the bar fills with what is used, as the numbers say. */
+function limitRows(data: CardsView): Array<{ key: string; name: string; shared: boolean; limit: number; used: number }> {
+  const label = (id: string) => { const c = data.cards.find((x) => x.id === id); return c ? `${c.institution} ${c.name}${c.last4 ? ` •••• ${c.last4}` : ''}` : id; };
+  const groups = data.limitGroups.map((g) => ({ key: g.id, name: g.cardIds.map(label).join(' + '), shared: g.cardIds.length > 1, limit: g.creditLimit, used: g.used }));
+  const singles = data.cards.filter((c) => c.creditLimit !== null && !data.limitGroups.some((g) => g.cardIds.includes(c.id))).map((c) => ({ key: c.id, name: label(c.id), shared: false, limit: c.creditLimit ?? 0, used: (c.creditLimit ?? 0) - (c.availableLimit ?? 0) }));
+  return [...groups, ...singles];
+}
+
 function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; cycle: string; hidden: boolean }) {
   const [history, setHistory] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -546,12 +554,12 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
             <>
               <div class="summary">
                 <div>
-                  <span class="muted">{cycle === 'open' ? 'Fatura em aberto' : `Venc. ${monthName(cycle)}`}</span>
-                  <strong>{brl(data.totals.cycleTotal, hidden)}</strong>
+                  <span class="muted">{cycle === 'open' ? 'A pagar' : `A pagar com venc. ${monthName(cycle)}`}</span>
+                  <strong>{brl(data.totals.toPay, hidden)}</strong>
                 </div>
                 <div>
-                  <span class="muted">{cycle === 'open' ? 'Fechadas e não pagas' : 'Falta pagar nesta fatura'}</span>
-                  <strong class={data.totals.outstanding > 0 ? 'bad-text' : ''}>{brl(data.totals.outstanding, hidden)}</strong>
+                  <span class="muted">Fatura aberta / fechadas não pagas</span>
+                  <strong>{brl(data.totals.toPay - data.totals.outstanding, hidden)} / {brl(data.totals.outstanding, hidden)}</strong>
                 </div>
                 <div>
                   <span class="muted">{cycle === 'open' ? 'Próximo vencimento' : 'Vencimento'}</span>
@@ -583,7 +591,7 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
                 <div class="note">Esta tela mostra só as faturas com vencimento em {monthName(cycle)}: o total, o que falta pagar e o vencimento são destas faturas. Limite, saldo do emissor e outras faturas ficam de fora.</div>
               )}
               <div class="cards-grid">
-                {data.cards.map((card) => (
+                {data.cards.filter((card) => card.toPay > 0 || cycle === 'open').map((card) => (
                   <CardBlock key={card.id} card={card} cycle={cycle} hidden={hidden} />
                 ))}
               </div>
@@ -608,18 +616,14 @@ export function CardsPage({ route, hidden }: { route: Route; now: Date; hidden: 
                 </div>
               </div>
               <ul class="rows tall">
-                {data.cards.filter((c) => c.creditLimit !== null).map((c) => (
-                  <li key={c.id}>
+                {limitRows(data).map((r) => (
+                  <li key={r.key}>
                     <div class="grow">
-                      <div>
-                        {c.institution} {c.name}
-                        {c.last4 ? ` •••• ${c.last4}` : ''}
-                        {c.limitGroupId ? ' · compartilhado' : ''}
-                      </div>
-                      <Meter fraction={c.creditLimit ? 1 - (c.availableLimit ?? 0) / c.creditLimit : 0} />
+                      <div>{r.name}{r.shared ? ' · limite compartilhado' : ''}</div>
+                      <Meter fraction={r.limit > 0 ? r.used / r.limit : 0} tip={`Usado ${hidden ? '••••' : brl(r.used)} de ${hidden ? '••••' : brl(r.limit)}`} />
                     </div>
                     <span class="muted">
-                      {brl(c.availableLimit ?? 0, hidden)} de {brl(c.creditLimit ?? 0, hidden)}
+                      usado {brl(r.used, hidden)} de {brl(r.limit, hidden)} · disponível {brl(r.limit - r.used, hidden)}
                     </span>
                   </li>
                 ))}

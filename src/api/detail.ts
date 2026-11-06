@@ -1,5 +1,5 @@
 import type { Cents } from '../core/money.ts';
-import { localDay } from '../core/time.ts';
+import { DATA_START, localDay } from '../core/time.ts';
 import type { Store, StoredFinding } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { detectRecurring, recurringKeyOf } from './recurring.ts';
@@ -63,6 +63,7 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
   const brief = (t: EffectiveTransaction | undefined) => (t ? { id: t.id, day: localDay(t.occurredAt), title: t.title, amount: t.amount } : null);
   const transaction = all.find((t) => t.id === id);
   if (!transaction) return null;
+  if (localDay(transaction.occurredAt) < DATA_START && !(transaction.billCycle && transaction.billCycle >= DATA_START.slice(0, 7))) return null;
   const account = accounts.find((a) => a.id === transaction.accountId);
   if (!account) return null;
 
