@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api.ts';
-import { brl, monthName } from '../format.ts';
+import { brl, monthName, parseBrl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { ManualForm } from '../ManualForm.tsx';
 import { Select } from '../Select.tsx';
 import { PeriodPicker } from '../period.tsx';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
-import { CheckList, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
+import { CheckList, Go, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
 
 const STATES = ['confirmed', 'single_source', 'billed', 'stale_pending', 'ignored'].map((value) => ({ value, label: STATE_LABEL[value] ?? value }));
 
@@ -22,8 +22,8 @@ const PAGE = 50;
 
 const reais = (cents: string | null) => (cents === null || cents === '' ? '' : String(Number(cents) / 100));
 const toCents = (text: string) => {
-  const n = Number(text.replace(/\./g, '').replace(',', '.'));
-  return text.trim() === '' || !Number.isFinite(n) || n < 0 ? null : String(Math.round(n * 100));
+  const cents = parseBrl(text, { allowZero: true });
+  return cents === null ? null : String(cents);
 };
 
 /** Transaction explorer. Every filter lives in the URL, so a link from a widget opens it already scoped. */
@@ -63,8 +63,9 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
     setNote(null);
     try {
       const r = await api.bulkEdit(picked, change);
-      setNote(`${r.changed} alterada${r.changed === 1 ? '' : 's'}${r.skipped > 0 ? `, ${r.skipped} não se aplica${r.skipped === 1 ? '' : 'm'}` : ''}.`);
-      setPicked([]);
+      // Moving to a bill only applies to card purchases, so the skipped ones are named by that reason.
+      const skipped = 'cycleKey' in change ? `${r.skipped} não ${r.skipped === 1 ? 'é' : 'são'} de cartão` : `${r.skipped} não se aplica${r.skipped === 1 ? '' : 'm'}`;
+      setNote(`${r.changed} alterada${r.changed === 1 ? '' : 's'}${r.skipped > 0 ? `, ${skipped}` : ''}. A seleção continua, para você poder voltar atrás.`);
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Não foi possível alterar.');
     }
@@ -184,11 +185,21 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         <div class="bulk-bar">
           <strong>{picked.length} selecionada{picked.length === 1 ? '' : 's'}</strong>
           <button class="link" onClick={() => setPicked(data?.items.map((t) => t.id) ?? [])}>Selecionar as {data?.items.length ?? 0} exibidas</button>
+          {data && data.total > data.items.length && <span class="muted">{data.items.length} de {data.total} no filtro. Use “Mostrar mais” para incluir outras.</span>}
           {picked.length > 0 && <button class="link" onClick={() => setPicked([])}>Limpar</button>}
           <CategorySelect ariaLabel="Categoria das selecionadas" placeholder="Mudar categoria para..." value="" onChange={(category) => category !== '' && picked.length > 0 && void bulk({ category })} />
           <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: 'posted' })}>Marcar lançadas</button>
           <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: 'pending' })}>Marcar pendentes</button>
-          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ ignored: true })}>Ignorar</button>
+          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: null })}>Status como a fonte diz</button>
+          <Select
+            ariaLabel="Mover as selecionadas para a fatura"
+            placeholder="Mover para a fatura..."
+            value=""
+            disabled={picked.length === 0}
+            options={[{ value: 'auto', label: 'Voltar ao automático' }, ...(cards.data?.cycles ?? []).map((c) => ({ value: c, label: `Fatura com venc. ${monthName(c)}` }))]}
+            onChange={(value) => value !== '' && void bulk({ cycleKey: value === 'auto' ? null : value })}
+          />
+          <button class="chip" disabled={picked.length === 0} onClick={() => (picked.length <= 20 || window.confirm(`Ignorar ${picked.length} transações? Elas saem dos totais até você restaurar.`)) && void bulk({ ignored: true })}>Ignorar</button>
           <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ ignored: false })}>Restaurar</button>
           {note && <span class="muted">{note}</span>}
         </div>
@@ -212,6 +223,12 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
             <Loading error={error} />
           ) : data ? (
             <>
+              {data.total === 0 && key === '' ? (
+                <div class="empty">
+                  Nenhuma transação ainda. Conecte o Meu Pluggy em <Go page="settings" params={{ tab: 'data' }}>Ajustes, aba Dados</Go>.
+                </div>
+              ) : (
+              <>
               <div class="summary">
                 <div>
                   <span class="muted">Transações</span>
@@ -231,7 +248,9 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
                 </div>
               </div>
               {data.items.length === 0 ? (
-                <div class="empty">Nenhuma transação com esses filtros.</div>
+                <div class="empty">
+                  Nenhuma transação com esses filtros. <button class="link" onClick={() => navigate('transactions')}>Limpar filtros</button>
+                </div>
               ) : (
                 <ul class="rows tall tx-list panel">
                   {data.items.map((t) => (
@@ -245,6 +264,8 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
                 </button>
               )}
               {data.total > 500 && limit >= 500 && <div class="note">Mostrando as primeiras 500. Refine os filtros para ver as demais.</div>}
+              </>
+              )}
             </>
           ) : null}
         </div>

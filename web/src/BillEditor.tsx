@@ -1,13 +1,10 @@
 import { useState } from 'preact/hooks';
 import { api } from './api.ts';
 import type { Cycle } from './api.ts';
+import { parseBrl } from './format.ts';
 import { Select } from './Select.tsx';
 
-const toCents = (text: string): number | null => {
-  const clean = text.trim().replace(/^R\$\s*/, '').replace(/\./g, '').replace(',', '.');
-  if (clean === '' || !/^\d+(\.\d{1,2})?$/.test(clean)) return null;
-  return Math.round(Number(clean) * 100);
-};
+const toCents = (text: string): number | null => parseBrl(text, { allowZero: true });
 const toText = (cents: number | null): string => (cents === null ? '' : (cents / 100).toFixed(2).replace('.', ','));
 
 /** Changes one closed card bill: total, closing day, due day, and whether it is paid. What is left alone keeps following the issuer and the app. */

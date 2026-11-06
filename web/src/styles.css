@@ -639,3 +639,29 @@ body.wide .main { max-width: none; }
 .grip span { color: var(--muted); }
 .order-list { max-width: 420px; margin: 0; padding: 0; }
 .order-list li { padding: 4px 0; }
+/* ---------- infraestrutura do front e UX das telas ---------- */
+/* The color dot beside a bank name sits in a heading, where an inline span ignores width and height. */
+.swatch { display: inline-block; }
+.warn-text { color: var(--warn); }
+
+/* Transaction row: day, account and category share one line on wide screens; the account moves down on narrow ones. */
+.tx-meta { display: flex; gap: 0.35em; min-width: 0; overflow: hidden; white-space: nowrap; }
+.tx-meta > span { flex: none; }
+.tx-meta .tx-acct, .tx-meta .tx-cat { overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.tx-meta .tx-acct::before, .tx-meta .tx-cat::before { content: '· '; }
+.tx-meta .tx-acct { max-width: 55%; }
+@media (max-width: 760px) {
+  .tx-meta { flex-wrap: wrap; white-space: normal; row-gap: 0; }
+  .tx-meta .tx-cat { order: 2; max-width: calc(100% - 3.5em); }
+  .tx-meta .tx-acct { order: 3; flex-basis: 100%; max-width: 100%; font-size: 12px; white-space: nowrap; }
+  .tx-meta .tx-acct::before { content: ''; }
+}
+
+/* Drawer corrections: wider columns so the chosen option is not cut. */
+.correct { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+/* Chat: the question field stays at the bottom of the panel and the list gets some air. */
+.chat-main { display: flex; flex-direction: column; }
+.chat-scroll { flex: 1; }
+.chat-form { margin-top: auto; padding-top: 10px; }
+.chat-list { padding-right: 6px; }

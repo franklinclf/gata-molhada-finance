@@ -3,14 +3,11 @@ import { api } from '../api.ts';
 import type { NetWorthView } from '../api.ts';
 import { LineChart } from '../charts.tsx';
 import { Select } from '../Select.tsx';
-import { brl, dayMonth, localDay } from '../format.ts';
+import { brl, dayMonth, localDay, parseBrl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
 
-const toCents = (text: string): number | null => {
-  const n = Number(text.trim().replace(/\./g, '').replace(',', '.'));
-  return text.trim() !== '' && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
-};
+const toCents = (text: string): number | null => parseBrl(text, { allowZero: true });
 
 function ManualRow({ item, now, hidden, onChanged, onError }: { item: NetWorthView['manual'][number]; now: Date; hidden: boolean; onChanged: () => void; onError: (m: string) => void }) {
   const [editing, setEditing] = useState(false);

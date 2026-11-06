@@ -114,11 +114,18 @@ export function TxRow({ t, hidden, onOpen, pick }: { t: { id: string; sourceIds?
       {pick && <input type="checkbox" checked={pick.on} aria-label="Selecionar" onClick={(e) => e.stopPropagation()} onChange={pick.toggle} />}
       <div class="grow">
         <div class="clip">{t.title ?? t.description}</div>
-        <div class="muted clip">
-          {dayMonth(localDay(t.occurredAt))} · {t.account.institution}
-          {t.account.last4 ? ` •••• ${t.account.last4}` : ''} · {t.category ?? 'Sem categoria'}
-          {t.status === 'pending' ? ' · pendente' : ''}
-          {t.state === 'ignored' ? ' · ignorada' : t.state === 'stale_pending' ? ' · fora dos totais' : ''}
+        {/* On a narrow screen the account moves to its own line, so the category is the part that keeps its room. */}
+        <div class="muted tx-meta">
+          <span class="tx-day">{dayMonth(localDay(t.occurredAt))}</span>
+          <span class="tx-acct">
+            {t.account.institution}
+            {t.account.last4 ? ` •••• ${t.account.last4}` : ''}
+          </span>
+          <span class="tx-cat">
+            {t.category ?? 'Sem categoria'}
+            {t.status === 'pending' ? ' · pendente' : ''}
+            {t.state === 'ignored' ? ' · ignorada' : t.state === 'stale_pending' ? ' · fora dos totais' : ''}
+          </span>
         </div>
       </div>
       {t.foreign && <span class="badge info" data-tip={hidden ? 'Compra em outra moeda' : `Compra em ${foreignMoney(t.foreign.amount, t.foreign.currency)}, cobrada em reais pelo cartão`}>{t.foreign.currency}</span>}

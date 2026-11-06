@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ago, brl, brlShort, cumulative, dayMonth, isStale, localDay, MASK, maskMoney, periodRange } from '../../web/src/format.ts';
+import { ago, brl, brlShort, cumulative, dayMonth, isStale, localDay, MASK, maskMoney, parseBrl, periodRange } from '../../web/src/format.ts';
 
 const NOW = new Date('2026-10-27T15:00:00Z');
 
@@ -56,4 +56,24 @@ test('maskMoney hides the amounts inside a sentence only when values are hidden'
   const text = 'Você gastou R$ 1.234,56 e recebeu -R$ 20,00; o saldo é R$ 5.';
   assert.equal(maskMoney(text, false), text);
   assert.equal(maskMoney(text, true), `Você gastou ${MASK} e recebeu ${MASK}; o saldo é ${MASK}.`);
+});
+
+test('parseBrl reads comma, dot and thousands marks the same way everywhere', () => {
+  assert.equal(parseBrl('12,50'), 1250);
+  assert.equal(parseBrl('12.50'), 1250);
+  assert.equal(parseBrl('1.234,56'), 123456);
+  assert.equal(parseBrl('1.234'), 123400);
+  assert.equal(parseBrl('1.234.567,8'), 123456780);
+  assert.equal(parseBrl('R$ 1.234,56'), 123456);
+  assert.equal(parseBrl('  7 '), 700);
+  assert.equal(parseBrl('0,5'), 50);
+});
+
+test('parseBrl rejects what it cannot read and applies the zero and negative options', () => {
+  for (const bad of ['', '  ', 'abc', '12,5,0', '1,234.56', '12.345,6.7', '1..2', '12,505', 'R$']) assert.equal(parseBrl(bad, { allowZero: true, allowNegative: true }), null, bad);
+  assert.equal(parseBrl('0'), null);
+  assert.equal(parseBrl('0,00', { allowZero: true }), 0);
+  assert.equal(parseBrl('-5,00'), null);
+  assert.equal(parseBrl('-5,00', { allowNegative: true }), -500);
+  assert.equal(parseBrl('-R$ 5,00', { allowNegative: true }), -500);
 });
