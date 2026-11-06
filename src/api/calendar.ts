@@ -1,8 +1,9 @@
-import { addDays, lastDayOf, nextMonth } from '../core/dates.ts';
+import { addDays, lastDayOf } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
-import { dayInMonth, detectRecurring, type RecurringItem } from './recurring.ts';
+import { groupBill, incomeEvents, monthlyDays } from './projection.ts';
+import { detectRecurring, type RecurringItem } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
 import { cards, cashFlow } from './views.ts';
 
@@ -47,32 +48,34 @@ function projectedByDay(store: Store, recurring: RecurringItem[], now: Date, opt
     if (at > until) return;
     out.set(at, [...(out.get(at) ?? []), item]);
   };
+  // Money out of the bank: recurring payments. One that is late has not shown up and is still expected today, once; the next ones keep their days.
   for (const r of recurring) {
-    if (r.account === 'card') continue;
-    let day = r.nextDay;
-    let month = day.slice(0, 7);
-    // An item whose day has passed without it showing up is still expected: it lands today once, and the next ones keep their days.
-    if (day < today) {
-      add(day, { name: r.name, amount: r.amount, direction: r.direction, kind: 'recurring', late: r.late });
-      month = nextMonth(day.slice(0, 7));
-      day = dayInMonth(month, r.dayOfMonth);
-    }
-    while (day <= until) {
-      if (day >= today) add(day, { name: r.name, amount: r.amount, direction: r.direction, kind: 'recurring', late: false });
-      month = nextMonth(month);
-      day = dayInMonth(month, r.dayOfMonth);
-    }
+    if (r.account === 'card' || r.direction !== 'out') continue;
+    if (r.nextDay < today) add(r.nextDay, { name: r.name, amount: r.amount, direction: 'out', kind: 'recurring', late: r.late });
+    for (const day of monthlyDays(r.nextDay, r.dayOfMonth, today, until)) add(day, { name: r.name, amount: r.amount, direction: 'out', kind: 'recurring', late: false });
   }
+  // Money in: the same rule as the outlook (the income the owner registered, else the credits that repeat every month).
+  for (const e of incomeEvents(store, recurring, today, until).events) add(e.day, { name: e.name, amount: e.amount, direction: 'in', kind: 'recurring', late: false });
   const accounts = visibleAccounts(store, opts).filter((a) => a.kind === 'credit_card');
   const transactions = effectiveTransactions(store, opts);
-  const openTotal = new Map(cards(store, now, opts, 'open').cards.map((c) => [c.id, c.total]));
+  const view = cards(store, now, opts, 'open');
+  const openTotal = new Map(view.cards.map((c) => [c.id, c.total]));
+  // Cards on a shared limit have one open total, the same estimate the cards screen uses. It is one bill for the group, named by its cards and dated by the earliest due date.
+  const shared = new Map<string, ReturnType<typeof groupBill>>();
+  for (const g of view.limitGroups) {
+    g.cardIds.forEach((id, i) => openTotal.set(id, i === 0 ? g.openEstimate : 0));
+    shared.set(g.cardIds[0] ?? '', groupBill(store, g, accounts, transactions, today));
+  }
   for (const account of accounts) {
     for (const cycle of cyclesFor(store, account, transactions, today)) {
       const label = `Fatura ${account.institution}${account.last4 ? ` ${account.last4}` : ''}`;
       if (cycle.status === 'open') {
         const total = openTotal.get(account.id) ?? 0;
-        if (total > 100 && cycle.dueDate >= today) add(cycle.dueDate, { name: label, amount: total, direction: 'out', kind: 'bill', late: false });
-      } else if (cycle.outstanding > 100 && (cycle.status === 'unpaid' || cycle.status === 'overdue' || cycle.status === 'partial')) {
+        const group = shared.get(account.id);
+        const dueDate = group?.dueDate ?? cycle.dueDate;
+        // An open bill already past its due date is late like a closed one: `add` moves it to today.
+        if (total > 0) add(dueDate, { name: group?.label ?? label, amount: total, direction: 'out', kind: 'bill', late: dueDate < today });
+      } else if (cycle.outstanding > 0 && (cycle.status === 'unpaid' || cycle.status === 'overdue' || cycle.status === 'partial')) {
         add(cycle.dueDate, { name: label, amount: cycle.outstanding, direction: 'out', kind: 'bill', late: cycle.dueDate < today });
       }
     }

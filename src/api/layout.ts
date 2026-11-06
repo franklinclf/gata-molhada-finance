@@ -1,6 +1,6 @@
 import type { Store } from '../store/store.ts';
 
-export const WIDGET_IDS = ['balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'summary', 'upcoming', 'calendar', 'trend', 'review', 'recent', 'freshness', 'findings'] as const;
+export const WIDGET_IDS = ['outlook', 'balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'summary', 'upcoming', 'calendar', 'trend', 'review', 'recent', 'freshness', 'findings'] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 
 export const GRID_COLUMNS = 12;
@@ -12,14 +12,15 @@ const MAX_HEIGHT = 40;
 
 /** Size a new widget starts with, in grid cells (12 columns). */
 export const DEFAULT_SIZES: Record<WidgetId, { w: number; h: number }> = {
-  balances: { w: 4, h: 5 },
-  cards: { w: 4, h: 6 },
-  cashflow: { w: 4, h: 5 },
+  outlook: { w: 4, h: 7 },
+  balances: { w: 4, h: 7 },
+  cards: { w: 4, h: 7 },
+  cashflow: { w: 4, h: 7 },
   spending: { w: 4, h: 6 },
-  installments: { w: 4, h: 5 },
-  budget: { w: 4, h: 5 },
-  networth: { w: 4, h: 5 },
-  goals: { w: 4, h: 5 },
+  installments: { w: 4, h: 6 },
+  budget: { w: 4, h: 6 },
+  networth: { w: 4, h: 6 },
+  goals: { w: 4, h: 6 },
   summary: { w: 4, h: 4 },
   upcoming: { w: 4, h: 6 },
   calendar: { w: 4, h: 7 },

@@ -6,7 +6,9 @@
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
     const path = url.pathname;
     if ((init && init.method && init.method !== 'GET') || (init && init.method === 'DELETE')) return json({ ok: true });
-    if (/^\/api\/transactions\/[^/]+\/candidates$/.test(path)) return json(data.responses.candidates);
+    // A response saved for the exact query wins over the one for the path alone (a past bill, say).
+    if (path + url.search in data.responses) return json(data.responses[path + url.search]);
+    if (/^\/api\/transactions\/[^/]+\/(candidates|duplicates)$/.test(path)) return json(data.responses.candidates);
     if (/^\/api\/transactions\/[^/]+$/.test(path)) return json(data.responses.detail);
     if (path in data.responses) return json(data.responses[path]);
     return json({ error: 'not_found' }, 404);
@@ -18,6 +20,9 @@ window.addEventListener('load', () => {
   setTimeout(() => {
     const m = /__click=([^&]+)/.exec(location.hash);
     if (m) document.querySelector(decodeURIComponent(m[1]))?.click();
+    // `__clickText=<text>` clicks the first button or link whose text is exactly that.
+    const t = /__clickText=([^&]+)/.exec(location.hash);
+    if (t) [...document.querySelectorAll('button, a')].find((el) => el.textContent.trim() === decodeURIComponent(t[1]))?.click();
   }, 1800);
 });
 

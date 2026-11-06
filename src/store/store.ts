@@ -203,6 +203,12 @@ export interface PruneResult {
   skipped: boolean;
 }
 
+export interface AccountPruneResult {
+  removed: number;
+  /** Accounts left alone: `empty` came back with nothing in the window, `dropped` lost most of it at once. */
+  skipped: Array<{ accountId: string; reason: 'empty' | 'dropped'; unseen: number }>;
+}
+
 export interface PurgeReport {
   sourceId: SourceId;
   applied: boolean;
@@ -219,6 +225,14 @@ export interface Store {
   latestSnapshot(sourceId: SourceId, endpoint: string): Snapshot | null;
   /** Every saved snapshot of a source whose endpoint starts with the prefix, oldest first. */
   listSnapshots(sourceId: SourceId, endpointPrefix: string): Snapshot[];
+  /**
+   * Deletes old raw responses of a source and returns how many rows went. Responses are grouped into reads (runs with no
+   * pause longer than `gapMs`). Kept: the last `keepReads` complete reads, the last complete read of each month, and every
+   * read after the oldest of those. Nothing is deleted when the source has no complete read.
+   */
+  pruneSnapshots(sourceId: SourceId, keepReads: number, gapMs: number): number;
+  /** Runs VACUUM when at least `minFreeShare` of the file is free pages and the last run was more than `minGapMs` ago. Returns whether it ran. */
+  reclaimSpace(now: string, minFreeShare?: number, minGapMs?: number): boolean;
   /**
    * Saves what a source reports for an institution. `changed` is true when the last-synced time differs from
    * the one saved before (or none was saved). Each distinct time is also counted as one bank read for the month.
@@ -302,6 +316,8 @@ export interface Store {
   /** Categories the owner renamed or merged: old name to new name. */
   listCategoryAliases(): Map<string, string>;
   setCategoryAlias(from: string, to: string | null, now: string): void;
+  /** Runs several store calls as one commit: if `work` throws, none of them is kept. Calls inside it join the same transaction. */
+  transaction(work: () => void): void;
   /** Moves the budgets of a category to its new name (a budget the new name already has is kept). */
   renameBudgetCategory(from: string, to: string): void;
   listCategoryParents(): Map<string, string>;
@@ -363,11 +379,12 @@ export interface Store {
   /** Hard-deletes source transactions dated before the instant. Returns how many were removed. */
   deleteSourceTransactionsBefore(instant: string): number;
   /**
-   * Drops source transactions inside a window that the latest complete read did not return (`seenAt` is the stamp that
-   * read gave to every record it returned). A record the provider deleted, or re-created under a new id when it posted,
-   * would otherwise stay forever. Refuses when it would remove most of the window, which looks like a bad read.
+   * Drops source transactions inside a window that the latest read did not return, account by account (`seenAt` is the
+   * stamp that read gave to every record it returned). Pass only accounts that were read to the end. A record the provider
+   * deleted, or re-created under a new id when it posted, would otherwise stay forever. An account that came back empty is
+   * never touched, and one that lost most of its window is left alone unless `force` is set.
    */
-  pruneUnseenSourceTransactions(sourceId: SourceId, from: string, to: string, seenAt: string, force?: boolean): PruneResult;
+  pruneUnseenSourceTransactions(sourceId: SourceId, accountIds: string[], from: string, to: string, seenAt: string, force?: boolean): AccountPruneResult;
   /**
    * Drops source accounts the latest complete read of the accounts did not return, with their transactions and bills (a
    * reconnected item gets new account ids and leaves the old ones behind). Refuses when it would remove most accounts.

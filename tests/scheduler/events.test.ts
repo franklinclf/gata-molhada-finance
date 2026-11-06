@@ -12,9 +12,10 @@ test('checked events are quiet unless verbose', () => {
 
 test('formats changes, reads and errors in one line each', () => {
   assert.equal(formatObserverEvent({ type: 'changed', sourceId: 'pluggy', institutions: ['Bank A', 'Bank B'] }), 'pluggy: new data from Bank A, Bank B');
-  const ok = { sourceId: 'pierre', accounts: 11, transactions: 468, bills: 37, freshness: 5, warnings: [], errors: [] };
+  const ok = { sourceId: 'pierre', accounts: 11, transactions: 468, bills: 37, freshness: 5, failedAccounts: [], warnings: [], errors: [] };
   assert.equal(formatObserverEvent({ type: 'synced', sourceId: 'pierre', result: ok }), 'pierre: read 11 accounts, 468 transactions, 37 bills');
   assert.match(formatObserverEvent({ type: 'synced', sourceId: 'pierre', result: { ...ok, errors: ['bills: HTTP 500'] } }) ?? '', /1 failed step\(s\): bills: HTTP 500/);
+  assert.match(formatObserverEvent({ type: 'synced', sourceId: 'pierre', result: { ...ok, failedAccounts: ['Bank / a2'], warnings: ['Bank / a2: não foi possível ler as transações'] } }) ?? '', /1 warning\(s\): Bank \/ a2: não foi possível ler/);
   assert.equal(formatObserverEvent({ type: 'error', sourceId: 'pierre', message: 'offline', retryInMs: 600_000 }), 'pierre: offline (next try in 10 min)');
 });
 

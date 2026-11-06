@@ -27,6 +27,34 @@ export function brlShort(cents: number, hidden = false): string {
   return String(Math.round(reais));
 }
 
+/**
+ * Cents from an amount typed by the owner: "12,50", "12.50", "1.234,56" or "R$ 1.234,56".
+ * A comma is always the decimal mark. Without a comma, a dot followed by 1 or 2 digits at the end is decimal
+ * ("12.50") and a dot followed by exactly 3 digits is a thousands mark ("1.234"). Anything else is rejected.
+ */
+export function parseBrl(text: string, options: { allowZero?: boolean; allowNegative?: boolean } = {}): number | null {
+  let clean = text.trim().replace(/^(-?)\s*R\$\s*/, '$1').replace(/\s+/g, '');
+  const negative = clean.startsWith('-');
+  if (negative) clean = clean.slice(1);
+  let normalized: string;
+  if (clean.includes(',')) {
+    const match = /^(\d{1,3}(?:\.\d{3})+|\d+),(\d{1,2})$/.exec(clean);
+    if (!match) return null;
+    normalized = `${match[1]!.replace(/\./g, '')}.${match[2]}`;
+  } else if (/^\d{1,3}(?:\.\d{3})+$/.test(clean)) {
+    normalized = clean.replace(/\./g, '');
+  } else if (/^\d+(?:\.\d{1,2})?$/.test(clean)) {
+    normalized = clean;
+  } else {
+    return null;
+  }
+  const cents = Math.round(Number(normalized) * 100);
+  if (!Number.isFinite(cents)) return null;
+  if (cents === 0) return options.allowZero ? 0 : null;
+  if (negative && !options.allowNegative) return null;
+  return negative ? -cents : cents;
+}
+
 export function percent(fraction: number): string {
   return `${Math.round(fraction * 100)}%`;
 }
@@ -42,8 +70,8 @@ export function ago(iso: string | null, now: Date): string {
   return `há ${Math.round(hours / 24)} dias`;
 }
 
-/** Data older than this is shown as stale. */
-export const STALE_AFTER_HOURS = 6;
+/** Data older than this is shown as stale: Meu Pluggy reads each bank once a day, so a day and a half is still on time (see EXPECTED_READ_HOURS in the API). */
+export const STALE_AFTER_HOURS = 36;
 
 export function isStale(iso: string | null, now: Date): boolean {
   return iso === null || now.getTime() - Date.parse(iso) > STALE_AFTER_HOURS * 3_600_000;

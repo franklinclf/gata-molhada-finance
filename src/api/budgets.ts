@@ -3,13 +3,15 @@ import { DATA_START_MONTH, localDay } from '../core/time.ts';
 import type { BudgetRow, BudgetScope, Store } from '../store/store.ts';
 import { categoryParents } from './category-groups.ts';
 import { cleanCategoryName } from './mutations.ts';
-import { spending } from './views.ts';
+import { spending, untilToday } from './views.ts';
 
 export type BudgetResult<T = Record<string, never>> = { ok: true; value: T } | { ok: false; status: number; error: string };
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MAX_AMOUNT = 1_000_000_000; // R$ 10 million, in cents
-/** The first month the app holds data for. Averages never look before it. */
+
+/** Categories that are not spending of their own: they are neither budgeted nor listed as a trend line. */
+export const NOT_SPENDING_CATEGORIES: ReadonlySet<string> = new Set(['Estorno', 'Renda', 'Sem categoria']);
 
 export { addMonths };
 export const lastDay = lastDayOf;
@@ -59,7 +61,8 @@ export interface BudgetsView {
 }
 
 export function monthActuals(store: Store, month: string, now: Date): { byCategory: Map<string, number>; byGroup: Map<string, number> } {
-  const view = spending(store, { from: `${month}-01`, to: lastDay(month) }, 'category', now);
+  // Same window as Gastos and Transações: nothing before DATA_START, and planned installments dated ahead do not count yet.
+  const view = spending(store, untilToday({ from: `${month}-01`, to: lastDay(month) }, now), 'category', now);
   const byCategory = new Map<string, number>();
   const byGroup = new Map<string, number>();
   for (const g of view.groups) {
@@ -86,7 +89,7 @@ export function budgetsFor(store: Store, month: string, now: Date): BudgetsView 
   // Spending in a category that has no budget of its own and is not inside a budgeted group shows up as an unbudgeted line.
   for (const [name, amount] of current.byCategory) {
     const parent = parents.get(name);
-    if (amount > 0 && !targets.has(`category|${name}`) && !(parent && budgetedGroups.has(parent))) targets.set(`category|${name}`, { scope: 'category', name });
+    if (amount > 0 && !NOT_SPENDING_CATEGORIES.has(name) && !targets.has(`category|${name}`) && !(parent && budgetedGroups.has(parent))) targets.set(`category|${name}`, { scope: 'category', name });
   }
 
   const lines: BudgetLine[] = [...targets.values()].map((t) => {
@@ -119,9 +122,7 @@ function checkTarget(store: Store, scope: unknown, nameInput: unknown): BudgetRe
 }
 
 /** A category and the group it sits in must not both have a budget, or the same money would be counted twice. */
-function overlapError(store: Store, scope: BudgetScope, name: string): string | null {
-  const rows = store.listBudgets();
-  const parents = categoryParents(store);
+export function overlapWith(rows: readonly BudgetRow[], parents: ReadonlyMap<string, string>, scope: BudgetScope, name: string): string | null {
   if (scope === 'category') {
     const parent = parents.get(name);
     if (parent && rows.some((r) => r.scope === 'group' && r.name === parent)) return `o grupo ${parent} já tem orçamento; use um ou outro`;
@@ -130,6 +131,32 @@ function overlapError(store: Store, scope: BudgetScope, name: string): string | 
     if (child) return `a categoria ${child.name}, que está neste grupo, já tem orçamento; use um ou outro`;
   }
   return null;
+}
+
+function overlapError(store: Store, scope: BudgetScope, name: string): string | null {
+  return overlapWith(store.listBudgets(), categoryParents(store), scope, name);
+}
+
+/** The group budget rows, as they would be after `from` is renamed to `to` (all rows when nothing is renamed). */
+export function rowsAfterGroupRename(rows: readonly BudgetRow[], from: string | null, to: string): BudgetRow[] {
+  return rows.map((r) => (from !== null && r.scope === 'group' && r.name === from ? { ...r, name: to } : r));
+}
+
+/** Moves the budget of a group to its new name. Months the new name already has keep the amount it has. */
+export function renameGroupBudget(store: Store, from: string, to: string, now: Date): void {
+  if (from === to) return;
+  const rows = store.listBudgets();
+  const at = now.toISOString();
+  for (const r of rows) {
+    if (r.scope !== 'group' || r.name !== from) continue;
+    if (!rows.some((o) => o.scope === 'group' && o.name === to && o.month === r.month)) store.setBudget('group', to, r.month, r.amount, r.recurring, at);
+    store.setBudget('group', from, r.month, null, false, at);
+  }
+}
+
+/** Drops the budget of a group that no longer exists, so no line keeps showing it with zero spending. */
+export function removeGroupBudget(store: Store, name: string, now: Date): void {
+  for (const r of store.listBudgets()) if (r.scope === 'group' && r.name === name) store.setBudget('group', name, r.month, null, false, now.toISOString());
 }
 
 export function setBudget(store: Store, body: Record<string, unknown>, now: Date): BudgetResult {
@@ -154,8 +181,6 @@ export interface SuggestionLine {
   hasBudget: boolean;
 }
 
-const NOT_BUDGETABLE = new Set(['Estorno', 'Renda', 'Sem categoria']);
-
 /** An average of the last complete months before `month`, per category. A half month never lowers it. */
 export function suggestBudgets(store: Store, month: string, months: number, now: Date): SuggestionLine[] {
   const rows = store.listBudgets();
@@ -168,7 +193,7 @@ export function suggestBudgets(store: Store, month: string, months: number, now:
   const parents = categoryParents(store);
   const budgetedGroups = new Set(rows.filter((r) => r.scope === 'group').map((r) => r.name));
   return [...sums]
-    .filter(([name, sum]) => sum > 0 && !NOT_BUDGETABLE.has(name))
+    .filter(([name, sum]) => sum > 0 && !NOT_SPENDING_CATEGORIES.has(name))
     .map(([name, sum]) => ({
       name,
       amount: Math.max(1000, Math.round(sum / window.length / 1000) * 1000),

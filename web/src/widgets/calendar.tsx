@@ -5,7 +5,7 @@ import { brl, dayMonth, localDay, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { navigate, patchParams } from '../router.ts';
 import { TxRow } from '../ui.tsx';
-import { Widget } from '../Widget.tsx';
+import { FitList, Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
 const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
@@ -66,7 +66,7 @@ function Selection({ picked, days, hidden, month, rows }: { picked: { from: stri
  * The month as a small grid: a dot on days with money moving, a ring on today. A tap selects a day and lists it below; a
  * tap on another day selects the days between, and a tap on the chosen day clears it.
  */
-export function CalendarWidget({ now, size, hidden }: WidgetProps) {
+export function CalendarWidget({ now, size, hidden, pixels }: WidgetProps) {
   const [picked, setPicked] = useState<Picked>(null);
   const tap = (day: string) => {
     if (!picked || picked.from !== picked.to) setPicked({ from: day, to: day });
@@ -76,7 +76,7 @@ export function CalendarWidget({ now, size, hidden }: WidgetProps) {
   const month = localDay(now.toISOString()).slice(0, 7);
   const { data, error, loading } = useLoad(() => api.calendar(month), [month], 300_000);
   const first = new Date(`${month}-01T00:00:00Z`).getUTCDay();
-  const next = data?.days.flatMap((d) => d.projected.map((p) => ({ ...p, day: d.day }))).filter((p) => p.day >= data.today).slice(0, size === 'lg' ? 6 : 3) ?? [];
+  const next = data?.days.flatMap((d) => d.projected.map((p) => ({ ...p, day: d.day }))).filter((p) => p.day >= data.today).slice(0, 20) ?? [];
   return (
     <Widget title={`Calendário · ${monthName(month)}`} to={{ page: 'calendar' }} now={now} loading={loading && !data} error={error}>
       {data && (
@@ -104,17 +104,18 @@ export function CalendarWidget({ now, size, hidden }: WidgetProps) {
               </button>
             ))}
           </div>
-          {picked && <Selection picked={picked} days={data.days} hidden={hidden} month={month} rows={size === 'lg' ? 8 : 5} />}
+          {picked && <Selection picked={picked} days={data.days} hidden={hidden} month={month} rows={pixels ? Math.max(3, Math.min(20, Math.floor((pixels.height - 340) / 46))) : size === 'lg' ? 8 : 5} />}
           {!picked && size !== 'sm' && next.length > 0 && (
-            <ul class="rows">
-              {next.map((p, i) => (
+            <FitList
+              noun={['item', 'itens']}
+              rows={next.map((p, i) => (
                 <li key={i}>
                   <span class="muted">{dayMonth(p.day)}</span>
                   <span class="grow clip">{p.name}</span>
                   <span class="muted">{p.kind === 'bill' ? 'fatura' : ''}</span>
                 </li>
               ))}
-            </ul>
+            />
           )}
         </>
       )}

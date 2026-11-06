@@ -7,6 +7,38 @@ export interface Palette {
   scheme: 'dark' | 'light';
 }
 
+const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+const mix = (a: string, b: string, t: number): string => {
+  const x = rgb(a);
+  const y = rgb(b);
+  return `#${x.map((v, i) => Math.round(v + (y[i]! - v) * t).toString(16).padStart(2, '0')).join('')}`;
+};
+
+/** Hues for the charts, in order. The accent always comes first; hues too close to it are dropped so two slices never look alike. */
+const CHART_DARK = { violet: '#8b7cff', teal: '#4dd6c4', blue: '#5aa9ff', pink: '#f78fd0', grey: '#9aa4b2' };
+// Darker, more saturated versions so slices stay visible on a white card.
+const CHART_LIGHT = { violet: '#6d28d9', teal: '#0f766e', blue: '#1d4ed8', pink: '#be185d', grey: '#64748b' };
+
+const distance = (a: string, b: string) => Math.hypot(...rgb(a).map((v, i) => v - rgb(b)[i]!));
+
+/** The --chart-1..8 variables of a palette, built from its accent, its state colors and its scheme. */
+export function chartVars(accent: string, scheme: 'dark' | 'light', warn: string, bad: string, good: string): Record<string, string> {
+  const hue = scheme === 'light' ? CHART_LIGHT : CHART_DARK;
+  const candidates = [hue.violet, warn, bad, hue.teal, hue.blue, hue.pink, hue.grey, good];
+  const rest = candidates.filter((c) => distance(c, accent) > 70);
+  const colors = [accent, ...rest, ...candidates.filter((c) => !rest.includes(c))].slice(0, 8);
+  return Object.fromEntries(colors.map((c, i) => [`--chart-${i + 1}`, c]));
+}
+
+/** Shadows and the dimmed backdrop are softer on light palettes, where heavy black looks dirty. */
+const depthVars = (scheme: 'dark' | 'light'): Record<string, string> =>
+  scheme === 'light'
+    ? { '--shadow-1': '0 12px 32px rgb(0 0 0 / 0.14)', '--shadow-2': '0 24px 70px rgb(0 0 0 / 0.25)', '--overlay': 'rgb(0 0 0 / 0.35)' }
+    : { '--shadow-1': '0 12px 32px rgb(0 0 0 / 0.5)', '--shadow-2': '0 24px 70px rgb(0 0 0 / 0.65)', '--overlay': 'rgb(0 0 0 / 0.55)' };
+
+/** Adds the variables that depend on the palette's accent and scheme: chart colors, shadows, backdrop. */
+const withCharts = (p: Palette): Palette => ({ ...p, vars: { ...p.vars, ...depthVars(p.scheme), ...chartVars(p.vars['--accent']!, p.scheme, p.vars['--warn']!, p.vars['--bad']!, p.vars['--good']!) } });
+
 const dark = (id: string, name: string, accent: string, extra: Record<string, string> = {}): Palette => ({
   id,
   name,
@@ -14,7 +46,7 @@ const dark = (id: string, name: string, accent: string, extra: Record<string, st
   vars: { '--bg': '#0b0d10', '--card': '#14181d', '--card-2': '#1b2027', '--text': '#eef1f5', '--muted': '#8b95a3', '--accent': accent, '--accent-ink': '#11140a', '--good': '#4ade80', '--bad': '#ff6b6b', '--warn': '#ffb547', '--track': '#232a33', ...extra },
 });
 
-export const PALETTES: Palette[] = [
+export const PALETTES: Palette[] = ([
   dark('lima', 'Lima (padrão)', '#c6f432'),
   dark('oceano', 'Oceano', '#4cc9f0', { '--bg': '#0a0f14', '--card': '#101820', '--card-2': '#172431', '--track': '#1f3140', '--accent-ink': '#06202b' }),
   dark('violeta', 'Violeta', '#b794f6', { '--bg': '#0d0b12', '--card': '#16131f', '--card-2': '#1f1b2b', '--track': '#2c2640', '--accent-ink': '#170d2b' }),
@@ -31,7 +63,7 @@ export const PALETTES: Palette[] = [
     id: 'papel',
     name: 'Papel',
     scheme: 'light',
-    vars: { '--bg': '#faf7f2', '--card': '#ffffff', '--card-2': '#f1ece3', '--text': '#2a2622', '--muted': '#7a7167', '--accent': '#b45309', '--accent-ink': '#ffffff', '--good': '#15803d', '--bad': '#b91c1c', '--warn': '#a16207', '--track': '#e0d8ca' },
+    vars: { '--bg': '#faf7f2', '--card': '#ffffff', '--card-2': '#f1ece3', '--text': '#2a2622', '--muted': '#6b6258', '--accent': '#b45309', '--accent-ink': '#ffffff', '--good': '#15803d', '--bad': '#b91c1c', '--warn': '#a16207', '--track': '#e0d8ca' },
   },
   {
     id: 'menta',
@@ -45,7 +77,7 @@ export const PALETTES: Palette[] = [
     scheme: 'light',
     vars: { '--bg': '#f3f5f8', '--card': '#ffffff', '--card-2': '#eceff4', '--text': '#161a20', '--muted': '#5d6878', '--accent': '#4d7c0f', '--accent-ink': '#ffffff', '--good': '#15803d', '--bad': '#c92a2a', '--warn': '#b45309', '--track': '#d5dbe4' },
   },
-];
+] as Palette[]).map(withCharts);
 
 /** The seven colors an owner picks; the other shades are worked out from them. */
 export interface CustomColors {
@@ -65,22 +97,33 @@ export interface CustomPalette {
 
 const CUSTOM_KEY = 'gmf-custom-palettes';
 
-const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
-const mix = (a: string, b: string, t: number): string => {
-  const x = rgb(a);
-  const y = rgb(b);
-  return `#${x.map((v, i) => Math.round(v + (y[i]! - v) * t).toString(16).padStart(2, '0')).join('')}`;
+const luminance = (hex: string) => {
+  const [r, g, b] = rgb(hex).map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
+
+/** WCAG contrast ratio between two #rrggbb colors, from 1 to 21. Body text needs at least 4.5. */
+export function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
 
 /** The full set of variables for a custom palette. */
 export function paletteFromColors(id: string, name: string, c: CustomColors): Palette {
   const light = 0.299 * rgb(c.bg)[0] + 0.587 * rgb(c.bg)[1] + 0.114 * rgb(c.bg)[2] > 140;
-  return {
+  const card2 = mix(c.card, c.text, 0.07);
+  // Start from a soft grey and move toward the text color until it reads on the background and on card-2.
+  let muted = mix(c.text, c.bg, 0.45);
+  for (let t = 0.4; t >= 0 && (contrast(muted, c.bg) < 4.5 || contrast(muted, card2) < 4.5); t -= 0.05) muted = mix(c.text, c.bg, t);
+  return withCharts({
     id,
     name,
     scheme: light ? 'light' : 'dark',
-    vars: { '--bg': c.bg, '--card': c.card, '--card-2': mix(c.card, c.text, 0.07), '--track': mix(c.card, c.text, 0.16), '--text': c.text, '--muted': mix(c.text, c.bg, 0.45), '--accent': c.accent, '--accent-ink': inkFor(c.accent), '--good': c.good, '--bad': c.bad, '--warn': c.warn },
-  };
+    vars: { '--bg': c.bg, '--card': c.card, '--card-2': card2, '--track': mix(c.card, c.text, 0.16), '--text': c.text, '--muted': muted, '--accent': c.accent, '--accent-ink': inkFor(c.accent), '--good': c.good, '--bad': c.bad, '--warn': c.warn },
+  });
 }
 
 export function colorsOf(p: Palette): CustomColors {
@@ -127,10 +170,9 @@ export function savedAccent(): string | null {
   return value && HEX.test(value) ? value : null;
 }
 
-/** Black or white, whichever reads better on a color. */
+/** The text color to put on a color: the soft dark ink or white when either reaches 4.5:1, otherwise pure black. */
 export function inkFor(hex: string): string {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-  return 0.299 * r! + 0.587 * g! + 0.114 * b! > 150 ? '#11140a' : '#ffffff';
+  return ['#11140a', '#ffffff'].find((ink) => contrast(ink, hex) >= 4.5) ?? '#000000';
 }
 
 /** Paints the app with the saved palette and accent. Called before the first render, and again when the owner changes them. */
@@ -142,6 +184,7 @@ export function applyTheme(): void {
   if (accent) {
     root.style.setProperty('--accent', accent);
     root.style.setProperty('--accent-ink', inkFor(accent));
+    root.style.setProperty('--chart-1', accent);
   }
   root.style.colorScheme = palette.scheme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', palette.vars['--bg']!);

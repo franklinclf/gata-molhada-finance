@@ -28,6 +28,13 @@ export interface Cycle {
   paid: Cents;
   /** What is still owed on a closed cycle. */
   outstanding: Cents;
+  /**
+   * What the payments in this cycle's window add up to beyond the bill (zero within a real of it), after the part that paid an
+   * older bill still open has been moved to it (see `latePaid`). What is left is a warning only, typically a bill paid twice.
+   */
+  overpaid: Cents;
+  /** Part of this bill that was paid late, by a payment made after the next bill closed, and the day of that payment. Null when nothing. */
+  latePaid: { amount: Cents; day: string } | null;
   status: CycleStatus;
   /**
    * A leftover on a closed bill that is not counted as owed. `by: 'auto'`: the app guesses it rolled over into the next
@@ -205,6 +212,7 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     const paid = w.open ? 0 : payments.filter((p) => p.day >= w.to && (next === undefined || p.day < next.to)).reduce((s, p) => s + p.amount, 0);
     let status: CycleStatus;
     let outstanding = 0;
+    let overpaid = 0;
     if (w.open) status = 'open';
     // A closed month with no published bill cannot be judged: the payments are shown, the amount owed is not guessed.
     // A bill of zero needs no payment to be judged.
@@ -214,6 +222,7 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     else if (w.from < coverageStart && paid < w.total - TOLERANCE) status = 'unknown';
     else {
       outstanding = Math.max(w.total - paid, 0);
+      if (paid - w.total > TOLERANCE) overpaid = paid - w.total;
       if (w.total === 0) status = 'empty';
       else if (outstanding <= TOLERANCE) status = 'paid';
       else status = w.due < today ? 'overdue' : paid > 0 ? 'partial' : 'unpaid';
@@ -228,13 +237,40 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
         status = 'paid';
       } else {
         outstanding = w.total;
+        overpaid = 0;
         status = w.due < today ? 'overdue' : 'unpaid';
       }
     }
     const edited = edit ? { total: edit.total !== null, closing: edit.closingDate !== null, due: edit.dueDate !== null, status: edit.status !== null } : null;
-    return { key: w.key, accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, status, adjusted, edited };
+    return { key: w.key, accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, overpaid, latePaid: null, status, adjusted, edited };
   });
-  return settleLeftovers(store, account.id, cycles, today);
+  return settleLeftovers(store, account.id, applyLatePayments(store, account.id, cycles, payments), today);
+}
+
+/**
+ * A payment of an older bill made after the next bill closed lands in the window of the next bill (windows follow the closing
+ * days), which then looks overpaid while the older one looks overdue. The excess of a cycle pays the oldest bill before it that
+ * is still owed, and that bill is marked as paid late, on the day of the first payment in the window.
+ */
+function applyLatePayments(store: Store, accountId: string, cycles: Cycle[], payments: Array<{ day: string; amount: Cents }>): Cycle[] {
+  const edits = store.listBillEdits();
+  cycles.forEach((c, i) => {
+    if (c.overpaid <= 0) return;
+    const owed = (x: Cycle) => x.billTotal !== null && x.outstanding > 0 && (x.status === 'overdue' || x.status === 'unpaid' || x.status === 'partial') && !edits.get(`${accountId}|${x.key}`)?.status;
+    const older = cycles.slice(0, i).find(owed);
+    if (!older) return;
+    const applied = Math.min(c.overpaid, older.outstanding);
+    const day = payments.filter((p) => p.day >= c.to && p.day < (cycles[i + 1]?.to ?? '9999-12-31')).map((p) => p.day).sort()[0] ?? c.to;
+    older.latePaid = { amount: (older.latePaid?.amount ?? 0) + applied, day: older.latePaid?.day ?? day };
+    older.paid += applied;
+    older.outstanding -= applied;
+    if (older.outstanding <= TOLERANCE) {
+      older.outstanding = 0;
+      older.status = 'paid';
+    }
+    c.overpaid = c.overpaid - applied > TOLERANCE ? c.overpaid - applied : 0;
+  });
+  return cycles;
 }
 
 /** Whole months from one day to another. Closing days drift by a day or two (30/09 then 01/11 is one month), so this rounds by length. */

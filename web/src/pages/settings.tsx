@@ -4,6 +4,7 @@ import { ago } from '../format.ts';
 import { createPasskey, guessDeviceName, passkeysSupported } from '../passkey.ts';
 import { brl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
+import { useNavOrder } from '../nav.ts';
 import { patchParams, type Route } from '../router.ts';
 import { CheckList, Go, Loading } from '../ui.tsx';
 import type { CategoryRow } from '../api.ts';
@@ -18,16 +19,23 @@ const KIND: Record<string, string> = { checking: 'Conta corrente', savings: 'Pou
 
 function AccountsTab({ hidden }: { hidden: boolean }) {
   const { data, error, reload } = useLoad(() => api.accounts(), []);
+  const [toggleError, setToggleError] = useState<string | null>(null);
   if (!data) return <Loading error={error} />;
   const byInstitution = new Map<string, typeof data.items>();
   for (const a of data.items) byInstitution.set(a.institution, [...(byInstitution.get(a.institution) ?? []), a]);
   const toggle = async (id: string, value: boolean) => {
-    await api.setHidden(id, value);
-    reload();
+    setToggleError(null);
+    try {
+      await api.setHidden(id, value);
+      reload();
+    } catch (e) {
+      setToggleError(e instanceof Error ? e.message : 'Não foi possível salvar.');
+    }
   };
   return (
     <>
       <p class="muted">Contas e cartões ocultos saem de todos os totais, gráficos e listas. Os dados continuam sendo lidos e você pode voltar a mostrá-los aqui.</p>
+      {toggleError && <div class="error" role="alert">{toggleError}</div>}
       {[...byInstitution].map(([institution, list]) => (
         <section class="panel" key={institution}>
           <h2>{institution}</h2>
@@ -80,7 +88,7 @@ function GroupsPanel({ items, groups, run }: { items: CategoryRow[]; groups: str
             <span class="grow clip">{g}</span>
             <span class="muted">{items.filter((c) => c.parent === g).length} categorias</span>
             <button class="link" onClick={() => open(g)}>Editar</button>
-            <button class="link" onClick={() => void run(() => api.deleteGroup(g))}>Desfazer grupo</button>
+            <button class="link" onClick={() => window.confirm(`Desfazer o grupo "${g}"? As categorias dele ficam sem grupo. Se o grupo tiver orçamento, ele também será removido, em todos os meses.`) && void run(() => api.deleteGroup(g))}>Desfazer grupo</button>
           </li>
         ))}
       </ul>
@@ -147,13 +155,13 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
         onChange={(value) => void run(() => api.setCategoryParent(c.name, value === '' ? null : value))}
       />
       {c.custom && <span class="badge info">sua</span>}
-      <span class="muted">{c.count} transações</span>
+      <span class="muted">{c.count === 1 ? '1 transação' : `${c.count} transações`}</span>
       <span>{brl(c.amount, hidden)}</span>
       <button class="link" onClick={() => { setEditing(editing === c.name ? null : c.name); setNewName(c.name); }}>
         Renomear
       </button>
       {c.custom && (
-        <button class="link" onClick={() => void run(() => api.deleteCategory(c.name))}>
+        <button class="link" onClick={() => window.confirm(`Excluir a categoria "${c.name}"? As transações dela voltam para a categoria que a fonte informa.`) && void run(() => api.deleteCategory(c.name))}>
           Excluir
         </button>
       )}
@@ -163,6 +171,8 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
           style="flex-basis: 100%"
           onSubmit={(e) => {
             e.preventDefault();
+            const target = newName.trim();
+            if (data.items.some((x) => x.name === target) && !window.confirm(`Juntar "${c.name}" em "${target}"? As transações passam para "${target}" e isso não tem como desfazer.`)) return;
             void run(async () => {
               await api.renameCategory(c.name, newName);
               setEditing(null);
@@ -210,7 +220,7 @@ function CategoriesTab({ hidden }: { hidden: boolean }) {
                 <Go class="grow clip" page="transactions" params={{ category: c.name }}>
                   {c.name}
                 </Go>
-                <span class="muted">{c.count} transações</span>
+                <span class="muted">{c.count === 1 ? '1 transação' : `${c.count} transações`}</span>
                 <span>{brl(c.amount, hidden)}</span>
                 <CategorySelect
                   ariaLabel={`Mapear ${c.name} para`}
@@ -746,6 +756,37 @@ const COLOR_LABELS: Array<[keyof CustomColors, string]> = [
 ];
 
 /** Color palette of the app, kept in this browser: suggested ones, and ones the owner builds color by color. */
+/** The order of the top bar sections, by buttons that work on touch and keyboard (the bar also accepts a drag on a mouse). */
+function MenuOrderSection() {
+  const order = useNavOrder();
+  return (
+    <section class="panel">
+      <h2>Ordem do menu superior</h2>
+      <div class="muted">Vale para telas largas e só neste navegador. Use as setas para subir ou descer cada seção. Com a barra cheia, as últimas ficam em “Mais”.</div>
+      <ol class="rows order-list">
+        {order.items.map(([id, label], index) => (
+          <li key={id}>
+            <span class="grow">{label}</span>
+            <Button size="sm" aria-label={`Subir ${label}`} disabled={index === 0} onClick={() => order.shift(id, -1)}>
+              ↑
+            </Button>
+            <Button size="sm" aria-label={`Descer ${label}`} disabled={index === order.items.length - 1} onClick={() => order.shift(id, 1)}>
+              ↓
+            </Button>
+          </li>
+        ))}
+      </ol>
+      {order.custom && (
+        <div class="actions">
+          <Button size="sm" onClick={() => order.reset()}>
+            Voltar à ordem original
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AppearanceTab() {
   const [palette, setPalette] = useState(savedPalette());
   const [accent, setAccent] = useState(savedAccent());
@@ -833,6 +874,7 @@ function AppearanceTab() {
           )}
         </div>
       </section>
+      <MenuOrderSection />
     </>
   );
 }

@@ -41,7 +41,7 @@ test('a read that returns almost nothing is treated as a failed read and removes
   data.transactions = [tx('t0', '2026-10-10')];
   const result = await syncSource(adapter, { store, now }, SINCE);
   assert.equal(ids(store).length, 12);
-  assert.match(result.warnings.join(' '), /none were removed/);
+  assert.match(result.warnings.join(' '), /Bank \/ a1: .*nenhum dos 11 foi removido/);
 });
 
 test('an empty read removes nothing', async () => {

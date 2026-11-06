@@ -1,4 +1,4 @@
-import type { SourceAdapter } from '../core/adapter.ts';
+import type { SourceAdapter, TransactionRead } from '../core/adapter.ts';
 import { SourceHttpError, type SnapshotSink } from '../core/http.ts';
 import type { SourceId } from '../core/types.ts';
 import type { Store } from '../store/store.ts';
@@ -14,6 +14,8 @@ export interface SyncResult {
   transactions: number;
   bills: number;
   freshness: number;
+  /** Accounts whose transactions could not be read this time. The caller reads again at the next check. */
+  failedAccounts: string[];
   warnings: string[];
   errors: string[];
 }
@@ -78,6 +80,7 @@ async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date, opti
     transactions: 0,
     bills: 0,
     freshness: 0,
+    failedAccounts: [],
     warnings: [],
     errors: [],
   };
@@ -99,15 +102,30 @@ async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date, opti
   }
 
   try {
-    const transactions = await adapter.fetchTransactions(since);
+    const read = await readTransactions(adapter, store, since);
     const seenAt = now().toISOString();
-    store.upsertSourceTransactions(adapter.id, transactions, seenAt);
-    result.transactions = transactions.length;
+    store.upsertSourceTransactions(adapter.id, read.transactions, seenAt);
+    result.transactions = read.transactions.length;
+    // An account that failed keeps what it had, and the note says which one it was, so the owner knows why its numbers are old.
+    for (const failure of read.failed) result.failedAccounts.push(failure.label);
+    for (const failure of read.failed) result.warnings.push(`${failure.label}: não foi possível ler as transações (${describe(failure.error)}), então esta conta ficou como estava`);
+    if (read.failed.length > 0 && read.readAccountIds.length === 0) result.errors.push(`transactions: ${describe(read.failed[0]!.error)}`);
     // The read covers every date from `since` to today, so a record in that range that did not come back is gone at the
     // source (deleted, or re-created under a new id when it posted). The first day stays out as a margin for the time zone.
-    if (result.errors.length === 0 && transactions.length > 0) {
-      const pruned = store.pruneUnseenSourceTransactions(adapter.id, new Date(since.getTime() + 86_400_000).toISOString(), seenAt, seenAt, options.fullWindow === true);
-      if (pruned.skipped) result.warnings.push('transactions: most of the recent records did not come back, so none were removed');
+    // Only accounts read to the end are checked, and an account that came back empty or lost most of its records is kept.
+    if (!result.errors.some((e) => e.startsWith('accounts:')) && read.readAccountIds.length > 0) {
+      const pruned = store.pruneUnseenSourceTransactions(adapter.id, read.readAccountIds, new Date(since.getTime() + 86_400_000).toISOString(), seenAt, seenAt, options.fullWindow === true);
+      if (pruned.skipped.length > 0) {
+        const names = new Map(store.listSourceAccounts(adapter.id).map((a) => [a.externalId, `${a.institution} / ${a.name}`]));
+        for (const skip of pruned.skipped) {
+          const label = names.get(skip.accountId) ?? skip.accountId;
+          result.warnings.push(
+            skip.reason === 'empty'
+              ? `${label}: nenhuma transação voltou na leitura, então os ${skip.unseen} registros salvos foram mantidos`
+              : `${label}: a maior parte dos registros recentes não voltou na leitura, então nenhum dos ${skip.unseen} foi removido`,
+          );
+        }
+      }
     }
   } catch (error) {
     result.errors.push(`transactions: ${describe(error)}`);
@@ -122,5 +140,27 @@ async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date, opti
   }
 
   result.warnings.push(...(adapter.drainWarnings?.() ?? []));
+  trimStorage(store, adapter.id, now(), result);
   return result;
+}
+
+/** Reads per account when the adapter can; otherwise the one list it returns counts for every account it knows. */
+async function readTransactions(adapter: SourceAdapter, store: Store, since: Date): Promise<TransactionRead> {
+  if (adapter.fetchTransactionRead) return adapter.fetchTransactionRead(since);
+  const transactions = await adapter.fetchTransactions(since);
+  return { transactions, readAccountIds: store.listSourceAccounts(adapter.id).map((a) => a.externalId), failed: [] };
+}
+
+/** Raw responses kept: the last few complete reads and one per month. A pause this long separates one read from the next. */
+const KEEP_RAW_READS = 3;
+const READ_GAP_MS = 15 * 60_000;
+
+/** Old raw responses are the bulk of the file, and the records already hold what was derived from them. Never fails the sync. */
+function trimStorage(store: Store, sourceId: SourceId, at: Date, result: SyncResult): void {
+  try {
+    store.pruneSnapshots(sourceId, KEEP_RAW_READS, READ_GAP_MS);
+    store.reclaimSpace(at.toISOString());
+  } catch (error) {
+    result.warnings.push(`limpeza de respostas antigas falhou: ${describe(error)}`);
+  }
 }

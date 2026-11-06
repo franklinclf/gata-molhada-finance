@@ -82,9 +82,9 @@ export function sizeClass(w: number, h: number): SizeClass {
   return w >= 6 && h >= 7 ? 'lg' : 'md';
 }
 
-/** The same choice from the size on screen, so a widget fits its real room whatever the column width is. A wide, short widget still gets the fuller look. */
+/** The same choice from the size on screen, so a widget fits its real room whatever the column width is. A wide, short widget still gets the fuller look, and a narrow but tall one does too, since its content fits in 355 px on a phone. */
 export function sizeClassPx(width: number, height: number): SizeClass {
-  if (width <= 360 || (height <= 260 && width < 600)) return 'sm';
+  if ((width <= 360 && height <= 360) || (height <= 260 && width < 600)) return 'sm';
   if ((width >= 880 && height >= 500) || (width >= 660 && height >= 590)) return 'lg';
   return 'md';
 }
@@ -107,4 +107,22 @@ export function reflow<T extends Box>(items: T[], columns: number): T[] {
 /** How many list rows fit in a widget of this height, after the header, the key figure and the footer. */
 export function rowsFit(h: number, reserved = 3): number {
   return Math.max(Math.floor((h - reserved) * 1.6), 0);
+}
+
+/** A widget's size on screen, in pixels. Unknown where the widget is as tall as its content (the phone stack). */
+export interface Pixels {
+  width: number;
+  height: number;
+}
+
+/** Height for a chart that takes the room left after `reserved` px of other content, kept between `min` and `max`. Without a known size it keeps `min`. */
+export function chartHeight(pixels: Pixels | undefined, reserved: number, min: number, max: number): number {
+  if (!pixels) return min;
+  return Math.round(Math.min(max, Math.max(min, pixels.height - reserved)));
+}
+
+/** "<1%" for a positive share that rounds to nothing, so a real amount never sits beside "0%". */
+export function shareLabel(fraction: number): string {
+  if (fraction > 0 && fraction < 0.005) return '<1%';
+  return `${Math.round(fraction * 100)}%`;
 }

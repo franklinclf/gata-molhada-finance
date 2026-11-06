@@ -1,7 +1,8 @@
 import { useState } from 'preact/hooks';
 import { brl, brlShort, dayMonth } from './format.ts';
 
-export const PALETTE = ['#c6f432', '#8b7cff', '#ffb547', '#ff6b6b', '#4dd6c4', '#5aa9ff', '#f78fd0', '#9aa4b2'];
+/** Chart colors come from the palette (--chart-1 is the accent), so slices stay visible on light and dark cards. */
+export const PALETTE = Array.from({ length: 8 }, (_, i) => `var(--chart-${i + 1})`);
 
 interface Segment {
   value: number;
@@ -91,7 +92,7 @@ export interface BarDatum {
  * Vertical bars. Hover shows the exact figure; when onSelect is given a bar can be clicked to choose that period,
  * and the selected bar stays highlighted while the others dim.
  */
-export function Bars({ data, hidden, selected, onSelect, height = 130 }: { data: BarDatum[]; hidden: boolean; selected?: string | null; onSelect?: (key: string) => void; height?: number }) {
+export function Bars({ data, hidden, selected, onSelect, height = 130, valueOnSelected = false }: { data: BarDatum[]; hidden: boolean; selected?: string | null; onSelect?: (key: string) => void; height?: number; /** On narrow screens only the selected bar keeps its value, because twelve columns are too thin for twelve values. */ valueOnSelected?: boolean }) {
   const max = Math.max(1, ...data.map((d) => d.value));
   const Tag = onSelect ? 'button' : 'div';
   // Bars that share a group (the in and out bars of a month) sit side by side under one label, so the label stays centered under the pair.
@@ -102,7 +103,7 @@ export function Bars({ data, hidden, selected, onSelect, height = 130 }: { data:
     else columns.push([d]);
   }
   return (
-    <div class="bars" style={{ height: `${height}px` }} role="group">
+    <div class={valueOnSelected ? 'bars sel-values' : 'bars'} style={{ height: `${height}px` }} role="group">
       {columns.map((column) => {
         const first = column[0]!;
         const id = first.group ?? first.key;
@@ -117,7 +118,8 @@ export function Bars({ data, hidden, selected, onSelect, height = 130 }: { data:
             onClick={() => onSelect?.(id)}
             aria-pressed={onSelect ? selected === id : undefined}
           >
-            {!paired && <span class="bar-value">{brlShort(first.value, hidden)}</span>}
+            {/* A month with nothing keeps the row, so the bars line up, but shows no "0". */}
+            {!paired && <span class="bar-value">{first.value > 0 ? brlShort(first.value, hidden) : '\u00a0'}</span>}
             <span class="bar-track">
               {column.map((d) => (
                 <span key={d.key} class="bar-fill" style={{ height: `${(d.value / max) * 100}%`, background: d.color ?? 'var(--accent)', opacity: on ? 1 : 0.35 }} />
@@ -132,7 +134,7 @@ export function Bars({ data, hidden, selected, onSelect, height = 130 }: { data:
 }
 
 /** Running total as a line with a soft fill and a pointer that reads the value of the day under it. */
-export function LineChart({ points, hidden, days, label: title = 'Gastos acumulados' }: { points: number[]; hidden: boolean; days?: string[]; label?: string }) {
+export function LineChart({ points, hidden, days, label: title = 'Gastos acumulados', height: boxHeight }: { points: number[]; hidden: boolean; days?: string[]; label?: string; /** Height of the chart in px; 90 when not given. */ height?: number }) {
   const [at, setAt] = useState<number | null>(null);
   if (points.length < 2) return <div class="empty">Sem dados no período</div>;
   const width = 300;
@@ -147,6 +149,7 @@ export function LineChart({ points, hidden, days, label: title = 'Gastos acumula
   return (
     <div
       class="line-wrap"
+      style={boxHeight ? { height: `${boxHeight}px` } : undefined}
       data-tip={at === null ? undefined : label}
       onMouseMove={(e) => {
         const box = (e.currentTarget as HTMLElement).getBoundingClientRect();

@@ -226,6 +226,18 @@ test('the backup needs a recent sign-in and a passphrase of at least 12 characte
   assert.match(ok.headers['Content-Disposition'] ?? '', /gmf-backup-2026-10-27/);
 });
 
+test('a backup that takes time is sent when it is ready, and a failing one answers with an error', async () => {
+  const { deps, cookie } = signedIn();
+  const slow = handle(post('/api/backup', { passphrase: 'long enough passphrase' }, { cookie }), { ...deps, backup: async () => Buffer.from('packed') });
+  assert.equal(typeof slow.deferred, 'function');
+  const done = await slow.deferred!();
+  assert.equal(done.status, 200);
+  assert.deepEqual(done.bytes, Buffer.from('packed'));
+  assert.match(done.headers['Content-Disposition'] ?? '', /gmf-backup-2026-10-27/);
+  const failing = handle(post('/api/backup', { passphrase: 'long enough passphrase' }, { cookie }), { ...deps, backup: async () => { throw new Error('disk full'); } });
+  assert.equal((await failing.deferred!()).status, 500);
+});
+
 test('failed sign-ins from one address lock that address and leave another free', () => {
   const { deps, code } = setup();
   const attempt = (ip: string, password: string) => handle(post('/api/auth/login', { password, code: code() }, { 'x-forwarded-for': `1.1.1.1, ${ip}` }), deps);

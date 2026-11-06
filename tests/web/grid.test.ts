@@ -71,7 +71,8 @@ test('wide screens get more columns, and widgets spread over them', async () => 
   assert.equal(columnsFor(9000, 14), 36);
   const spread = reflow([{ id: 'a', x: 0, y: 0, w: 4, h: 5 }, { id: 'b', x: 0, y: 5, w: 4, h: 5 }, { id: 'c', x: 0, y: 10, w: 4, h: 5 }, { id: 'd', x: 0, y: 15, w: 4, h: 5 }], 16);
   assert.deepEqual(spread.map((i) => [i.x, i.y]), [[0, 0], [4, 0], [8, 0], [12, 0]]);
-  assert.equal(sizeClassPx(300, 500), 'sm');
+  assert.equal(sizeClassPx(300, 300), 'sm');
+  assert.equal(sizeClassPx(320, 588), 'md');
   assert.equal(sizeClassPx(1000, 600), 'lg');
   assert.equal(sizeClassPx(900, 200), 'md');
 });

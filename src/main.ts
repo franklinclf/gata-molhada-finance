@@ -1,10 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Debounce } from './http/deploy-hook.ts';
 import { effectOf, recordAlert, type PluggyEvent } from './http/pluggy-hook.ts';
-import { encryptBackup } from './backup/backup.ts';
+import { encryptBackupAsync } from './backup/backup.ts';
+import { assertCopyWritten, pruneCopies } from './backup/retention.ts';
 import { ask } from './ai/analyst.ts';
 import type { AiRunScope } from './ai/job.ts';
 import { loadAiConfig, runCategorizerNow, runCategorizerOnce, startAiLoop } from './ai/job.ts';
@@ -60,6 +62,8 @@ const adapters = buildAdapters(loadAdapterEnv(process.env), { store, http: retry
 // A source with no adapter any more (the Pierre integration was removed) keeps its saved records but stops reporting freshness.
 const retired = store.retireSourcesExcept(adapters.map((a) => a.id));
 if (retired.length > 0) console.log(`retired sources, kept as saved history: ${retired.join(', ')}`);
+/** How many before-reset copies stay in the backups folder. */
+const KEEP_RESET_COPIES = 3;
 const refreshAdapter = adapters.find((a) => a.capabilities.refreshOnDemand);
 const aiOn = (): boolean => aiConfig.enabled && aiConfig.apiKey !== null;
 const resetter = refreshAdapter
@@ -71,6 +75,9 @@ const resetter = refreshAdapter
         mkdirSync(dir, { recursive: true });
         const file = join(dir, `before-reset-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`);
         store.copyTo(file);
+        // A copy that is missing or empty protects nothing, so the reset stops here. Only the newest few copies are kept.
+        assertCopyWritten(file);
+        pruneCopies(dir, 'before-reset-', KEEP_RESET_COPIES);
         return file;
       },
       categorize: async () => {
@@ -80,12 +87,12 @@ const resetter = refreshAdapter
       },
     })
   : undefined;
-const backup = (passphrase: string): Buffer => {
+const backup = async (passphrase: string): Promise<Buffer> => {
   // A consistent copy next to the database (same disk), read once and removed.
   const copy = join(dirname(config.dbPath), `.backup-${randomBytes(6).toString('hex')}.sqlite`);
   try {
     store.copyTo(copy);
-    return encryptBackup(readFileSync(copy), passphrase);
+    return await encryptBackupAsync(await readFile(copy), passphrase);
   } finally {
     rmSync(copy, { force: true });
   }

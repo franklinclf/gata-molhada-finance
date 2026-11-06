@@ -4,7 +4,7 @@ import type { BudgetLine, SuggestionLine } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { Select } from '../Select.tsx';
-import { brl, localDay, monthName, percent } from '../format.ts';
+import { brl, localDay, monthName, parseBrl, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams, type Route } from '../router.ts';
 import { Go, Loading } from '../ui.tsx';
@@ -15,10 +15,7 @@ const addMonths = (month: string, n: number): string => {
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
 };
 
-const toCents = (text: string): number | null => {
-  const n = Number(text.trim().replace(/\./g, '').replace(',', '.'));
-  return text.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
-};
+const toCents = (text: string): number | null => parseBrl(text);
 const reais = (cents: number): string => String(cents / 100).replace('.', ',');
 
 function Line({ line, month, hidden, onChanged, onError }: { line: BudgetLine; month: string; hidden: boolean; onChanged: () => void; onError: (m: string) => void }) {
@@ -56,8 +53,8 @@ function Line({ line, month, hidden, onChanged, onError }: { line: BudgetLine; m
       </div>
       {line.budget !== null && (
         <>
-          <Meter fraction={line.used ?? 0} tip={`${percent(line.used ?? 0)} usado`} />
-          <div class="muted budget-note">
+          <Meter fraction={line.used ?? 0} tip={`${percent(line.used ?? 0)} usado`} color={over ? 'var(--bad)' : line.pace > line.budget ? 'var(--warn)' : undefined} />
+          <div class={`muted budget-note${!over && line.pace > line.budget ? ' warn-text' : ''}`}>
             {percent(line.used ?? 0)} usado
             {line.pace > line.budget && line.actual <= line.budget ? ` · no ritmo de ${brl(line.pace, hidden)} até o fim do mês` : ''}
             {over ? ` · ${brl(line.actual - line.budget, hidden)} acima do limite` : ''}
@@ -220,9 +217,9 @@ export function BudgetsPage({ route, now, hidden }: { route: Route; now: Date; h
           <div class="panel">
             <div class="big">{brl(data.totals.actual, hidden)}</div>
             <div class="muted">gastos nas categorias com orçamento, de {brl(data.totals.budget, hidden)}{data.totals.over > 0 ? ` · ${data.totals.over} acima do limite` : ''}</div>
-            <Meter fraction={data.totals.budget > 0 ? data.totals.actual / data.totals.budget : 0} />
+            <Meter fraction={data.totals.budget > 0 ? data.totals.actual / data.totals.budget : 0} color={data.totals.budget > 0 && data.totals.actual > data.totals.budget ? 'var(--bad)' : data.totals.budget > 0 && data.totals.pace > data.totals.budget ? 'var(--warn)' : undefined} />
             {data.elapsedDays > 0 && data.elapsedDays < data.totalDays && data.totals.budget > 0 && (
-              <div class="muted">
+              <div class={data.totals.pace > data.totals.budget ? 'muted warn-text' : 'muted'}>
                 Dia {data.elapsedDays} de {data.totalDays}. No ritmo atual, o mês fecha em {brl(data.totals.pace, hidden)}.
               </div>
             )}

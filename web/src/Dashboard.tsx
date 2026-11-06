@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { DEFAULT_SIZES, defaultLayout, WIDGET_IDS } from '../../src/api/layout.ts';
 import { api } from './api.ts';
 import type { LayoutItem, WidgetId } from './api.ts';
-import { freeSlot, reflow, sizeClassPx } from './grid.ts';
+import { freeSlot, reflow, sizeClassPx, type Pixels } from './grid.ts';
 import { Grid } from './Grid.tsx';
 import { useLoad, useStoredFlag } from './hooks.ts';
 import { setTopbarTools } from './topbar.ts';
 import { Loading } from './ui.tsx';
+import { FixedHeight } from './Widget.tsx';
 import { Select } from './Select.tsx';
 import { WIDGETS } from './widgets/index.ts';
 
@@ -37,14 +38,18 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
   }, [wide]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // A reload after any change must not put back an older layout while a move waits to be saved.
   useEffect(() => {
-    if (saved.data) setItems(saved.data.items);
+    if (saved.data && !timer.current) setItems(saved.data.items);
   }, [saved.data]);
 
   function update(next: LayoutItem[]) {
     setItems(next);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => void api.saveLayout({ version: 2, items: next }).catch(() => {}), 500);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      void api.saveLayout({ version: 2, items: next }).catch(() => {});
+    }, 500);
   }
 
   // The controls live in the top bar.
@@ -65,13 +70,14 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
   }
 
   const ordered = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
-  const render = (item: LayoutItem, pixels?: { width: number; height: number }) => {
+  const render = (item: LayoutItem, pixels?: Pixels) => {
     const { component: Component } = WIDGETS[item.widget];
     return (
       <Component
         item={item}
         now={now}
         hidden={hidden}
+        pixels={narrow ? undefined : pixels}
         size={narrow || !pixels ? 'md' : sizeClassPx(pixels.width, pixels.height)}
         config={item.config ?? {}}
         setConfig={(patch) => update(items.map((i) => (i.id === item.id ? { ...i, config: { ...(i.config ?? {}), ...patch } } : i)))}
@@ -111,13 +117,15 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
   return (
     <>
       {narrow ? (
-        <div class="stack">
-          {ordered.map((item) => (
-            <div class="stack-cell" key={item.id}>
-              {render(item)}
-            </div>
-          ))}
-        </div>
+        <FixedHeight.Provider value={false}>
+          <div class="stack">
+            {ordered.map((item) => (
+              <div class="stack-cell" key={item.id}>
+                {render(item)}
+              </div>
+            ))}
+          </div>
+        </FixedHeight.Provider>
       ) : (
         <Grid items={items} editing={editing} canDrag={!narrow} wide={wide} onColumns={setColumns} onChange={update} renderItem={render} onRemove={(id) => update(items.filter((i) => i.id !== id))} titleOf={(i) => WIDGETS[i.widget].title} />
       )}

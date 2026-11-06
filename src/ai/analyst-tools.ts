@@ -4,6 +4,7 @@ import { explore } from '../api/explorer.ts';
 import { forecast } from '../api/forecast.ts';
 import { listGoals } from '../api/goals.ts';
 import { netWorth } from '../api/networth.ts';
+import { outlook } from '../api/outlook.ts';
 import { detectRecurring } from '../api/recurring.ts';
 import { categoryTrend } from '../api/trends.ts';
 import * as views from '../api/views.ts';
@@ -22,6 +23,10 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const MAX_TEXT = 80;
 const clip = (text: string): string => (text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}…` : text);
+
+/** Same words the Cartões screen uses for the state of a bill. */
+const STATUS: Record<string, string> = { open: 'em aberto', paid: 'paga', rolled: 'sobra rolou para a fatura seguinte', partial: 'paga em parte', unpaid: 'fechada, a pagar', overdue: 'vencida', empty: 'sem valor', unknown: 'pagamento não conferido' };
+const statusText = (status: string | undefined): string | null => (status === undefined ? null : (STATUS[status] ?? status));
 
 export class ToolError extends Error {}
 
@@ -56,7 +61,7 @@ function range(args: Record<string, unknown>, today: string): { from: string; to
 export const TOOLS: Tool[] = [
   {
     name: 'summary',
-    help: 'summary {month?} : visão geral do mês (saldo nas contas, dívida de cartão, patrimônio, gastos, entradas e saídas, maiores categorias).',
+    help: 'summary {month?} : visão geral do mês (saldo nas contas, o que falta pagar nas faturas, saldo devedor dos emissores, patrimônio, gastos, entradas e saídas, maiores categorias).',
     run: (store, now, args) => {
       const today = localDay(now.toISOString());
       const m = month(args, today);
@@ -65,10 +70,14 @@ export const TOOLS: Tool[] = [
       const spend = views.spending(store, { from, to }, 'category', now);
       const flow = views.cashFlow(store, { from, to }, now);
       const worth = netWorth(store, now);
+      const bills = views.cards(store, now);
       return {
         mes: m,
         saldoNasContas: reais(views.balances(store, now).total),
-        dividaDeCartao: reais(views.cards(store, now).totals.reportedByIssuer),
+        // Same number as the Cartões screen ("A pagar"): open bills plus closed bills still unpaid. Installments of later bills are not in it.
+        aPagarNasFaturas: reais(bills.totals.toPay),
+        // What the issuers report as owed: bills plus every installment still to come. Larger than aPagarNasFaturas.
+        saldoDevedorNosEmissores: reais(bills.totals.reportedByIssuer),
         patrimonio: reais(worth.net),
         gastosDoMes: reais(spend.total),
         entradasNasContas: reais(flow.inflow),
@@ -90,11 +99,11 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'cashflow',
-    help: 'cashflow {from?, to?} : o que entrou e saiu das contas bancárias no período (compras no cartão só contam quando a fatura é paga).',
+    help: 'cashflow {from?, to?} : o que entrou e saiu das contas bancárias no período (compras no cartão só contam quando a fatura é paga; aplicações e resgates de investimento ficam de fora e aparecem em investidoNoPeriodo).',
     run: (store, now, args) => {
       const r = range(args, localDay(now.toISOString()));
       const flow = views.cashFlow(store, r, now);
-      return { de: r.from, ate: r.to, entrou: reais(flow.inflow), saiu: reais(flow.outflow), saldoDoPeriodo: reais(flow.net) };
+      return { de: r.from, ate: r.to, entrou: reais(flow.inflow), saiu: reais(flow.outflow), saldoDoPeriodo: reais(flow.net), investidoNoPeriodo: reais(flow.invested) };
     },
   },
   {
@@ -123,19 +132,33 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'cards',
-    help: 'cards {} : cada cartão (fatura aberta, vencimento, limite, usado) e o total devido.',
+    help: 'cards {} : o que falta pagar de fatura (total, por mês de vencimento e por cartão, com vencimento e situação), fatura aberta, limite e saldo devedor dos emissores.',
     run: (store, now) => {
       const v = views.cards(store, now);
       return {
-        totalDevidoAosEmissores: reais(v.totals.reportedByIssuer), faturasFechadasNaoPagas: reais(v.totals.outstanding), parcelasDeFaturasFuturas: reais(v.totals.futureInstallments), limiteTotal: reais(v.totals.creditLimit), proximoVencimento: v.totals.nextDueDate,
-        cartoes: v.cards.map((c) => ({ cartao: `${c.institution}${c.last4 ? ` ${c.last4}` : ` ${c.name}`}`, faturaAberta: reais(c.total), vencimento: c.cycle?.dueDate ?? null, limite: c.creditLimit === null ? null : reais(c.creditLimit), emDivida: reais(c.balance) })),
+        // The figure the Cartões screen calls "A pagar": open bills plus closed bills still unpaid.
+        aPagarNasFaturas: reais(v.totals.toPay),
+        faturasFechadasNaoPagas: reais(v.totals.outstanding),
+        // Bills by due month, adding the cards that close on different days (the open bill of a card sits in its own due month).
+        faturasPorMesDeVencimento: Object.entries(v.totals.byMonth).sort(([a], [b]) => a.localeCompare(b)).map(([mes, part]) => ({ mes, total: reais(part.total), cartoes: part.cards })),
+        // What the issuers report as owed: bills plus every installment still to come. Larger than aPagarNasFaturas.
+        saldoDevedorNosEmissores: reais(v.totals.reportedByIssuer),
+        parcelasDeFaturasFuturas: reais(v.totals.futureInstallments), limiteTotal: reais(v.totals.creditLimit), proximoVencimento: v.totals.nextDueDate,
+        cartoes: v.cards.map((c) => ({
+          cartao: `${c.institution}${c.last4 ? ` ${c.last4}` : ` ${c.name}`}`,
+          // aPagar: this card's open bill plus its closed bills still unpaid. venceEm: the oldest unpaid bill, else the open bill.
+          aPagar: reais(c.toPay), venceEm: c.nextDueDate, situacaoDaFaturaAberta: statusText(c.cycle?.status), faturasFechadasNaoPagas: reais(c.outstanding),
+          faturaAberta: reais(c.total), vencimentoDaFaturaAberta: c.cycle?.dueDate ?? null, limite: c.creditLimit === null ? null : reais(c.creditLimit), saldoDevedorNoEmissor: reais(c.balance),
+        })),
       };
     },
   },
   {
     name: 'card_forecast',
-    help: 'card_forecast {} : estimativa das próximas faturas de cartão (parcelas conhecidas, recorrentes e média do variável).',
-    run: (store, now) => ({ meses: forecast(store, now).months.map((m) => ({ mes: m.key, aberta: m.open, parcelas: reais(m.installments), recorrentes: reais(m.recurring), variavel: reais(m.variable), total: reais(m.total) })) }),
+    help: 'card_forecast {} : próximas faturas de cartão por mês de vencimento. previstoCerto = parcelas já compradas + cobranças que se repetem (ou a fatura já publicada); comMedia = previstoCerto + média do gasto de costume (um chute). A tela Futuras mostra previstoCerto, e comMedia quando a estimativa pela média está ligada.',
+    run: (store, now) => ({
+      meses: forecast(store, now).months.map((m) => ({ mes: m.key, aberta: m.open, parcelas: reais(m.installments), recorrentes: reais(m.recurring), mediaDoGastoDeCostume: reais(m.variable), previstoCerto: reais(m.certain), comMedia: reais(m.estimated) })),
+    }),
   },
   {
     name: 'budgets',
@@ -170,6 +193,27 @@ export const TOOLS: Tool[] = [
       const months = args.months === 3 || args.months === 12 ? args.months : 6;
       const v = categoryTrend(store, now, months);
       return { meses: v.months, categorias: v.rows.slice(0, 15).map((r) => ({ nome: r.name, porMes: r.points.map(reais), mediaDosFechados: reais(r.average), mesAtual: reais(r.current) })) };
+    },
+  },
+  {
+    name: 'outlook',
+    help: 'outlook {} : o mês em curso: saldo agora, entradas esperadas, faturas e contas a vencer, livre para gastar até o fim do mês, linha do tempo de cobertura por vencimento e parte da renda comprometida.',
+    run: (store, now) => {
+      const v = outlook(store, now);
+      const event = (e: (typeof v.timeline)[number]) => ({ dia: e.day, nome: e.name, tipo: e.direction === 'in' ? 'entrada' : 'saida', valor: reais(e.amount), origem: e.origin, estimado: e.estimate, atrasado: e.late, saldoAntes: reais(e.balanceBefore), saldoDepois: reais(e.balanceAfter), cobre: e.covered, faltam: reais(e.shortfall), saiDaContaAteAqui: reais(e.cumulativeOut) });
+      return {
+        hoje: v.today,
+        fimDoMes: v.monthEnd,
+        saldoNasContas: reais(v.balance),
+        entradasEsperadas: { total: reais(v.expectedIn.total), origem: v.expectedIn.source, explicacao: v.expectedIn.explain, itens: v.expectedIn.items.map(event) },
+        aVencerAteOFimDoMes: { total: reais(v.dueOut.total), faturas: reais(v.dueOut.bills), recorrentesDasContas: reais(v.dueOut.recurring), explicacao: v.dueOut.explain, itens: v.dueOut.items.map(event) },
+        faturasDepoisDoFimDoMes: { total: reais(v.afterMonth.total), quantidade: v.afterMonth.count, primeiroVencimento: v.afterMonth.firstDay },
+        livreParaGastar: { valor: reais(v.free.value), porDia: v.free.perDay === null ? null : reais(v.free.perDay), diasRestantes: v.daysLeft, explicacao: v.free.explain },
+        menorSaldoProjetado: v.lowest === null ? null : { dia: v.lowest.day, valor: reais(v.lowest.value) },
+        primeiroVencimentoSemCobertura: v.firstUncovered === null ? null : event(v.firstUncovered),
+        linhaDoTempo: v.timeline.slice(0, 30).map(event),
+        rendaComprometida: { renda: v.committed.income.amount === null ? null : reais(v.committed.income.amount), origemDaRenda: v.committed.income.source, parcelas: reais(v.committed.installments), assinaturas: reais(v.committed.subscriptions), fixos: reais(v.committed.fixed), total: reais(v.committed.total), parte: v.committed.share, explicacao: v.committed.explain },
+      };
     },
   },
 ];

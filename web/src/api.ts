@@ -14,7 +14,9 @@ import type { AnalystReply } from '../../src/ai/analyst.ts';
 import type { ChatConversation, ChatMessage } from '../../src/store/store.ts';
 import type { GoalView } from '../../src/api/goals.ts';
 import type { CalendarView, CalendarDay } from '../../src/api/calendar.ts';
+import type { OutlookView } from '../../src/api/outlook.ts';
 import type { RecurringItem } from '../../src/api/recurring.ts';
+import type { CompareView } from '../../src/api/compare.ts';
 import type { TrendView } from '../../src/api/trends.ts';
 import type { NetWorthView } from '../../src/api/networth.ts';
 import type { BudgetsView, BudgetLine, SuggestionLine } from '../../src/api/budgets.ts';
@@ -23,7 +25,7 @@ import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts'
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
 
-export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, RecurringItem, TrendView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, GoalView, CalendarView, CalendarDay, OutlookView, RecurringItem, TrendView, CompareView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -182,11 +184,13 @@ export const api = {
   saveGoal: (goal: { id?: number; name: string; target: number; targetDay: string | null; track: 'manual' | 'account' | 'asset' | 'networth'; trackRef?: string | null; saved?: number; archived?: boolean }) =>
     request<unknown>(goal.id === undefined ? '/api/goals' : `/api/goals/${goal.id}`, { method: goal.id === undefined ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(goal) }),
   deleteGoal: (id: number) => request<unknown>(`/api/goals/${id}`, { method: 'DELETE' }),
+  outlook: () => request<OutlookView>('/api/outlook'),
   calendar: (month: string) => request<CalendarView>(`/api/calendar${query({ month })}`),
   markRecurring: (key: string, label: 'subscription' | 'recurring' | 'none' | null) =>
     request<{ ok: true }>('/api/recurring/mark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, label }) }),
   ignoreRecurring: (key: string, ignored: boolean) =>
     request<{ ok: true }>('/api/recurring/ignore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, ignored }) }),
+  spendingCompare: (month?: string) => request<CompareView>(`/api/spending/compare${query({ month })}`),
   spendingTrend: (months: number) => request<TrendView>(`/api/spending/trend${query({ months })}`),
   netWorth: () => request<NetWorthView>('/api/networth'),
   addAsset: (name: string, kind: 'asset' | 'liability', value: number | null) =>
@@ -224,8 +228,8 @@ export const api = {
   addCategory: (name: string) => request<{ ok: true }>('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
   setCategoryParent: (name: string, parent: string | null) =>
     request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/parent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parent }) }),
-  bulkEdit: (ids: string[], change: { category: string | null } | { ignored: boolean } | { status: 'pending' | 'posted' | null } | { cycleKey: string | null }) =>
-    request<{ ok: true; changed: number; skipped: number }>('/api/transactions/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...change }) }),
+  bulkEdit: (ids: string[], change: { category: string | null } | { ignored: boolean } | { status: 'pending' | 'posted' | null } | { cycleKey: string | null }, options: { applyToSimilar?: boolean } = {}) =>
+    request<{ ok: true; changed: number; skipped: number; ruled?: number }>('/api/transactions/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...change, ...(options.applyToSimilar ? { applyToSimilar: true } : {}) }) }),
   income: () => request<{ items: IncomeItem[] }>('/api/income'),
   saveIncome: (id: number | null, item: Omit<IncomeItem, 'id'>) =>
     request<{ id: number }>(id === null ? '/api/income' : `/api/income/${id}`, { method: id === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) }),

@@ -3,7 +3,7 @@ import { api } from '../api.ts';
 import type { GoalView } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { Select } from '../Select.tsx';
-import { brl, dayMonth, percent } from '../format.ts';
+import { brl, dayMonth, parseBrl, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
 
@@ -16,10 +16,7 @@ const STATUS: Record<GoalView['status'], [string, string]> = {
   open: ['sem prazo', 'badge muted'],
 };
 
-const toCents = (text: string): number | null => {
-  const n = Number(text.trim().replace(/\./g, '').replace(',', '.'));
-  return text.trim() !== '' && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
-};
+const toCents = (text: string): number | null => parseBrl(text, { allowZero: true });
 
 function GoalRow({ goal, hidden, onChanged, onError }: { goal: GoalView; hidden: boolean; onChanged: () => void; onError: (m: string) => void }) {
   const [saving, setSaving] = useState(false);
@@ -130,7 +127,7 @@ export function GoalsPage({ now, hidden }: { now: Date; hidden: boolean }) {
         </div>
         <Select ariaLabel="O que acompanha" value={track} onChange={(next) => { setTrack(next as typeof track); setRef(''); }} options={[{ value: 'manual', label: 'Um valor que eu atualizo' }, { value: 'account', label: 'O saldo de uma conta' }, { value: 'asset', label: 'Um bem lançado em Patrimônio' }, { value: 'networth', label: 'O patrimônio total' }]} />
         {(track === 'account' || track === 'asset') && <Select ariaLabel="Qual" value={ref} onChange={setRef} placeholder="Escolher" options={options.map(([id, label]) => ({ value: id, label }))} />}
-        {track === 'manual' && <input inputMode="decimal" aria-label="Quanto já tem guardado" placeholder="Quanto já tem guardado (opcional)" value={saved} onInput={(e) => setSaved((e.currentTarget as HTMLInputElement).value)} />}
+        {track === 'manual' && <input class="search" inputMode="decimal" aria-label="Quanto já tem guardado" placeholder="Quanto já tem guardado (opcional)" value={saved} onInput={(e) => setSaved((e.currentTarget as HTMLInputElement).value)} />}
         <div class="note">O progresso é quanto do valor da meta já está guardado. Com data limite, o ritmo esperado é uma reta entre hoje e a data, e quem começou com dinheiro guardado só está adiantado se andou mais que essa reta a partir do ponto de partida.</div>
         <div class="links">
           <button class="primary small" disabled={name.trim() === '' || toCents(target) === null || toCents(target) === 0 || ((track === 'account' || track === 'asset') && ref === '')} onClick={() => void add()}>

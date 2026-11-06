@@ -2,8 +2,8 @@ import type { Cents } from '../core/money.ts';
 import { addDays, dayNumber } from '../core/dates.ts';
 import { normalizeName } from '../core/names.ts';
 import { localDay } from '../core/time.ts';
-import { cyclesFor, isCardPayment, type Cycle } from './cycles.ts';
-import { effectiveTransactions, type EffectiveTransaction } from './scope.ts';
+import { addMonthsToDay, cyclesFor, isCardPayment, type Cycle } from './cycles.ts';
+import { effectiveTransactions, visibleAccounts, type EffectiveTransaction } from './scope.ts';
 import { installments } from './installments.ts';
 import type { Store } from '../store/store.ts';
 
@@ -11,6 +11,8 @@ import type { Store } from '../store/store.ts';
 const EDGE_DAYS = 6;
 const MAX_MOVES = 3;
 const TOLERANCE: Cents = 1;
+/** A gap this close to an installment (or two) is read as that installment: banks round the cents of each one differently. */
+const INSTALLMENT_TOLERANCE: Cents = 5;
 
 export interface BillMove {
   transactionId: string;
@@ -19,6 +21,16 @@ export interface BillMove {
   description: string;
   /** Due month (YYYY-MM) of the bill the charge should be moved to. */
   toCycleKey: string;
+}
+
+export interface UnlistedInstallment {
+  purchaseId: string;
+  description: string;
+  number: number;
+  total: number;
+  amount: Cents;
+  /** Due month (YYYY-MM) of the bill the app counted it in. */
+  cycleKey: string;
 }
 
 export interface BillCheckItem {
@@ -36,8 +48,11 @@ export interface BillCheckItem {
   gap: Cents;
   suggestion:
     | { kind: 'move'; moves: BillMove[] }
-    /** The bill is larger and no charge near a closing explains it: something the bank never sent. */
-    | { kind: 'missing'; amount: Cents }
+    /**
+     * The bill is larger and no charge near a closing explains it: something the bank never sent. `unlisted` is set when the
+     * amount matches one or two installments the bank never listed that the app placed in a neighbouring bill.
+     */
+    | { kind: 'missing'; amount: Cents; unlisted?: UnlistedInstallment[] }
     /** The app counts more than the bill and no charge near a closing explains it. */
     | { kind: 'extra'; amount: Cents };
 }
@@ -101,9 +116,25 @@ export function billCheck(store: Store, now: Date): BillCheckView {
   // Installments the bank has not listed yet but will bill: they explain part of what a bill has over the charges.
   const plan = installments(store, now);
   const plannedIn = (accountId: string, key: string) => plan.purchases.filter((p) => p.accountId === accountId).reduce((s, p) => s + p.slots.filter((x) => x.cycle === key && x.inferred && x.status !== 'future').length * p.amount, 0);
+  // Installments the bank never listed that the app counted in a closed bill next to this one: a gap equal to one of them points at it.
+  const unlistedFor = (accountId: string, key: string, amount: Cents): UnlistedInstallment[] => {
+    const near = new Set([-1, 0, 1].map((n) => addMonthsToDay(`${key}-01`, n).slice(0, 7)));
+    const slots = plan.purchases
+      .filter((p) => p.accountId === accountId)
+      .flatMap((p) => p.slots.filter((x) => x.inferred && (x.status === 'paid' || x.status === 'billed') && x.cycle !== key && near.has(x.cycle)).map((x) => ({ purchaseId: p.id, description: p.description, number: x.number, total: p.total, amount: p.amount, cycleKey: x.cycle })));
+    const hit = (value: Cents) => Math.abs(value - amount) <= INSTALLMENT_TOLERANCE;
+    const single = slots.filter((x) => hit(x.amount));
+    if (single.length > 0) return single.slice(0, 3);
+    for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) if (hit(slots[i]!.amount + slots[j]!.amount)) return [slots[i]!, slots[j]!];
+    return [];
+  };
   const items: BillCheckItem[] = [];
+  // Hidden cards stay out of Faturas, so they stay out of this check too.
+  const visible = visibleAccounts(store);
+  const visibleIds = new Set(visible.map((a) => a.id));
+  const cardAccounts = visible.filter((a) => a.kind === 'credit_card');
 
-  for (const account of store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card')) {
+  for (const account of cardAccounts) {
     const cycles = cyclesFor(store, account, live, today);
     const own = live.filter((t) => t.accountId === account.id && !isCardPayment(t) && t.amount < 0);
     const membership = (c: Cycle) => own.filter((t) => (t.billCycle ? t.billCycle === c.key : localDay(t.occurredAt) >= c.from && localDay(t.occurredAt) <= c.to));
@@ -148,6 +179,11 @@ export function billCheck(store: Store, now: Date): BillCheckView {
         if (pullFromNext && next) record(pullFromNext, cycle, next.key);
         else if (pullFromPrevious && previous) record(pullFromPrevious, cycle, previous.key);
       }
+      let found: BillCheckItem['suggestion'] = suggestion ?? (gap < 0 ? { kind: 'missing', amount: -gap } : { kind: 'extra', amount: gap });
+      if (found.kind === 'missing') {
+        const unlisted = unlistedFor(account.id, cycle.key, found.amount);
+        if (unlisted.length > 0) found = { ...found, unlisted };
+      }
       items.push({
         accountId: account.id,
         institution: account.institution,
@@ -159,14 +195,14 @@ export function billCheck(store: Store, now: Date): BillCheckView {
         billTotal: cycle.billTotal,
         ours: cycle.charges - cycle.credits + plannedIn(account.id, cycle.key),
         gap: cycle.charges - cycle.credits + plannedIn(account.id, cycle.key) - cycle.billTotal,
-        suggestion: suggestion ?? (gap < 0 ? { kind: 'missing', amount: -gap } : { kind: 'extra', amount: gap }),
+        suggestion: found,
       });
     });
   }
 
   const accountOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a]));
   const setAside = all
-    .filter((t) => t.excluded && t.state === 'stale_pending')
+    .filter((t) => t.excluded && t.state === 'stale_pending' && visibleIds.has(t.accountId))
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, description: t.description, institution: accountOf.get(t.accountId)?.institution ?? '', last4: accountOf.get(t.accountId)?.last4 ?? null }));
 
@@ -174,7 +210,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
 
   // The same card payment listed twice: equal amounts within three days that differ in text or status.
   const duplicatePayments: DuplicatePayment[] = [];
-  for (const account of store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card')) {
+  for (const account of cardAccounts) {
     const payments = live.filter((t) => t.accountId === account.id && isCardPayment(t) && t.amount > 0).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
     const used = new Set<string>();
     for (const first of payments) {

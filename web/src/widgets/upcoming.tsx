@@ -1,7 +1,7 @@
 import { api } from '../api.ts';
 import { brl, dayMonth, localDay } from '../format.ts';
 import { useLoad } from '../hooks.ts';
-import { Widget } from '../Widget.tsx';
+import { FitList, Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
 const DAYS_AHEAD = 14;
@@ -36,21 +36,26 @@ export function UpcomingWidget({ now, hidden, size }: WidgetProps) {
       }
     >
       {size !== 'sm' && (
-        <ul class="rows tall">
-          {items.slice(0, size === 'lg' ? 12 : 6).map((p, i) => (
-            <li key={i}>
-              <span class="muted">{dayMonth(p.day)}</span>
-              <span class="grow clip">
-                {p.name} {p.late && <span class="badge bad">atrasado</span>}
-              </span>
-              <strong class={p.direction === 'in' ? 'good-text' : ''}>
-                {p.direction === 'in' ? '+' : '−'}
-                {brl(p.amount, hidden)}
-              </strong>
-            </li>
-          ))}
-          {items.length === 0 && a.data && <li class="empty">Nada esperado nos próximos dias.</li>}
-        </ul>
+        items.length === 0 ? (
+          a.data && <div class="empty">Nada esperado nos próximos dias.</div>
+        ) : (
+          <FitList
+            class="rows tall"
+            noun={['item', 'itens']}
+            rows={items.map((p, i) => (
+              <li key={i}>
+                <span class="muted">{dayMonth(p.day)}</span>
+                <span class="grow clip">
+                  {p.name} {p.late && <span class="badge bad">atrasado</span>}
+                </span>
+                <strong class={p.direction === 'in' ? 'good-text' : ''}>
+                  {p.direction === 'in' ? '+' : '−'}
+                  {brl(p.amount, hidden)}
+                </strong>
+              </li>
+            ))}
+          />
+        )
       )}
     </Widget>
   );

@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { api } from './api.ts';
 import { CategorySelect } from './CategorySelect.tsx';
 import { Select } from './Select.tsx';
-import { localDay } from './format.ts';
+import { localDay, parseBrl } from './format.ts';
 import { useLoad } from './hooks.ts';
 
 export interface ManualDraft {
@@ -15,10 +15,7 @@ export interface ManualDraft {
   category: string;
 }
 
-const toCents = (text: string): number | null => {
-  const n = Number(text.trim().replace(/\./g, '').replace(',', '.'));
-  return text.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
-};
+const toCents = (text: string): number | null => parseBrl(text);
 
 /** Form to type in a transaction no source reports, or to fix one typed before. */
 export function ManualForm({ initial, now, onSaved, onCancel }: { initial?: ManualDraft; now: Date; onSaved: (id: string) => void; onCancel: () => void }) {

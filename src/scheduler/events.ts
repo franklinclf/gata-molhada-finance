@@ -10,7 +10,8 @@ export function formatObserverEvent(event: ObserverEvent, verbose = false): stri
     case 'synced': {
       const r = event.result;
       const problems = r.errors.length > 0 ? `, ${r.errors.length} failed step(s): ${r.errors.join('; ')}` : '';
-      return `${event.sourceId}: read ${r.accounts} accounts, ${r.transactions} transactions, ${r.bills} bills${problems}`;
+      const notes = r.warnings.length > 0 ? `, ${r.warnings.length} warning(s): ${r.warnings.join('; ')}` : '';
+      return `${event.sourceId}: read ${r.accounts} accounts, ${r.transactions} transactions, ${r.bills} bills${problems}${notes}`;
     }
     case 'error':
       return `${event.sourceId}: ${event.message} (next try in ${Math.round(event.retryInMs / 60_000)} min)`;

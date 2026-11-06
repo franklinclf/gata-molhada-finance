@@ -31,7 +31,7 @@ export interface ResetDeps {
   store: Store;
   adapter: SourceAdapter;
   now?: () => Date;
-  /** Writes a copy of the database before a hard reset; returns where it went. Absent: no copy is made. */
+  /** Writes a copy of the database before a hard reset; returns where it went. Absent: a hard reset refuses to run. */
   backup?: () => string;
   /** Runs the categorizer after the rebuild. Absent when the AI is off. */
   categorize?: () => Promise<string | null>;
@@ -60,7 +60,9 @@ export function createResetter(deps: ResetDeps): Resetter {
   async function job(mode: ResetMode): Promise<void> {
     const parts: string[] = [];
     try {
-      if (mode === 'hard' && deps.backup) {
+      if (mode === 'hard') {
+        // A hard reset removes records, so it never runs without a copy to go back to.
+        if (!deps.backup) throw new Error('a leitura completa precisa de uma cópia do banco antes de remover registros, e a cópia não está disponível');
         progress('Guardando uma cópia do banco');
         parts.push(`cópia em ${deps.backup()}`);
       }

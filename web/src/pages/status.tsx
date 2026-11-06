@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { ButtonLink } from '../ds.tsx';
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
-import { ago, isStale, maskMoney } from '../format.ts';
+import { ago, maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
 import { Loading } from '../ui.tsx';
@@ -82,7 +82,7 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
                   {s.nextSyncAt && <div class="muted small">Próxima leitura automática: {s.nextSyncAt.slice(0, 16).replace('T', ' ')} UTC{s.consentExpiresAt ? ` · consentimento até ${s.consentExpiresAt.slice(0, 10)}` : ''}</div>}
                 </span>
                 {s.quotaExhausted && <span class="badge bad">limite do banco atingido</span>}
-                <span class={isStale(s.lastUpdatedAt, now) ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>
+                <span class={s.late ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>
                 <ButtonLink size="sm" href={s.link} target="_blank" rel="noreferrer noopener" title="Abre a conexão no Meu Pluggy, onde dá para atualizar agora">
                   Atualizar
                 </ButtonLink>

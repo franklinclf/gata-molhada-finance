@@ -9,8 +9,10 @@ import { forecast } from './forecast.ts';
 import { installments } from './installments.ts';
 import { createGoal, deleteGoal, listGoals, updateGoal, type GoalResult } from './goals.ts';
 import { calendar } from './calendar.ts';
+import { outlook } from './outlook.ts';
 import { detectRecurring, ignoreRecurring, markRecurring } from './recurring.ts';
 import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
+import { compareMonths, isMonth } from './compare.ts';
 import { categoryTrend } from './trends.ts';
 import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type AssetResult } from './networth.ts';
 import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type BudgetResult } from './budgets.ts';
@@ -216,6 +218,9 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return badRequest('month must look like 2026-10');
       return { status: 200, body: calendar(store, month, now, opts) };
     }
+    case 'outlook':
+      if (parts.length !== 2) return null;
+      return method === 'GET' ? { status: 200, body: outlook(store, now, opts) } : methodNotAllowed();
     case 'manual-transactions': {
       const asResult = <T,>(r: ManualResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
       if (parts.length === 2) {
@@ -366,6 +371,13 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         if (![3, 6, 12].includes(months)) return badRequest('months must be 3, 6 or 12');
         return { status: 200, body: categoryTrend(store, now, months) };
       }
+      if (resource === 'spending' && parts.length === 3 && id === 'compare') {
+        if (method !== 'GET') return methodNotAllowed();
+        const thisMonth = localDay(now.toISOString()).slice(0, 7);
+        const month = params.get('month') ?? thisMonth;
+        if (!isMonth(month) || month > thisMonth) return badRequest('month must be YYYY-MM and not in the future');
+        return { status: 200, body: compareMonths(store, month, now, opts) };
+      }
       if (parts.length !== 2) return null;
       if (method !== 'GET') return methodNotAllowed();
       const range = parseRange(params, now);
@@ -386,9 +398,9 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         if (method !== 'POST') return methodNotAllowed();
         const input = parseBody(body);
         if (!input) return badRequest('body must be { ids, category | ignored | status | cycleKey }');
-        const { ids, ...change } = input;
-        const result = bulkEdit(store, ids, change, now);
-        return result.ok ? { status: 200, body: { ok: true, changed: result.changed, skipped: result.skipped } } : fromMutation(result);
+        const { ids, applyToSimilar, ...change } = input;
+        const result = bulkEdit(store, ids, change, now, { applyToSimilar });
+        return result.ok ? { status: 200, body: { ok: true, changed: result.changed, skipped: result.skipped, ...(result.ruled !== undefined ? { ruled: result.ruled } : {}) } } : fromMutation(result);
       }
       if (parts.length === 3 && id !== undefined) {
         if (method !== 'GET') return methodNotAllowed();
@@ -473,6 +485,8 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       return null;
     }
     case 'category-groups': {
+      // POST /api/category-groups creates; PUT and DELETE name the group in the path. Any other shape is not a route.
+      if (parts.length !== (method === 'POST' ? 2 : 3)) return method === 'POST' || method === 'PUT' || method === 'DELETE' ? null : methodNotAllowed();
       let name: string | null = null;
       if (parts.length === 3 && id !== undefined) {
         try {

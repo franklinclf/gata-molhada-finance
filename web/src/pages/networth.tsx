@@ -3,14 +3,11 @@ import { api } from '../api.ts';
 import type { NetWorthView } from '../api.ts';
 import { LineChart } from '../charts.tsx';
 import { Select } from '../Select.tsx';
-import { brl, dayMonth, localDay } from '../format.ts';
+import { brl, dayMonth, localDay, parseBrl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
 
-const toCents = (text: string): number | null => {
-  const n = Number(text.trim().replace(/\./g, '').replace(',', '.'));
-  return text.trim() !== '' && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
-};
+const toCents = (text: string): number | null => parseBrl(text, { allowZero: true });
 
 function ManualRow({ item, now, hidden, onChanged, onError }: { item: NetWorthView['manual'][number]; now: Date; hidden: boolean; onChanged: () => void; onError: (m: string) => void }) {
   const [editing, setEditing] = useState(false);
@@ -97,6 +94,11 @@ export function NetWorthPage({ now, hidden, embedded = false }: { now: Date; hid
             </li>
           ))}
         </ul>
+        {data.items.some((i) => i.kind === 'card') && (
+          <div class="note">
+            A dívida no cartão é o saldo devedor que o banco informa, contando cada limite compartilhado uma vez. Ela pode ser diferente do "a pagar" da tela de Cartões, que soma as faturas fechadas não pagas e a fatura aberta. Quando a soma do app passa do saldo do banco, a página Fontes e conferência avisa.
+          </div>
+        )}
       </section>
       <section class="panel">
         <h2>Bens e dívidas lançados à mão</h2>
