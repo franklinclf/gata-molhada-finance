@@ -25,7 +25,7 @@ export interface AppDeps extends RouterDeps {
   /** Send the session cookie only over HTTPS. Turn off for local development over plain HTTP. */
   secureCookies: boolean;
   /** Builds an encrypted copy of the database. Absent when backups are not available. */
-  backup?: (passphrase: string) => Buffer;
+  backup?: (passphrase: string) => Buffer | Promise<Buffer>;
   /** Lets GitHub tell the app that a new image was published. Absent (and the route answers 404) when no secret is set. */
   deployHook?: DeployHook;
   /** Reads everything the source has again (soft or hard reset). Absent when no source can be read. */
@@ -322,7 +322,20 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
       const passphrase = typeof input?.passphrase === 'string' ? input.passphrase : '';
       if (passphrase.length < 12) return done(json(400, { error: 'bad_request', message: 'the passphrase needs at least 12 characters' }));
       const file = deps.backup(passphrase);
-      return done({ status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="gmf-backup-${localDay(deps.now().toISOString())}.gmfbak"`, ...SECURITY_HEADERS }, body: null, bytes: file });
+      const sent = (bytes: Buffer): RouteResult => ({ status: 200, headers: { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="gmf-backup-${localDay(deps.now().toISOString())}.gmfbak"`, ...SECURITY_HEADERS }, body: null, bytes });
+      if (Buffer.isBuffer(file)) return done(sent(file));
+      // Packing a large database takes a while, so it runs in the background and the server keeps answering meanwhile.
+      return {
+        ...done(json(200, {})),
+        deferred: async () => {
+          try {
+            return sent(await file);
+          } catch (error) {
+            console.error(`backup failed: ${error instanceof Error ? error.message : String(error)}`);
+            return json(500, { error: 'internal_error' });
+          }
+        },
+      };
     }
 
     const now = deps.now();
