@@ -228,8 +228,8 @@ export const api = {
   addCategory: (name: string) => request<{ ok: true }>('/api/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
   setCategoryParent: (name: string, parent: string | null) =>
     request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/parent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parent }) }),
-  bulkEdit: (ids: string[], change: { category: string | null } | { ignored: boolean } | { status: 'pending' | 'posted' | null } | { cycleKey: string | null }) =>
-    request<{ ok: true; changed: number; skipped: number }>('/api/transactions/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...change }) }),
+  bulkEdit: (ids: string[], change: { category: string | null } | { ignored: boolean } | { status: 'pending' | 'posted' | null } | { cycleKey: string | null }, options: { applyToSimilar?: boolean } = {}) =>
+    request<{ ok: true; changed: number; skipped: number; ruled?: number }>('/api/transactions/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...change, ...(options.applyToSimilar ? { applyToSimilar: true } : {}) }) }),
   income: () => request<{ items: IncomeItem[] }>('/api/income'),
   saveIncome: (id: number | null, item: Omit<IncomeItem, 'id'>) =>
     request<{ id: number }>(id === null ? '/api/income' : `/api/income/${id}`, { method: id === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) }),

@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 import { api, type CardsView } from '../api.ts';
 import { Bars, Meter, StackedBars } from '../charts.tsx';
-import { brl, dayMonth, localDay, monthName } from '../format.ts';
+import { brl, dayMonth, localDay, monthName, parseBrl } from '../format.ts';
 import { useLoad, useStoredFlag } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { Button } from '../ds.tsx';
@@ -219,6 +219,7 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
             <td>
               {c.billTotal === null ? '' : brl(c.paid, hidden)}
               {c.overpaid > 0 && <div class="bad-text">pago a mais {brl(c.overpaid, hidden)}</div>}
+              {c.latePaid && <div class="muted">{brl(c.latePaid.amount, hidden)} pagos com atraso em {dayMonth(c.latePaid.day)}</div>}
             </td>
             <td>
               <StatusBadge status={c.status} />
@@ -276,6 +277,17 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
 const availableOf = (c: { creditLimit: number | null; availableLimit: number | null; balance: number }): number => c.availableLimit ?? (c.creditLimit ?? 0) - c.balance;
 
 /** One row per limit: cards that share a limit count once, and the bar fills with what is used, as the numbers say. */
+type OwedInput = { limitGroupId: string | null; balance: number; outstanding: number; futureInstallments: number; posted: number; plannedInstallments: number; cycle: { status: string } | null };
+// Same rule as the data health panel (a few cents or 2% of rounding on the issuer's side do not count). A card on a shared
+// limit is left out because the balance is reported for the whole group.
+const OWED_TOLERANCE = { cents: 1000, share: 0.02 };
+/** What the app adds up for a card, when it is more than the balance the issuer reports; null otherwise. */
+function owedAboveIssuer(c: OwedInput): number | null {
+  if (c.limitGroupId !== null || c.cycle === null) return null;
+  const owed = c.outstanding + c.futureInstallments + (c.cycle.status === 'open' ? c.posted + c.plannedInstallments : 0);
+  return owed > c.balance + Math.max(OWED_TOLERANCE.cents, c.balance * OWED_TOLERANCE.share) ? owed : null;
+}
+
 function limitRows(data: CardsView): Array<{ key: string; name: string; shared: boolean; limit: number; used: number }> {
   const label = (id: string) => { const c = data.cards.find((x) => x.id === id); return c ? `${c.institution} ${c.name}${c.last4 ? ` •••• ${c.last4}` : ''}` : id; };
   const groups = data.limitGroups.map((g) => ({ key: g.id, name: g.cardIds.map(label).join(' + '), shared: g.cardIds.length > 1, limit: g.creditLimit, used: g.used }));
@@ -290,6 +302,7 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
   const used = card.creditLimit ? 1 - availableOf(card) / card.creditLimit : 0;
   const c = card.cycle;
   const late = card.nextDueDate !== null && card.nextDueDate < today;
+  const owed = isOpen ? owedAboveIssuer(card) : null;
   return (
     <section class="panel">
       <div class="row-head">
@@ -347,6 +360,7 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
         <div class="muted">Este cartão não tem fatura com esse vencimento.</div>
       )}
       {c?.adjusted && <div class="note">{c.adjusted.by === 'auto' ? `${brl(c.adjusted.amount, hidden)} desta fatura não foi pago e provavelmente rolou para a fatura seguinte; não conta de novo como devido.` : `${brl(c.adjusted.amount, hidden)} desta fatura não foi cobrado, então ela conta como paga.`}</div>}
+      {c?.latePaid && <div class="note">Pago com atraso em {dayMonth(c.latePaid.day)}: {brl(c.latePaid.amount, hidden)} desta fatura foram pagos depois do fechamento da fatura seguinte.</div>}
       {c && c.overpaid > 0 && <div class="note">Pago a mais: {brl(c.overpaid, hidden)}. Os pagamentos desta janela passam do total da fatura. Pode ser pagamento em dobro, ou o pagamento atrasado de uma fatura anterior.</div>}
       {card.outstanding > 0 && (
         <div class={late ? 'badge bad' : 'badge warn'}>
@@ -354,6 +368,12 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
           {isOpen ? `Fatura fechada em aberto: ${brl(card.outstanding, hidden)} · ` : ''}
           {late ? 'venceu em' : 'vence'} {card.nextDueDate ? fullDay(card.nextDueDate) : ''}
         </div>
+      )}
+      {owed !== null && (
+        <>
+          <div class="badge warn">Saldo do emissor menor que a fatura: {brl(card.balance, hidden)} contra {brl(owed, hidden)}</div>
+          <div class="note">O banco informa um saldo devedor menor que a soma de fatura aberta, faturas fechadas não pagas e parcelas futuras que o app calcula. Confira se há pagamento não reconhecido ou fatura publicada com valor errado.</div>
+        </>
       )}
       {isOpen && card.creditLimit !== null && (
         <>
@@ -382,11 +402,6 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
     </section>
   );
 }
-
-const toCentsText = (text: string): number | null => {
-  const n = Number(text.trim().replace(/\./g, '').replace(',', '.'));
-  return text.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
-};
 
 /** The fixed income the owner registers, and what is left of it each month after the card bills already known. */
 function IncomePanel({ months, hidden }: { months: Array<{ key: string; income: number; bills: number }>; hidden: boolean }) {
@@ -428,7 +443,7 @@ function IncomePanel({ months, hidden }: { months: Array<{ key: string; income: 
           class="recat"
           onSubmit={(e) => {
             e.preventDefault();
-            const amount = toCentsText(form.amount);
+            const amount = parseBrl(form.amount);
             if (amount === null) return setMessage('Digite um valor maior que zero.');
             void run(() => api.saveIncome(form.id, { name: form.name.trim(), amount, dayOfMonth: Number(form.day), fromMonth: null, untilMonth: null }));
           }}
@@ -669,12 +684,12 @@ function LimitsPanel({ data, hidden }: { data: CardsView; hidden: boolean }) {
       </div>
       <ul class="rows tall">
         {limitRows(data).map((r) => (
-          <li key={r.key}>
+          <li key={r.key} class="limit-line">
             <div class="grow">
               <div>{r.name}{r.shared ? ' · limite compartilhado' : ''}</div>
               <Meter fraction={r.limit > 0 ? r.used / r.limit : 0} tip={`Usado ${hidden ? '••••' : brl(r.used)} de ${hidden ? '••••' : brl(r.limit)}`} />
             </div>
-            <span class="muted">
+            <span class="muted limit-use">
               usado {brl(r.used, hidden)} de {brl(r.limit, hidden)} · disponível {brl(r.limit - r.used, hidden)}
             </span>
           </li>

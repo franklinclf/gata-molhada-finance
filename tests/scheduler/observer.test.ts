@@ -84,6 +84,29 @@ test('a read that failed is retried at the next check even if nothing new was re
   assert.deepEqual(events.map((e) => e.type), ['checked']);
 });
 
+test('a read where one account failed is retried at the next check even though no step failed', async () => {
+  class OneAccountFails extends ScriptedAdapter {
+    async fetchTransactionRead(since: Date) {
+      this.transactionCalls.push(since);
+      const failed = this.transactionCalls.length === 1 ? [{ accountId: 'a2', label: 'Bank / a2', error: new Error('HTTP 500') }] : [];
+      return { transactions: [], readAccountIds: ['a1'], failed };
+    }
+  }
+  const adapter = new OneAccountFails('pierre', { reads: [[at('pierre', 30)]] });
+  const { observer, events, sources } = setup([adapter]);
+  await observer.tick(sources[0]!);
+  const first = events.find((e) => e.type === 'synced');
+  assert.equal(first?.type === 'synced' ? first.result.errors.length : -1, 0);
+  assert.deepEqual(first?.type === 'synced' ? first.result.failedAccounts : [], ['Bank / a2']);
+  events.length = 0;
+  await observer.tick(sources[0]!);
+  assert.deepEqual(events.map((e) => e.type), ['synced']);
+  assert.equal(adapter.transactionCalls.length, 2);
+  events.length = 0;
+  await observer.tick(sources[0]!);
+  assert.deepEqual(events.map((e) => e.type), ['checked']);
+});
+
 test('errors are reported, back off, and clear after a success', async () => {
   const adapter = new ScriptedAdapter('pierre', { reads: [new Error('offline'), new Error('offline'), [at('pierre', 1)]] });
   const { observer, events, clock, sources } = setup([adapter], [300_000]);

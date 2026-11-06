@@ -1,6 +1,6 @@
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
-import { ago, isStale } from '../format.ts';
+import { ago } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Go } from '../ui.tsx';
 import { FitList, Widget } from '../Widget.tsx';
@@ -8,7 +8,7 @@ import type { WidgetProps } from './index.ts';
 
 export function FreshnessWidget({ now, size }: WidgetProps) {
   const { data, error, loading } = useLoad(() => api.freshness(), [], 60_000);
-  const stale = data?.sources.filter((s) => isStale(s.lastUpdatedAt, now)).length ?? 0;
+  const stale = data?.sources.filter((s) => s.late).length ?? 0;
   return (
     <Widget
       title="Atualização das fontes"
@@ -36,7 +36,7 @@ export function FreshnessWidget({ now, size }: WidgetProps) {
                   <span class="grow clip">
                     {s.institution} <span class="muted">({s.sourceId})</span>
                   </span>
-                  <span class={isStale(s.lastUpdatedAt, now) ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>
+                  <span class={s.late ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>
                 </li>
               )),
               ...(data.quota.length > 0

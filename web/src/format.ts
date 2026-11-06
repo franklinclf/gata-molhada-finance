@@ -70,8 +70,8 @@ export function ago(iso: string | null, now: Date): string {
   return `há ${Math.round(hours / 24)} dias`;
 }
 
-/** Data older than this is shown as stale. */
-export const STALE_AFTER_HOURS = 6;
+/** Data older than this is shown as stale: Meu Pluggy reads each bank once a day, so a day and a half is still on time (see EXPECTED_READ_HOURS in the API). */
+export const STALE_AFTER_HOURS = 36;
 
 export function isStale(iso: string | null, now: Date): boolean {
   return iso === null || now.getTime() - Date.parse(iso) > STALE_AFTER_HOURS * 3_600_000;

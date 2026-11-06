@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { forecast } from '../../src/api/forecast.ts';
+import { cards } from '../../src/api/views.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
@@ -101,4 +102,18 @@ test('the forecast answers over the API and skips hidden cards', () => {
   assert.equal((res?.body as { months: unknown[] }).months.length, 6);
   store.setAccountHidden('c1', true, NOW.toISOString());
   assert.deepEqual(forecast(store, NOW).months.map((m) => m.estimated), [0, 0, 0, 0, 0, 0]);
+});
+
+test('the open month counts the shared limit balance no listed charge explains, like the cards screen', () => {
+  const store = seeded();
+  const other: CanonicalAccount = { ...card, id: 'c2', last4: '5678', limitGroupId: 'g1', balance: 200000, refs: [{ sourceId: 'pierre', externalId: 'ext-c2', role: 'member' }] };
+  store.upsertSourceBills('pierre', ['2026-09', '2026-10'].map((m, i) => ({ externalId: `x${i}`, accountExternalId: 'ext-c2', dueDate: `${m}-15`, closingDate: `${m}-08`, total: 0, minimumPayment: null })), NOW.toISOString());
+  store.replaceCanonicalAccounts([{ ...card, limitGroupId: 'g1', balance: 200000 }, other], [{ id: 'g1', institution: 'Bank', creditLimit: 500000, memberIds: ['c1', 'c2'] }], NOW.toISOString());
+  const view = cards(store, NOW);
+  const posted = view.cards.reduce((sum, c) => sum + c.total, 0);
+  assert.ok(view.totals.unexplained > 0, 'the fixture must leave part of the balance unexplained');
+  assert.equal(view.totals.cycleTotal, posted + view.totals.unexplained);
+  const open = forecast(store, NOW).months[0]!;
+  assert.equal(open.known, view.totals.cycleTotal);
+  assert.ok(open.estimated >= open.known);
 });

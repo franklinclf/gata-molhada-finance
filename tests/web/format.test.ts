@@ -18,8 +18,8 @@ test('ago and isStale describe how old the data is', () => {
   assert.equal(ago('2026-10-27T14:45:00Z', NOW), 'há 15 min');
   assert.equal(ago('2026-10-27T09:00:00Z', NOW), 'há 6 h');
   assert.equal(ago('2026-10-20T15:00:00Z', NOW), 'há 7 dias');
-  assert.equal(isStale('2026-10-27T10:00:00Z', NOW), false);
-  assert.equal(isStale('2026-10-27T08:00:00Z', NOW), true);
+  assert.equal(isStale('2026-10-26T10:00:00Z', NOW), false);
+  assert.equal(isStale('2026-10-25T20:00:00Z', NOW), true);
   assert.equal(isStale(null, NOW), true);
 });
 

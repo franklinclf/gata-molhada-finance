@@ -172,9 +172,31 @@ test('a source read 26 hours ago is not late, one read 80 hours ago is', () => {
 test('a card with a recent bill and no transactions for a month is flagged while its bank still receives some', () => {
   const store = build(
     [account('chk', 'checking', 0), account('card0001', 'credit_card', 0, { institution: 'Bank' }), account('card0002', 'credit_card', 0, { institution: 'Bank' })],
-    [tx('old-card', 'card0001', '2026-08-20', -5000), tx('live-card', 'card0002', '2026-11-03', -5000), tx('live-bank', 'chk', '2026-11-04', -100)],
+    [tx('old-card-aug', 'card0001', '2026-08-20', -5000), tx('old-card-sep', 'card0001', '2026-09-08', -3000), tx('live-card', 'card0002', '2026-11-03', -5000), tx('live-bank', 'chk', '2026-11-04', -100)],
   );
   store.upsertSourceBills('pluggy', [{ externalId: 'b1', accountExternalId: 'ext-card0001', dueDate: '2026-09-15', closingDate: '2026-09-08', total: 5000, minimumPayment: null }], T);
   const silent = dataHealth(store, NOW).filter((i) => i.id.startsWith('silent-'));
   assert.deepEqual(silent.map((i) => i.id), ['silent-card0001']);
+});
+
+test('a savings account, a rarely used account and a card bought from once are not flagged next to an active account of the same bank', () => {
+  const store = build(
+    [account('chk', 'checking', 0), account('sav', 'savings', 0), account('chk-rare', 'checking', 0), account('card0001', 'credit_card', 0)],
+    [
+      tx('sav1', 'sav', '2026-06-10', 100), tx('sav2', 'sav', '2026-07-10', 100), tx('sav3', 'sav', '2026-08-10', 100),
+      tx('r1', 'chk-rare', '2026-08-01', -100), tx('r2', 'chk-rare', '2026-08-05', -100), tx('r3', 'chk-rare', '2026-08-09', -100),
+      tx('c1', 'card0001', '2026-09-03', -5000),
+      tx('live', 'chk', '2026-11-04', -100),
+    ],
+  );
+  store.upsertSourceBills('pluggy', [{ externalId: 'b1', accountExternalId: 'ext-card0001', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 5000, minimumPayment: null }], T);
+  assert.deepEqual(dataHealth(store, NOW).filter((i) => i.id.startsWith('silent-')), []);
+});
+
+test('a checking account with transactions in three of the four months before it went quiet is flagged', () => {
+  const store = build(
+    [account('chk', 'checking', 0), account('chk-old', 'checking', 0)],
+    [tx('o1', 'chk-old', '2026-07-10', -100), tx('o2', 'chk-old', '2026-08-10', -100), tx('o3', 'chk-old', '2026-09-10', -100), tx('live', 'chk', '2026-11-04', -100)],
+  );
+  assert.deepEqual(dataHealth(store, NOW).filter((i) => i.id.startsWith('silent-')).map((i) => i.id), ['silent-chk-old']);
 });

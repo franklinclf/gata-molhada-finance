@@ -86,6 +86,15 @@ export function forecast(store: Store, now: Date, opts: ViewOptions = {}, horizo
   const firstKey = open.cards.map((c) => c.cycle?.key).filter((k): k is string => !!k).sort()[0] ?? today.slice(0, 7);
   const keys = Array.from({ length: horizon }, (_, i) => addMonthsToDay(`${firstKey}-01`, i).slice(0, 7));
 
+  // Cards on a shared limit have one open bill, estimated from the issuer's balance (the same figure the cards screen and the
+  // calendar use). Part of it no listed charge explains, so it is added to the first card of the group that still has its bill open.
+  const sharedExtra = new Map<string, Cents>();
+  for (const g of open.limitGroups) {
+    const members = open.cards.filter((c) => g.cardIds.includes(c.id) && c.cycle !== null && c.cycle.billTotal === null);
+    const first = members[0];
+    if (first) sharedExtra.set(first.id, Math.max(g.openEstimate - members.reduce((sum, c) => sum + c.total, 0), 0));
+  }
+
   const recurring: RecurringCharge[] = [];
   const months: ForecastMonth[] = keys.map((key) => ({ key, open: false, installments: 0, recurring: 0, variable: 0, known: 0, certain: 0, estimated: 0, income: incomeIn(store.listIncome(), key), cards: [] }));
   const basis: ForecastView['basis'] = [];
@@ -140,7 +149,7 @@ export function forecast(store: Store, now: Date, opts: ViewOptions = {}, horizo
       } else {
         const inst = slotsIn(m.key, false);
         const sure = inst + recurringMonthly;
-        const known = isOpenMonth ? (row?.total ?? 0) : 0;
+        const known = isOpenMonth ? (row?.total ?? 0) + (sharedExtra.get(account.id) ?? 0) : 0;
         card = { id: account.id, label: label(account.id), installments: inst, recurring: recurringMonthly, variable: average, certain: Math.max(known, sure), estimated: Math.max(known, sure + average), state: isOpenMonth ? 'open' : 'estimated' };
         m.known += known;
         if (isOpenMonth) m.open = true;

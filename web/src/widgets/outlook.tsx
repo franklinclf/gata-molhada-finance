@@ -1,6 +1,7 @@
 import { api, type OutlookView } from '../api.ts';
 import { brl, dayMonth } from '../format.ts';
 import { useLoad } from '../hooks.ts';
+import { hrefFor } from '../router.ts';
 import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
@@ -44,34 +45,45 @@ function rowLabel(e: Event): string {
 }
 
 /** Dated list of what comes next, with the balance projected after each one. A payment the balance does not cover is marked. */
-export function OutlookTimeline({ data, hidden, limit, detail = false }: { data: OutlookView; hidden: boolean; limit: number; detail?: boolean }) {
+export function OutlookTimeline({ data, hidden, limit, detail = false, linkMore = false }: { data: OutlookView; hidden: boolean; limit: number; detail?: boolean; linkMore?: boolean }) {
   const items = data.timeline.slice(0, limit);
   if (items.length === 0) return <div class="empty">Nenhum vencimento esperado nos próximos dias.</div>;
+  // What is cut from the list still counts in the free amount when it is an outflow inside the month: say so, with the sum.
+  const cut = data.timeline.slice(limit).filter((e) => e.direction === 'out' && !e.afterMonth);
+  const cutTotal = cut.reduce((s, e) => s + e.amount, 0);
   return (
-    <ul class="rows outlook-rows">
-      {items.map((e, i) => (
-        <li key={`${e.day}-${e.name}-${i}`} class={e.covered ? 'outlook-row' : 'outlook-row short'}>
-          <span class="muted outlook-day">{dayMonth(e.day)}</span>
-          <span class="grow clip outlook-name">
-            {e.name}
-            {e.late && <span class="badge bad">{e.direction === 'out' ? 'vencida' : 'atrasada'}</span>}
-            {!e.covered && <span class="badge bad">não cobre</span>}
-            {e.estimate && <span class="badge">estimado</span>}
-            {e.afterMonth && <span class="badge">próximo mês</span>}
-            {detail && <small class="muted outlook-origin">{e.origin}</small>}
-          </span>
-          <span class="outlook-amount">
-            <strong class={e.direction === 'in' ? 'good-text' : ''}>
-              {e.direction === 'in' ? '+' : '−'}
-              {brl(e.amount, hidden)}
-            </strong>
-            <small class={e.covered ? 'muted' : 'bad-text'} title={`Saldo projetado depois de ${rowLabel(e)}`}>
-              {e.covered ? `saldo ${brl(e.balanceAfter, hidden)}` : `faltam ${brl(e.shortfall, hidden)}`}
-            </small>
-          </span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul class="rows outlook-rows">
+        {items.map((e, i) => (
+          <li key={`${e.day}-${e.name}-${i}`} class={e.covered ? 'outlook-row' : 'outlook-row short'}>
+            <span class="muted outlook-day">{dayMonth(e.day)}</span>
+            <span class="grow clip outlook-name">
+              {e.name}
+              {e.late && <span class="badge bad">{e.direction === 'out' ? 'vencida' : 'atrasada'}</span>}
+              {!e.covered && <span class="badge bad">não cobre</span>}
+              {e.estimate && <span class="badge">estimado</span>}
+              {e.afterMonth && <span class="badge">próximo mês</span>}
+              {detail && <small class="muted outlook-origin">{e.origin}</small>}
+            </span>
+            <span class="outlook-amount">
+              <strong class={e.direction === 'in' ? 'good-text' : ''}>
+                {e.direction === 'in' ? '+' : '−'}
+                {brl(e.amount, hidden)}
+              </strong>
+              <small class={e.covered ? 'muted' : 'bad-text'} title={`Saldo projetado depois de ${rowLabel(e)}`}>
+                {e.covered ? `saldo ${brl(e.balanceAfter, hidden)}` : `faltam ${brl(e.shortfall, hidden)}`}
+              </small>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {cut.length > 0 && (
+        <div class="muted outlook-more">
+          + {cut.length} {cut.length === 1 ? 'vencimento' : 'vencimentos'} no mês ({brl(cutTotal, hidden)}), já descontados do livre para gastar.{' '}
+          {linkMore && <a href={hrefFor('accounts')}>Ver em Contas</a>}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -131,7 +143,7 @@ export function OutlookWidget({ now, hidden, size }: WidgetProps) {
             </div>
           )}
           <h3 class="outlook-sub">Próximos vencimentos</h3>
-          <OutlookTimeline data={{ ...data, timeline: size === 'lg' ? data.timeline : upcoming }} hidden={hidden} limit={size === 'lg' ? 10 : 4} detail={size === 'lg'} />
+          <OutlookTimeline data={{ ...data, timeline: size === 'lg' ? data.timeline : upcoming }} hidden={hidden} limit={size === 'lg' ? 10 : 4} detail={size === 'lg'} linkMore />
           {size === 'lg' && <OutlookCommitted data={data} hidden={hidden} />}
         </>
       )}

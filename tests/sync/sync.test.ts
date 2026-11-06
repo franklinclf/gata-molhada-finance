@@ -68,6 +68,7 @@ test('stores accounts, transactions, bills and freshness from a source', async (
     transactions: 1,
     bills: 1,
     freshness: 1,
+    failedAccounts: [],
     warnings: [],
     errors: [],
   });

@@ -6,7 +6,7 @@ import { merchantOf } from '../core/merchant.ts';
 import { addDays } from '../core/dates.ts';
 import { DATA_START, localDay } from '../core/time.ts';
 import { summarizeAccounts } from '../reconcile/accounts.ts';
-import { cyclesFor, type Cycle } from './cycles.ts';
+import { addMonthsToDay, cyclesFor, type Cycle } from './cycles.ts';
 import { installments } from './installments.ts';
 import { quotaReport } from '../scheduler/quota.ts';
 import type { Store } from '../store/store.ts';
@@ -500,30 +500,49 @@ function debtAboveIssuerBalance(view: CardsView): HealthIssue[] {
 const SILENT_DAYS = 35;
 const SIBLING_ACTIVE_DAYS = 7;
 const CARD_BILL_LOOKBACK_DAYS = 90;
-/** An account with fewer transactions than this has no pace to fall behind (a savings account used once a year). */
-const MIN_HISTORY = 3;
+/**
+ * A bank account has a pace when it had transactions in at least 3 of the 4 months before it went quiet; a card, when it had
+ * purchases in at least 2 of the 3. A savings account used now and then, or a card kept for rare use, has no pace to fall behind.
+ */
+const ACCOUNT_PACE = { months: 4, needed: 3 };
+const CARD_PACE = { months: 3, needed: 2 };
 
 function silentAccounts(store: Store, now: Date): HealthIssue[] {
   const today = localDay(now.toISOString());
   const accounts = visibleAccounts(store, {});
   const transactions = effectiveTransactions(store, {}, accounts).filter((t) => !t.excluded);
-  const lastOf = new Map<string, { day: string; count: number }>();
+  const silentSince = addDays(today, -SILENT_DAYS);
+  const lastOf = new Map<string, { day: string }>();
+  // Months with a transaction (and with a purchase, for cards) in the stretch before the account went quiet.
+  const activeMonths = new Map<string, { any: Set<string>; purchases: Set<string> }>();
+  const paceFrom = addMonthsToDay(silentSince, 1 - Math.max(ACCOUNT_PACE.months, CARD_PACE.months)).slice(0, 7);
   for (const t of transactions) {
     const day = localDay(t.occurredAt);
     if (day > today) continue;
     const prev = lastOf.get(t.accountId);
-    lastOf.set(t.accountId, { day: prev && prev.day > day ? prev.day : day, count: (prev?.count ?? 0) + 1 });
+    lastOf.set(t.accountId, { day: prev && prev.day > day ? prev.day : day });
+    if (day.slice(0, 7) < paceFrom) continue;
+    const months = activeMonths.get(t.accountId) ?? { any: new Set<string>(), purchases: new Set<string>() };
+    months.any.add(day.slice(0, 7));
+    if (t.amount < 0) months.purchases.add(day.slice(0, 7));
+    activeMonths.set(t.accountId, months);
   }
-  const silentSince = addDays(today, -SILENT_DAYS);
+  // The `count` calendar months that end with the month the quiet stretch began.
+  const monthsWithin = (set: Set<string> | undefined, count: number) => {
+    const from = addMonthsToDay(silentSince, 1 - count).slice(0, 7);
+    return [...(set ?? [])].filter((m) => m >= from).length;
+  };
   const siblingSince = addDays(today, -SIBLING_ACTIVE_DAYS);
   const billsSince = addDays(today, -CARD_BILL_LOOKBACK_DAYS);
   const issues: HealthIssue[] = [];
   for (const a of accounts) {
+    if (a.kind !== 'credit_card' && a.kind !== 'checking') continue;
     const mine = lastOf.get(a.id);
     if (mine && mine.day >= silentSince) continue;
+    const months = activeMonths.get(a.id);
     const hasPace = a.kind === 'credit_card'
-      ? cyclesFor(store, a, transactions, today).some((c) => c.billTotal !== null && c.billTotal > 0 && c.dueDate >= billsSince)
-      : (mine?.count ?? 0) >= MIN_HISTORY;
+      ? monthsWithin(months?.purchases, CARD_PACE.months) >= CARD_PACE.needed && cyclesFor(store, a, transactions, today).some((c) => c.billTotal !== null && c.billTotal > 0 && c.dueDate >= billsSince)
+      : monthsWithin(months?.any, ACCOUNT_PACE.months) >= ACCOUNT_PACE.needed;
     if (!hasPace) continue;
     const key = institutionKey(a.institution);
     const siblingActive = accounts.some((o) => o.id !== a.id && institutionKey(o.institution) === key && (lastOf.get(o.id)?.day ?? '') >= siblingSince);

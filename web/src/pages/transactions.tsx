@@ -36,6 +36,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const [version, setVersion] = useState(0);
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
+  const [similar, setSimilar] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const key = [...p.entries()].filter(([k]) => k !== 'tx').map(([k, v]) => `${k}=${v}`).sort().join('&');
 
@@ -58,14 +59,23 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   exportQuery.delete('offset');
   const { data, error, loading } = useLoad(() => api.explore(query), [query.toString(), version]);
   const cards = useLoad(() => api.cards(), []);
+  // Items that left the list (ignored ones, a changed category under a category filter) must not stay selected out of sight.
+  useEffect(() => {
+    if (!data) return;
+    const shown = new Set(data.items.map((t) => t.id));
+    setPicked((current) => (current.every((id) => shown.has(id)) ? current : current.filter((id) => shown.has(id))));
+  }, [data]);
 
   const bulk = async (change: Parameters<typeof api.bulkEdit>[1]) => {
     setNote(null);
     try {
-      const r = await api.bulkEdit(picked, change);
+      const r = await api.bulkEdit(picked, change, { applyToSimilar: similar && 'category' in change });
+      // Like in the drawer, the option is turned off after a save so the next change does not create rules by accident.
+      if ('category' in change) setSimilar(false);
       // Moving to a bill only applies to card purchases, so the skipped ones are named by that reason.
       const skipped = 'cycleKey' in change ? `${r.skipped} não ${r.skipped === 1 ? 'é' : 'são'} de cartão` : `${r.skipped} não se aplica${r.skipped === 1 ? '' : 'm'}`;
-      setNote(`${r.changed} alterada${r.changed === 1 ? '' : 's'}${r.skipped > 0 ? `, ${skipped}` : ''}. A seleção continua, para você poder voltar atrás.`);
+      const ruled = r.ruled ? ` Regra salva para ${r.ruled} ${r.ruled === 1 ? 'descrição' : 'descrições'}, que vale também para as próximas.` : '';
+      setNote(`${r.changed} alterada${r.changed === 1 ? '' : 's'}${r.skipped > 0 ? `, ${skipped}` : ''}.${ruled} A seleção continua, para você poder voltar atrás.`);
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Não foi possível alterar.');
     }
@@ -188,6 +198,10 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
           {data && data.total > data.items.length && <span class="muted">{data.items.length} de {data.total} no filtro. Use “Mostrar mais” para incluir outras.</span>}
           {picked.length > 0 && <button class="link" onClick={() => setPicked([])}>Limpar</button>}
           <CategorySelect ariaLabel="Categoria das selecionadas" placeholder="Mudar categoria para..." value="" onChange={(category) => category !== '' && picked.length > 0 && void bulk({ category })} />
+          <label class="switch">
+            <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />
+            <span>Valer também para as de mesma descrição</span>
+          </label>
           <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: 'posted' })}>Marcar lançadas</button>
           <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: 'pending' })}>Marcar pendentes</button>
           <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: null })}>Status como a fonte diz</button>

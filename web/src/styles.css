@@ -207,7 +207,8 @@ summary.chip::-webkit-details-marker { display: none; }
   .cards-grid { grid-template-columns: 1fr; }
   .facts.inline { grid-template-columns: minmax(0, 1fr) auto; }
   .split { flex-wrap: wrap; }
-  .panel.split { flex-direction: column; align-items: stretch; }
+  .panel.split { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  .panel.split > .rows { width: 100%; min-width: 0; }
   .recat { flex-wrap: wrap; }
   .recat input { flex: 1 1 120px; }
   .split > .ring { margin-inline: auto; }
@@ -331,10 +332,11 @@ span.clip, a.clip, div.clip { min-width: 0; }
 .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
 
 .chip, .tab, .icon, .primary, .select { transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.08s; }
-.chip:hover, .icon:hover { border-color: var(--accent); }
+.chip:hover:not(:disabled), .icon:hover { border-color: var(--accent); }
+.chip:disabled { opacity: 0.5; cursor: default; }
 .tab:hover { color: var(--text); }
 .primary:hover { filter: brightness(1.1); }
-.primary:active, .icon:active, .chip:active { transform: scale(0.97); }
+.primary:active, .icon:active, .chip:active:not(:disabled) { transform: scale(0.97); }
 .small { padding: 4px 12px; font-size: 13px; }
 .tx { transition: background 0.12s; }
 .go.title:hover, .widget.linked:hover .title { color: var(--accent); }
@@ -611,7 +613,7 @@ body.wide .main { max-width: none; }
 .outlook-sub { margin: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
 .outlook-rows li { align-items: flex-start; }
 .outlook-day { min-width: 38px; padding-top: 2px; }
-.outlook-name { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.outlook-name { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .outlook-name .badge { padding: 0 8px; }
 .outlook-origin { flex-basis: 100%; font-size: 12px; white-space: normal; }
 .outlook-amount { display: flex; flex-direction: column; align-items: flex-end; flex: none; text-align: right; }
@@ -665,3 +667,11 @@ body.wide .main { max-width: none; }
 .chat-scroll { flex: 1; }
 .chat-form { margin-top: auto; padding-top: 10px; }
 .chat-list { padding-right: 6px; }
+
+/* Limits: the same bar length on every row, with the usage text in a fixed column. */
+.rows li.limit-line .limit-use { flex: 0 0 min(26em, 45%); text-align: right; white-space: normal; }
+@media (max-width: 760px) {
+  .rows li.limit-line { flex-wrap: wrap; }
+  .rows li.limit-line > .grow { flex-basis: 100%; }
+  .rows li.limit-line .limit-use { flex-basis: 100%; text-align: left; }
+}

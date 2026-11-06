@@ -161,3 +161,33 @@ test('the outlook answers over the API, and the analyst tool shows the same free
   store.setAccountHidden('cardA', true, T);
   assert.equal(outlook(store, NOW).dueOut.bills, 12000);
 });
+
+test('cards on a shared limit show one bill named by the cards and dated by the earliest due date, in the outlook and in the calendar', async () => {
+  const { calendar } = await import('../../src/api/calendar.ts');
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, T);
+  const card = (id: string, last4: string) => account(id, 'credit_card', 200000, { institution: 'Alfa', last4, creditLimit: 500000, availableLimit: 300000, limitGroupId: 'g1' });
+  store.replaceCanonicalAccounts([account('chk', 'checking', 1_000_000), card('cardA', '1111'), card('cardB', '2222')], [{ id: 'g1', institution: 'Alfa', creditLimit: 500000, memberIds: ['cardA', 'cardB'] }], T);
+  store.upsertSourceBills('pluggy', BILLS.map((b, i) => ({ externalId: `b${i}`, accountExternalId: `ext-card${b.card}`, dueDate: b.due, closingDate: b.closing, total: b.total, minimumPayment: null })), T);
+  store.replaceCanonicalTransactions([tx('start-a', 'Cafe', '2026-07-01', -100, 'cardA'), tx('start-b', 'Cafe', '2026-07-01', -100, 'cardB'), ...base().filter((t) => t.accountId !== 'cardB' || t.id === 'b-sep' || t.id === 'pay-b-sep'), tx('pay-a-oct', 'Pagamento recebido', '2026-10-12', 30000, 'cardA', { category: 'Credit card payment' })], [], T);
+  // Card A's open bill is due on 12/11 (after the month); card B's on 28/10 (inside it): the group bill takes the earlier one.
+  const v = outlook(store, NOW);
+  const bills = v.timeline.filter((e) => e.kind === 'bill');
+  assert.equal(bills.length, 1);
+  assert.deepEqual([bills[0]!.name, bills[0]!.day, bills[0]!.afterMonth], ['Fatura Alfa, limite compartilhado 1111 + 2222', '2026-10-28', false]);
+  assert.equal(v.dueOut.bills, bills[0]!.amount);
+  const projected = calendar(store, '2026-10', NOW).days.find((d) => d.day === '2026-10-28')!.projected;
+  assert.deepEqual(projected.map((p) => [p.name, p.amount, p.kind]), [[bills[0]!.name, bills[0]!.amount, 'bill']]);
+});
+
+test('the calendar and the outlook project the same income and the same balance at the end of the month', async () => {
+  const { calendar } = await import('../../src/api/calendar.ts');
+  // A recurring salary of 5.000,00 on the 20th and a registered income of 4.200,00 on the 22nd: both views use the registered one.
+  const store = seeded({ bills: BILLS, list: [...base(), ...monthly('SALARIO ACME', 500000, '20', ['05', '06', '07', '08', '09'])] });
+  store.saveIncome({ name: 'Salario', amount: 420000, dayOfMonth: 22, fromMonth: null, untilMonth: null }, T);
+  const v = outlook(store, NOW);
+  const days = calendar(store, '2026-10', NOW).days;
+  const incomes = days.flatMap((d) => d.projected.filter((p) => p.direction === 'in').map((p) => [d.day, p.name, p.amount]));
+  assert.deepEqual(incomes, [['2026-10-22', 'Salario', 420000]]);
+  assert.equal(days[days.length - 1]!.balance, v.free.value);
+});

@@ -82,9 +82,9 @@ export function sizeClass(w: number, h: number): SizeClass {
   return w >= 6 && h >= 7 ? 'lg' : 'md';
 }
 
-/** The same choice from the size on screen, so a widget fits its real room whatever the column width is. A wide, short widget still gets the fuller look. */
+/** The same choice from the size on screen, so a widget fits its real room whatever the column width is. A wide, short widget still gets the fuller look, and a narrow but tall one does too, since its content fits in 355 px on a phone. */
 export function sizeClassPx(width: number, height: number): SizeClass {
-  if (width <= 360 || (height <= 260 && width < 600)) return 'sm';
+  if ((width <= 360 && height <= 360) || (height <= 260 && width < 600)) return 'sm';
   if ((width >= 880 && height >= 500) || (width >= 660 && height >= 590)) return 'lg';
   return 'md';
 }

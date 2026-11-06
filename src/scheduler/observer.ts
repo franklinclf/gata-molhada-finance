@@ -98,7 +98,8 @@ export class Observer {
         const result = await syncSource(adapter, { store: this.deps.store, now: this.now }, since);
         this.deps.reconcile();
         this.emit({ type: 'synced', sourceId: adapter.id, result });
-        state.needsSync = result.errors.length > 0;
+        // An account that failed to read keeps its old numbers, so the next check reads again instead of waiting for the provider to report a change.
+        state.needsSync = result.errors.length > 0 || result.failedAccounts.length > 0;
         this.remember(adapter.id, state.needsSync);
       }
       state.failures = 0;

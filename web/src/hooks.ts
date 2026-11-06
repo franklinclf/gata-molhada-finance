@@ -11,6 +11,14 @@ export interface Loaded<T> {
 /** What each loader last loaded for each set of inputs, so reopening a screen or going back to a cycle shows it at once while it refreshes. */
 const seen = new Map<string, unknown>();
 
+/** Keys that a mounted loader uses right now. Those refresh by themselves when data changes; the others would show old numbers at the next visit. */
+const inUse = new Map<string, number>();
+
+// After a change, entries of screens that are not open are dropped, so reopening them waits for fresh data instead of showing the old one.
+onInvalidate(() => {
+  for (const key of [...seen.keys()]) if (!inUse.has(key)) seen.delete(key);
+});
+
 /**
  * Cache key of a loader. The loader source tells two loaders with equal deps apart (`() => api.cards()` against
  * `() => api.goals()`) and survives remounting, which an instance counter did not. Callers whose loader closes over
@@ -38,6 +46,7 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], everyMs?: nu
     if (seen.has(key)) setData(seen.get(key) as T);
     setLoading(!seen.has(key));
     lastLoad.current = Date.now();
+    inUse.set(key, (inUse.get(key) ?? 0) + 1);
     load()
       .then((value) => {
         if (cancelled) return;
@@ -55,6 +64,9 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], everyMs?: nu
       });
     return () => {
       cancelled = true;
+      const left = (inUse.get(key) ?? 1) - 1;
+      if (left > 0) inUse.set(key, left);
+      else inUse.delete(key);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);

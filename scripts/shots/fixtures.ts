@@ -178,6 +178,7 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
   const cardsView = call('/api/cards') as { cycles: string[] };
   const pastCycle = cardsView.cycles[1] ?? null;
   const range = monthRange(now);
+  const before = previousMonth(range.from);
   const detailId = list.find((t) => t.installment && t.accountId === 'cardA')!.id;
   const responses: Record<string, unknown> = {
     '/api/auth/session': { authenticated: true, strength: 'password' },
@@ -196,6 +197,7 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
     '/api/cards/forecast': call('/api/cards/forecast'),
     '/api/installments': call('/api/installments'),
     '/api/cashflow': call('/api/cashflow', `from=${range.from}&to=${range.to}`),
+    [`/api/cashflow?from=${before.from}&to=${before.to}`]: call('/api/cashflow', `from=${before.from}&to=${before.to}`),
     '/api/spending': call('/api/spending', `from=${range.from}&to=${range.to}`),
     '/api/transactions': call('/api/transactions', 'limit=50'),
     '/api/freshness': call('/api/freshness'),
@@ -223,11 +225,20 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
   return { now: at, responses, pastCycle };
 }
 
+/** The whole month before the one `from` opens: the cash flow widget asks for it to show the comparison block. */
+function previousMonth(from: string): { from: string; to: string } {
+  const [year, month] = from.split('-').map(Number) as [number, number];
+  const index = year * 12 + (month - 1) - 1;
+  const start = `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}-01`;
+  return { from: start, to: addDays(from, -1) };
+}
+
 /** A new install: logged in, nothing connected yet. Every list is empty. */
 function emptyFixtures(now: Date): Fixtures {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   const at = now.toISOString();
   const range = monthRange(now);
+  const before = previousMonth(range.from);
   const call = (path: string, query = '') => apiRoute('GET', path, new URLSearchParams(query), store, now, '')?.body;
   const paths = ['/api/layout', '/api/balances', '/api/cards', '/api/cards/bills', '/api/cards/forecast', '/api/installments', '/api/freshness', '/api/bill-check', '/api/rules', '/api/budgets', '/api/networth', '/api/goals', '/api/chat/conversations', '/api/calendar', '/api/findings', '/api/categories', '/api/accounts', '/api/ai', '/api/income', '/api/rules/suggestions', '/api/budgets/suggestions'];
   const responses: Record<string, unknown> = Object.fromEntries(paths.map((p) => [p, call(p)]));
@@ -236,6 +247,7 @@ function emptyFixtures(now: Date): Fixtures {
     '/api/auth/methods': { password: true, passkeys: false },
     '/api/auth/security': { strength: 'password', passkeysAvailable: false, passkeys: [], devices: [] },
     '/api/cashflow': call('/api/cashflow', `from=${range.from}&to=${range.to}`),
+    [`/api/cashflow?from=${before.from}&to=${before.to}`]: call('/api/cashflow', `from=${before.from}&to=${before.to}`),
     '/api/spending': call('/api/spending', `from=${range.from}&to=${range.to}`),
     '/api/spending/trend': call('/api/spending/trend', 'months=6'),
     '/api/transactions': call('/api/transactions', 'limit=50'),

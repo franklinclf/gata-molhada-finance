@@ -14,6 +14,8 @@ export interface SyncResult {
   transactions: number;
   bills: number;
   freshness: number;
+  /** Accounts whose transactions could not be read this time. The caller reads again at the next check. */
+  failedAccounts: string[];
   warnings: string[];
   errors: string[];
 }
@@ -78,6 +80,7 @@ async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date, opti
     transactions: 0,
     bills: 0,
     freshness: 0,
+    failedAccounts: [],
     warnings: [],
     errors: [],
   };
@@ -104,6 +107,7 @@ async function runSync(adapter: SourceAdapter, deps: SyncDeps, since: Date, opti
     store.upsertSourceTransactions(adapter.id, read.transactions, seenAt);
     result.transactions = read.transactions.length;
     // An account that failed keeps what it had, and the note says which one it was, so the owner knows why its numbers are old.
+    for (const failure of read.failed) result.failedAccounts.push(failure.label);
     for (const failure of read.failed) result.warnings.push(`${failure.label}: não foi possível ler as transações (${describe(failure.error)}), então esta conta ficou como estava`);
     if (read.failed.length > 0 && read.readAccountIds.length === 0) result.errors.push(`transactions: ${describe(read.failed[0]!.error)}`);
     // The read covers every date from `since` to today, so a record in that range that did not come back is gone at the

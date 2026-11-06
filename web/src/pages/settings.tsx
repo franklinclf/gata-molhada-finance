@@ -88,7 +88,7 @@ function GroupsPanel({ items, groups, run }: { items: CategoryRow[]; groups: str
             <span class="grow clip">{g}</span>
             <span class="muted">{items.filter((c) => c.parent === g).length} categorias</span>
             <button class="link" onClick={() => open(g)}>Editar</button>
-            <button class="link" onClick={() => window.confirm(`Desfazer o grupo "${g}"? As categorias dele ficam sem grupo.`) && void run(() => api.deleteGroup(g))}>Desfazer grupo</button>
+            <button class="link" onClick={() => window.confirm(`Desfazer o grupo "${g}"? As categorias dele ficam sem grupo. Se o grupo tiver orçamento, ele também será removido, em todos os meses.`) && void run(() => api.deleteGroup(g))}>Desfazer grupo</button>
           </li>
         ))}
       </ul>

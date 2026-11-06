@@ -268,6 +268,31 @@ test('a payment beyond the bill shows as overpaid on that cycle and in data heal
   assert.match(issues[0]!.message, /R\$\s50,00 a mais/);
 });
 
+test('a late payment of the older bill that falls after the next closing pays the older bill and is not overpaid on the next one', () => {
+  const { store, card1 } = setup({ payments: false });
+  const list = [
+    tx('start', 'card1', '2026-08-01', -100),
+    tx('buy-aug', 'card1', '2026-08-20', -50000),
+    tx('buy-sep', 'card1', '2026-09-02', -80000),
+    tx('buy-oct', 'card1', '2026-10-02', -68000),
+    // The September bill (due 15/09, closing 08/09) is paid on 10/10, after the October closing (08/10); October is paid on time.
+    tx('pay-sep-late', 'card1', '2026-10-10', 80000, 'Pagamento de cartão de crédito'),
+    tx('pay-oct', 'card1', '2026-10-15', 68000, 'Pagamento de cartão de crédito'),
+  ];
+  store.replaceCanonicalTransactions(list, [], NOW.toISOString());
+  const [sep, oct] = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27');
+  assert.deepEqual([sep!.status, sep!.outstanding, sep!.latePaid], ['paid', 0, { amount: 80000, day: '2026-10-10' }]);
+  assert.deepEqual([oct!.status, oct!.outstanding, oct!.overpaid, oct!.latePaid], ['paid', 0, 0, null]);
+  assert.equal(cards(store, NOW).totals.outstanding, 0);
+});
+
+test('an excess with no older bill still owed stays as overpaid', () => {
+  const { store, card1 } = setup();
+  store.replaceCanonicalTransactions([...store.listCanonicalTransactions(), tx('pay-oct-extra', 'card1', '2026-10-16', 5000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const oct = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-10')!;
+  assert.deepEqual([oct.overpaid, oct.latePaid], [5000, null]);
+});
+
 test('the open cycle leaves out installments that belong to later bills, which the issuer balance includes', () => {
   const { store, card1 } = setup();
   // Installment 4 of 6 was charged in October (bill due in November); 5 and 6 are still to come.

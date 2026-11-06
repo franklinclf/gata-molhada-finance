@@ -1,10 +1,11 @@
-import { addDays, addMonths, lastDayOf } from '../core/dates.ts';
+import { addDays, lastDayOf } from '../core/dates.ts';
 import type { Cents } from '../core/money.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { installments } from './installments.ts';
-import { dayInMonth, detectRecurring, type RecurringItem } from './recurring.ts';
+import { groupBill, incomeEvents, monthlyDays } from './projection.ts';
+import { detectRecurring, type RecurringItem } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
 import { stamp, type Stamped } from './stamp.ts';
 import { cards } from './views.ts';
@@ -81,19 +82,6 @@ const cardLabel = (a: { institution: string; last4: string | null; name: string 
 
 type Raw = Omit<OutlookEvent, 'balanceBefore' | 'balanceAfter' | 'covered' | 'shortfall' | 'cumulativeOut' | 'afterMonth'>;
 
-/** Dates of a monthly item inside [from, until], starting from its next expected day. */
-function monthlyDays(next: string, dayOfMonth: number, from: string, until: string): string[] {
-  const days: string[] = [];
-  let month = next.slice(0, 7);
-  let day = next;
-  while (day <= until) {
-    if (day >= from) days.push(day);
-    month = addMonths(month, 1);
-    day = dayInMonth(month, dayOfMonth);
-  }
-  return days;
-}
-
 /**
  * The month in one view: what is in the account, what is still expected to come in, what falls due (card bills by due
  * date, using the same "to pay" as the Faturas screen, and recurring bank payments), and what is left. Nothing here needs
@@ -123,12 +111,18 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
         let total = row?.total ?? 0;
         // Cards that share a limit report one open estimate for the group: count it once.
         const group = account.limitGroupId !== null && cycle.billTotal === null ? view.limitGroups.find((g) => g.id === account.limitGroupId) : undefined;
+        let name = label;
+        let dueDate = cycle.dueDate;
+        let closing = cycle.to;
         if (group) {
           total = countedGroups.has(group.id) ? 0 : group.openEstimate;
           countedGroups.add(group.id);
+          // One bill for the whole group, named by its cards and dated by the earliest due date among them.
+          const shared = total > 0 ? groupBill(store, group, cardAccounts, transactions, today) : null;
+          if (shared) ({ label: name, dueDate, closing } = shared);
         }
         if (total <= 0) continue;
-        raw.push({ day: cycle.dueDate < today ? today : cycle.dueDate, name: label, amount: total, direction: 'out', kind: 'bill', origin: `fatura aberta, fecha em ${shortDay(cycle.to)}; compras novas ainda somam`, late: cycle.dueDate < today, estimate: true });
+        raw.push({ day: dueDate < today ? today : dueDate, name, amount: total, direction: 'out', kind: 'bill', origin: `fatura aberta, fecha em ${shortDay(closing)}; compras novas ainda somam`, late: dueDate < today, estimate: true });
       } else if (cycle.outstanding > 0) {
         raw.push({ day: cycle.dueDate < today ? today : cycle.dueDate, name: label, amount: cycle.outstanding, direction: 'out', kind: 'bill', origin: cycle.dueDate < today ? `fatura fechada vencida em ${shortDay(cycle.dueDate)} e ainda não paga` : 'fatura fechada ainda não paga', late: cycle.dueDate < today, estimate: false });
       }
@@ -154,21 +148,9 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
 
   // Income: what the owner registered, else the credits that come back every month. A late credit is not counted.
   const registered = store.listIncome();
-  const incomeSource: 'registered' | 'recurring' | 'none' = registered.length > 0 ? 'registered' : recurring.some((r) => r.direction === 'in' && r.account === 'bank') ? 'recurring' : 'none';
-  if (incomeSource === 'registered') {
-    for (let m = month; m <= until.slice(0, 7); m = addMonths(m, 1)) {
-      for (const item of registered) {
-        if ((item.fromMonth !== null && item.fromMonth > m) || (item.untilMonth !== null && item.untilMonth < m)) continue;
-        const day = dayInMonth(m, item.dayOfMonth);
-        if (day > today && day <= until) events.push({ day, name: item.name, amount: item.amount, direction: 'in', kind: 'income', origin: 'renda cadastrada', late: false, estimate: false });
-      }
-    }
-  } else if (incomeSource === 'recurring') {
-    for (const r of recurring) {
-      if (r.direction !== 'in' || r.account !== 'bank' || r.late) continue;
-      for (const day of monthlyDays(r.nextDay, r.dayOfMonth, today, until)) events.push({ day, name: r.name, amount: r.amount, direction: 'in', kind: 'income', origin: `entrada que se repete todo mês, dia ${r.dayOfMonth}`, late: false, estimate: r.kind === 'variable' });
-    }
-  }
+  const income = incomeEvents(store, recurring, today, until);
+  const incomeSource = income.source;
+  for (const e of income.events) events.push({ ...e, direction: 'in', kind: 'income', late: false });
 
   // Walk the days. On the same day the money that arrives is placed first, then the payments, larger ones first.
   events.sort((a, b) => a.day.localeCompare(b.day) || (a.direction === b.direction ? b.amount - a.amount : a.direction === 'in' ? -1 : 1) || a.name.localeCompare(b.name));

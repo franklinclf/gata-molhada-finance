@@ -72,6 +72,7 @@ test('an account whose read failed is left alone, the others are saved and clean
   const result = await syncSource(new OneFails('pluggy', data), { store, now }, SINCE);
   assert.deepEqual(ids(store), ['new1', 'x1', 'x2'], 'a1 got its new record and lost the one the provider dropped; a2 kept everything');
   assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.failedAccounts, ['Bank / a2']);
   assert.equal(result.warnings.length, 1);
   assert.match(result.warnings[0] ?? '', /^Bank \/ a2: .*HTTP 500 from https:\/\/x\.test\/v2\/transactions/);
   assert.equal(result.warnings[0]?.includes('token'), false);

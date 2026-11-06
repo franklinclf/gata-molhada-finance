@@ -29,11 +29,12 @@ export interface Cycle {
   /** What is still owed on a closed cycle. */
   outstanding: Cents;
   /**
-   * What the payments in this cycle's window add up to beyond the bill (zero within a real of it). It is a warning only: the
-   * excess is not moved to another bill. Typical causes are a bill paid twice, or a late payment of an older bill that fell
-   * after this bill closed and so was counted here.
+   * What the payments in this cycle's window add up to beyond the bill (zero within a real of it), after the part that paid an
+   * older bill still open has been moved to it (see `latePaid`). What is left is a warning only, typically a bill paid twice.
    */
   overpaid: Cents;
+  /** Part of this bill that was paid late, by a payment made after the next bill closed, and the day of that payment. Null when nothing. */
+  latePaid: { amount: Cents; day: string } | null;
   status: CycleStatus;
   /**
    * A leftover on a closed bill that is not counted as owed. `by: 'auto'`: the app guesses it rolled over into the next
@@ -241,9 +242,35 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
       }
     }
     const edited = edit ? { total: edit.total !== null, closing: edit.closingDate !== null, due: edit.dueDate !== null, status: edit.status !== null } : null;
-    return { key: w.key, accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, overpaid, status, adjusted, edited };
+    return { key: w.key, accountId: account.id, from: w.from, to: w.to, dueDate: w.due, billTotal: w.total, charges, credits, paid, outstanding, overpaid, latePaid: null, status, adjusted, edited };
   });
-  return settleLeftovers(store, account.id, cycles, today);
+  return settleLeftovers(store, account.id, applyLatePayments(store, account.id, cycles, payments), today);
+}
+
+/**
+ * A payment of an older bill made after the next bill closed lands in the window of the next bill (windows follow the closing
+ * days), which then looks overpaid while the older one looks overdue. The excess of a cycle pays the oldest bill before it that
+ * is still owed, and that bill is marked as paid late, on the day of the first payment in the window.
+ */
+function applyLatePayments(store: Store, accountId: string, cycles: Cycle[], payments: Array<{ day: string; amount: Cents }>): Cycle[] {
+  const edits = store.listBillEdits();
+  cycles.forEach((c, i) => {
+    if (c.overpaid <= 0) return;
+    const owed = (x: Cycle) => x.billTotal !== null && x.outstanding > 0 && (x.status === 'overdue' || x.status === 'unpaid' || x.status === 'partial') && !edits.get(`${accountId}|${x.key}`)?.status;
+    const older = cycles.slice(0, i).find(owed);
+    if (!older) return;
+    const applied = Math.min(c.overpaid, older.outstanding);
+    const day = payments.filter((p) => p.day >= c.to && p.day < (cycles[i + 1]?.to ?? '9999-12-31')).map((p) => p.day).sort()[0] ?? c.to;
+    older.latePaid = { amount: (older.latePaid?.amount ?? 0) + applied, day: older.latePaid?.day ?? day };
+    older.paid += applied;
+    older.outstanding -= applied;
+    if (older.outstanding <= TOLERANCE) {
+      older.outstanding = 0;
+      older.status = 'paid';
+    }
+    c.overpaid = c.overpaid - applied > TOLERANCE ? c.overpaid - applied : 0;
+  });
+  return cycles;
 }
 
 /** Whole months from one day to another. Closing days drift by a day or two (30/09 then 01/11 is one month), so this rounds by length. */
