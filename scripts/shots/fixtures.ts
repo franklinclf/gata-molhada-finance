@@ -85,7 +85,10 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
 
   const list: CanonicalTransaction[] = [];
   let n = 0;
+  const cardIds = new Set(accounts.filter((a) => a.kind === 'credit_card').map((a) => a.id));
   const add = (accountId: string, day: string, amount: number, description: string, category: string | null, extra: Partial<CanonicalTransaction> = {}) => {
+    // A bank account has nothing dated after today; only a card can hold a future installment.
+    if (!cardIds.has(accountId) && day > today) return;
     list.push({ id: `t${++n}`, accountId, occurredAt: `${day}T15:00:00Z`, amount, description, descriptionRaw: description, status: 'posted', installment: null, category, state: 'confirmed', sourceIds: ['pluggy', 'pluggy'], excluded: false, ...extra });
   };
 
@@ -110,7 +113,6 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
     for (const card of cards) {
       add(card, addDays(first, 3), -3990, 'NETFLIX.COM', 'Video streaming');
       add(card === 'cardA2' ? 'cardA' : card, addDays(first, 2), -2390, 'EBN*SPOTIFY CU', 'Music streaming');
-      add('chk1', addDays(first, 10), -Math.round(50000 + rand() * 60000), `PAGAMENTO FATURA ${card}`, 'Credit card payment', { description: 'GASTOS CARTAO DE CREDITO - DOCTO: 3990288' });
     }
   }
   for (let k = 0; k < 4; k++) add('cardA', addDays(today, -35 * k - 3), -28305, 'EXTRAFARMA C*pagu', 'Pharmacy', { installment: { number: 3 - k >= 1 ? 3 - k : 1, total: 3 } });
@@ -119,17 +121,26 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
   add('chk1', addDays(today, -2), -9000, 'PIX ENVIADO', 'Transfers', { sourceIds: ['pluggy'], state: 'single_source' });
   add('chk1', addDays(today, -1), -9000, 'Transferência enviada pelo Pix', 'Transfers', { sourceIds: ['pluggy'], state: 'single_source' });
   add('cardB', addDays(today, -14), -7200, 'LOJA SEM ROTULO', null, { status: 'pending', sourceIds: ['pluggy'], state: 'stale_pending', excluded: true });
-  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, at);
-  store.replaceCanonicalTransactions(list, list.map((t) => ({ sourceId: 'pluggy', externalId: `e-${t.id}`, transactionId: t.id, matchPass: 0 })), at);
-
-  // Bills: six per card, closing on the 8th and due on the 15th, each one paid.
+  // Bills: six per card, closing on the 8th and due on the 15th. Each bill already due was paid in full on the due day,
+  // as a credit on the card and a debit on the checking account, the way Meu Pluggy reports both legs.
   const bills: Array<{ externalId: string; accountExternalId: string; dueDate: string; closingDate: string; total: number; minimumPayment: null }> = [];
   for (const [i, card] of cards.entries()) {
     for (let m = 6; m >= 0; m--) {
       const due = addMonthsToDay(`${today.slice(0, 7)}-15`, -m + (today.slice(8) > '15' ? 1 : 0));
-      bills.push({ externalId: `bill-${i}-${m}`, accountExternalId: `ext-${card}`, dueDate: due, closingDate: addDays(due, -7), total: Math.round(60000 + rand() * 140000), minimumPayment: null });
+      const total = Math.round(60000 + rand() * 140000);
+      // A bank publishes a bill only after it closes.
+      if (addDays(due, -7) <= today) bills.push({ externalId: `bill-${i}-${m}`, accountExternalId: `ext-${card}`, dueDate: due, closingDate: addDays(due, -7), total, minimumPayment: null });
     }
   }
+  for (const bill of bills) {
+    if (bill.dueDate > today) continue;
+    const card = bill.accountExternalId.replace('ext-', '');
+    add(card, bill.dueDate, bill.total, 'Pagamento recebido', 'Credit card payment');
+    add('chk1', bill.dueDate, -bill.total, 'PAGAMENTO FATURA CARTAO', 'Credit card payment');
+  }
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, at);
+  store.replaceCanonicalTransactions(list, list.map((t) => ({ sourceId: 'pluggy', externalId: `e-${t.id}`, transactionId: t.id, matchPass: 0 })), at);
+
   store.upsertSourceBills('pluggy', bills, at);
 
   for (const [institution, minutes] of [['Banco Alfa', 40], ['Banco Beta', 1500], ['Carteira Pay', 95]] as const) {
