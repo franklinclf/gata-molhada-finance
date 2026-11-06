@@ -2,6 +2,7 @@ import type { Cents } from '../core/money.ts';
 import { localDay, localMonth } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { addMonthsToDay, cyclesFor } from './cycles.ts';
+import { incomeIn } from './income.ts';
 import { installments } from './installments.ts';
 import { effectiveTransactions, ruleKey, visibleAccounts, type EffectiveTransaction, type ViewOptions } from './scope.ts';
 import { stamp, type Stamped } from './stamp.ts';
@@ -30,6 +31,8 @@ export interface ForecastMonth {
   /** For the open bill: what is already counted. For later ones: the same as `total`. */
   known: Cents;
   total: Cents;
+  /** What the registered fixed income brings in the month. */
+  income: Cents;
   cards: ForecastCard[];
 }
 
@@ -74,7 +77,7 @@ export function forecast(store: Store, now: Date, opts: ViewOptions = {}, horizo
   const keys = Array.from({ length: horizon }, (_, i) => addMonthsToDay(`${firstKey}-01`, i).slice(0, 7));
 
   const recurring: RecurringCharge[] = [];
-  const months: ForecastMonth[] = keys.map((key, i) => ({ key, open: i === 0, installments: 0, recurring: 0, variable: 0, known: 0, total: 0, cards: [] }));
+  const months: ForecastMonth[] = keys.map((key, i) => ({ key, open: i === 0, installments: 0, recurring: 0, variable: 0, known: 0, total: 0, income: incomeIn(store.listIncome(), key), cards: [] }));
   const basis: ForecastView['basis'] = [];
 
   for (const account of cardAccounts) {

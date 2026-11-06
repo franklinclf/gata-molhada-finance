@@ -323,6 +323,85 @@ function CardBlock({ card, cycle, hidden }: { card: CardsView['cards'][number]; 
   );
 }
 
+const toCentsText = (text: string): number | null => {
+  const n = Number(text.trim().replace(/\./g, '').replace(',', '.'));
+  return text.trim() !== '' && Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+};
+
+/** The fixed income the owner registers, and what is left of it each month after the card bills already known. */
+function IncomePanel({ months, hidden }: { months: Array<{ key: string; income: number; bills: number }>; hidden: boolean }) {
+  const list = useLoad(() => api.income(), []);
+  const [form, setForm] = useState<{ id: number | null; name: string; amount: string; day: string } | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const run = async (work: () => Promise<unknown>) => {
+    setMessage(null);
+    try {
+      await work();
+      setForm(null);
+      list.reload();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Não foi possível salvar.');
+    }
+  };
+  const items = list.data?.items ?? [];
+  return (
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Renda fixa e o que sobra</h3>
+        <button class="chip" onClick={() => setForm({ id: null, name: '', amount: '', day: '5' })}>+ Nova renda</button>
+      </div>
+      <div class="muted">Cadastre o que entra todo mês (salário, aluguel recebido). A previsão desconta as faturas já conhecidas e mostra quanto sobra para gastar fora do cartão.</div>
+      {items.length > 0 && (
+        <ul class="rows">
+          {items.map((i) => (
+            <li key={i.id}>
+              <span class="grow clip">{i.name} <span class="muted">dia {i.dayOfMonth}</span></span>
+              <strong>{brl(i.amount, hidden)}</strong>
+              <button class="link" onClick={() => setForm({ id: i.id, name: i.name, amount: String(i.amount / 100).replace('.', ','), day: String(i.dayOfMonth) })}>Editar</button>
+              <button class="link" onClick={() => void run(() => api.deleteIncome(i.id))}>Remover</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {form && (
+        <form
+          class="recat"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const amount = toCentsText(form.amount);
+            if (amount === null) return setMessage('Digite um valor maior que zero.');
+            void run(() => api.saveIncome(form.id, { name: form.name.trim(), amount, dayOfMonth: Number(form.day), fromMonth: null, untilMonth: null }));
+          }}
+        >
+          <input aria-label="Nome da renda" placeholder="Nome (ex.: Salário)" value={form.name} maxLength={60} onInput={(e) => setForm({ ...form, name: (e.currentTarget as HTMLInputElement).value })} />
+          <input aria-label="Valor" inputMode="decimal" placeholder="Valor" value={form.amount} onInput={(e) => setForm({ ...form, amount: (e.currentTarget as HTMLInputElement).value })} />
+          <input aria-label="Dia do mês" type="number" min="1" max="31" value={form.day} onInput={(e) => setForm({ ...form, day: (e.currentTarget as HTMLInputElement).value })} />
+          <button class="primary" disabled={form.name.trim() === ''}>Salvar</button>
+          <button type="button" class="link" onClick={() => setForm(null)}>Cancelar</button>
+        </form>
+      )}
+      {message && <div class="error">{message}</div>}
+      {items.length > 0 && (
+        <table class="table">
+          <thead>
+            <tr><th>Mês</th><th>Renda</th><th>Faturas previstas</th><th>Sobra</th></tr>
+          </thead>
+          <tbody>
+            {months.map((m) => (
+              <tr key={m.key}>
+                <td>{monthName(m.key)}</td>
+                <td>{brl(m.income, hidden)}</td>
+                <td>{brl(m.bills, hidden)}</td>
+                <td><strong class={m.income - m.bills < 0 ? 'bad-text' : 'good-text'}>{brl(m.income - m.bills, hidden)}</strong></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function ForecastTab({ hidden, installments, route }: { hidden: boolean; installments: ReturnType<typeof useLoad<import('../api.ts').InstallmentsView>>; route: Route }) {
   const { data, error } = useLoad(() => api.forecast(), []);
   const [open, setOpen] = useState<string | null>(null);
@@ -409,6 +488,7 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
           </ul>
         )}
       </div>
+      <IncomePanel months={data.months.map((m) => ({ key: m.key, income: m.income, bills: totalOf(m) }))} hidden={hidden} />
       <h2 class="section-title">Parcelas em andamento</h2>
       <InstallmentsTab installments={installments} hidden={hidden} route={route} />
       <div class="panel">

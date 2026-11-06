@@ -2,6 +2,7 @@ import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { transactionDetail } from './detail.ts';
+import { deleteIncome, saveIncome, type IncomeResult } from './income.ts';
 import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
@@ -176,6 +177,21 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (method !== 'PUT') return methodNotAllowed();
       const input = parseBody(body);
       return input ? asResult(updateGoal(store, goalId, input, now)) : badRequest('body must be an object');
+    }
+    case 'income': {
+      const asResult = <T,>(r: IncomeResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
+      if (parts.length === 2) {
+        if (method === 'GET') return { status: 200, body: { items: store.listIncome() } };
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(saveIncome(store, null, input, now)) : badRequest('body must be { name, amount, dayOfMonth, fromMonth?, untilMonth? }');
+      }
+      const incomeId = numericId(id);
+      if (parts.length !== 3 || !Number.isInteger(incomeId)) return null;
+      if (method === 'DELETE') return asResult(deleteIncome(store, incomeId));
+      if (method !== 'PUT') return methodNotAllowed();
+      const input = parseBody(body);
+      return input ? asResult(saveIncome(store, incomeId, input, now)) : badRequest('body must be an object');
     }
     case 'recurring': {
       if (parts.length === 2) return method === 'GET' ? { status: 200, body: { items: detectRecurring(store, now, opts) } } : methodNotAllowed();

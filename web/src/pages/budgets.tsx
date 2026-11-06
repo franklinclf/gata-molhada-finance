@@ -198,6 +198,7 @@ export function BudgetsPage({ route, now, hidden }: { route: Route; now: Date; h
   return (
     <div class="page-body">
       <h1 class="page-title">Orçamento</h1>
+      <div class="note">O orçamento é um teto de gasto por mês, para uma categoria ou um grupo. A barra mostra quanto já foi gasto e o ritmo até o fim do mês. A renda fixa e o que sobra depois das faturas ficam em Cartões, aba Futuras e parcelas.</div>
       <div class="period">
         <button class="icon small" onClick={() => go(addMonths(month, -1))} aria-label="Mês anterior">
           ‹

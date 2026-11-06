@@ -3,6 +3,7 @@ import type { TransactionDetail } from '../../src/api/detail.ts';
 import type { Layout, LayoutItem, WidgetId } from '../../src/api/layout.ts';
 import type { AiRunReply } from '../../src/ai/job.ts';
 import type { AiView, Decision, DecisionStatus, Suggestion } from '../../src/api/ai.ts';
+import type { IncomeItem } from '../../src/store/store.ts';
 import type { ForecastView } from '../../src/api/forecast.ts';
 import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
@@ -225,6 +226,10 @@ export const api = {
     request<{ ok: true }>(`/api/categories/${encodeURIComponent(name)}/parent`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parent }) }),
   bulkEdit: (ids: string[], change: { category: string | null } | { ignored: boolean } | { status: 'pending' | 'posted' | null } | { cycleKey: string | null }) =>
     request<{ ok: true; changed: number; skipped: number }>('/api/transactions/bulk', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, ...change }) }),
+  income: () => request<{ items: IncomeItem[] }>('/api/income'),
+  saveIncome: (id: number | null, item: Omit<IncomeItem, 'id'>) =>
+    request<{ id: number }>(id === null ? '/api/income' : `/api/income/${id}`, { method: id === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) }),
+  deleteIncome: (id: number) => request<Record<string, never>>(`/api/income/${id}`, { method: 'DELETE' }),
   saveGroup: (current: string | null, name: string, members: string[]) =>
     request<{ ok: true }>(current === null ? '/api/category-groups' : `/api/category-groups/${encodeURIComponent(current)}`, { method: current === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) }),
   deleteGroup: (name: string) => request<{ ok: true }>(`/api/category-groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),
