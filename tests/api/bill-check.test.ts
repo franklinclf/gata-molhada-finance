@@ -9,7 +9,7 @@ const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url));
 const NOW = new Date('2026-10-27T15:00:00Z');
 
 const card: CanonicalAccount = {
-  id: 'card1', institution: 'Bank A', kind: 'credit_card', name: 'Card', last4: '0576', balance: 0, balanceSourceId: 'pluggy', balanceAsOf: NOW.toISOString(), creditLimit: 500000,
+  id: 'card1', institution: 'Bank A', kind: 'credit_card', name: 'Card', last4: '0101', balance: 0, balanceSourceId: 'pluggy', balanceAsOf: NOW.toISOString(), creditLimit: 500000,
   availableLimit: 400000, minimumPayment: null, dueDate: null, limitGroupId: null, refs: [{ sourceId: 'pluggy', externalId: 'ext-card1', role: 'member' }],
 };
 const tx = (id: string, day: string, amount: number, over: Partial<CanonicalTransaction> = {}): CanonicalTransaction => ({

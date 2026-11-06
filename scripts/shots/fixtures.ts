@@ -70,8 +70,8 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
     base({ id: 'wallet', institution: 'Carteira Pay', name: 'Conta digital', balance: 33210 }),
     base({ id: 'cardA', institution: 'Banco Alfa', kind: 'credit_card', name: 'Gold', last4: '1111', balance: 336581, creditLimit: 1840000, availableLimit: 1503419, limitGroupId: 'lgA', refs: [{ sourceId: 'pluggy', externalId: 'ext-cardA', role: 'member' }] }),
     base({ id: 'cardA2', institution: 'Banco Alfa', kind: 'credit_card', name: 'Platinum', last4: '2222', balance: 336581, creditLimit: 1840000, availableLimit: 1503419, limitGroupId: 'lgA', refs: [{ sourceId: 'pluggy', externalId: 'ext-cardA2', role: 'member' }] }),
-    base({ id: 'cardB', institution: 'Banco Beta', kind: 'credit_card', name: 'Click', last4: '0576', balance: 28090, creditLimit: 518500, availableLimit: 490410, refs: [{ sourceId: 'pluggy', externalId: 'ext-cardB', role: 'member' }] }),
-    base({ id: 'cardC', institution: 'Carteira Pay', kind: 'credit_card', name: 'Roxo', last4: '4527', balance: 120535, creditLimit: 840000, availableLimit: 719465, refs: [{ sourceId: 'pluggy', externalId: 'ext-cardC', role: 'member' }] }),
+    base({ id: 'cardB', institution: 'Banco Beta', kind: 'credit_card', name: 'Click', last4: '0101', balance: 28090, creditLimit: 518500, availableLimit: 490410, refs: [{ sourceId: 'pluggy', externalId: 'ext-cardB', role: 'member' }] }),
+    base({ id: 'cardC', institution: 'Carteira Pay', kind: 'credit_card', name: 'Roxo', last4: '0202', balance: 120535, creditLimit: 840000, availableLimit: 719465, refs: [{ sourceId: 'pluggy', externalId: 'ext-cardC', role: 'member' }] }),
     ...(dense
       ? [
           base({ id: 'chk3', institution: 'Cooperativa de Crédito Regional do Vale do Rio Grande', name: 'Conta corrente conjunta com nome bem comprido', balance: 123456789 }),
