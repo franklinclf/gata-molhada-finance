@@ -70,15 +70,15 @@ export function CashflowWidget({ now, hidden, size, pixels, config, setConfig }:
         <dl class="facts inline">
           {prev.data && (
             <>
-              <dt>{period === 'month' ? `Em ${monthName(before.from.slice(0, 7))} (mês inteiro)` : 'No período anterior'}</dt>
+              <dt>{period === 'month' ? `Saldo de ${monthName(before.from.slice(0, 7))} (mês inteiro)` : 'Saldo do período anterior'}</dt>
               <dd>
                 <span class={prev.data.net < 0 ? 'bad-text' : ''}>{brl(prev.data.net, hidden)}</span>
               </dd>
               {roomy && (
                 <>
-                  <dt>Entrou antes</dt>
+                  <dt>{period === 'month' ? `Entrou em ${monthName(before.from.slice(0, 7))}` : 'Entrou no período anterior'}</dt>
                   <dd>{brl(prev.data.inflow, hidden)}</dd>
-                  <dt>Saiu antes</dt>
+                  <dt>{period === 'month' ? `Saiu em ${monthName(before.from.slice(0, 7))}` : 'Saiu no período anterior'}</dt>
                   <dd>{brl(prev.data.outflow, hidden)}</dd>
                 </>
               )}
