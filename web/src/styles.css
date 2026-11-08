@@ -654,11 +654,17 @@ body.wide .main { max-width: none; }
 .tx-meta .tx-acct, .tx-meta .tx-cat { overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .tx-meta .tx-acct::before, .tx-meta .tx-cat::before { content: '· '; }
 .tx-meta .tx-acct { max-width: 55%; }
+.tx-meta .tx-badges { display: inline-flex; gap: 6px; align-items: center; }
+.tx-meta .tx-badges:empty { display: none; }
+.tx-pick { display: flex; align-items: center; justify-content: center; margin: -13px -4px -13px -8px; padding: 13px; cursor: pointer; flex: none; }
 @media (max-width: 760px) {
   .tx-meta { flex-wrap: wrap; white-space: normal; row-gap: 0; }
-  .tx-meta .tx-cat { order: 2; max-width: calc(100% - 3.5em); }
+  .tx-meta .tx-cat { order: 2; max-width: calc(100% - 3.5em); white-space: normal; overflow: visible; text-overflow: clip; }
   .tx-meta .tx-acct { order: 3; flex-basis: 100%; max-width: 100%; font-size: 12px; white-space: nowrap; }
   .tx-meta .tx-acct::before { content: ''; }
+  .tx-meta .tx-badges { order: 4; flex-basis: 100%; flex-wrap: wrap; }
+  /* A long description wraps to two lines instead of one clipped line. */
+  .tx > .grow > .clip:first-child { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 
 /* Drawer corrections: wider columns so the chosen option is not cut. */

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cellMoney, countNote, endpoints, internalNote, localStamp, recurringWhen, splitZero, times, whenAhead } from '../../web/src/pages/page-logic.ts';
+import { billPaymentNote, cellMoney, countNote, endpoints, internalNote, localStamp, recurringWhen, splitZero, tileSums, times, whenAhead } from '../../web/src/pages/page-logic.ts';
 
 const NOW = new Date('2026-11-08T15:00:00Z');
 
@@ -62,4 +62,14 @@ test('endpoints give the first and last value of a chart without axes', () => {
   assert.match(e.to, /^31\/03\/2026: R\$\s?2\.500,00$/);
   assert.equal(endpoints(['2026-01-31'], [1], false), null);
   assert.doesNotMatch(endpoints(['2026-01-31', '2026-02-28'], [1, 2], true)!.to, /\d,\d\d/);
+});
+
+test('the totals of one bill leave out its payment, which would cancel the purchases', () => {
+  const sums = { income: 134530, expense: 134530, net: 0 };
+  const internal = { count: 1, income: 134530, expense: 0 };
+  assert.deepEqual(tileSums(sums, internal, true), { income: 0, expense: 134530, net: -134530 });
+  assert.deepEqual(tileSums(sums, internal, false), sums);
+  assert.match(billPaymentNote(internal, false)!, /^O pagamento da fatura \(R\$\s?1\.345,30\) aparece na lista, mas não entra nas somas\.$/);
+  assert.equal(billPaymentNote({ count: 0, income: 0, expense: 0 }, false), null);
+  assert.match(billPaymentNote({ count: 2, income: 1000, expense: 500 }, false)!, /^2 pagamentos e movimentos/);
 });

@@ -1,3 +1,4 @@
+import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { Bars, Meter, Ring } from '../charts.tsx';
 import { brl, dayMonth, localDay, monthName } from '../format.ts';
@@ -11,11 +12,12 @@ const BAR_COLOR: Record<string, string> = { open: 'var(--accent)', paid: 'var(--
 const BAR_NAME: Record<string, string> = { open: 'em aberto', paid: 'paga', overdue: 'vencida', unknown: 'não conferida' };
 const barColor = (status: string) => BAR_COLOR[status] ?? 'var(--warn)';
 
-export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: WidgetProps) {
-  const cycle = config.cycle ?? 'open';
+export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
+  // A month picked on the chart lasts for this visit only: it is not saved with the layout, so the widget always opens on what is owed now.
+  const [cycle, setCycle] = useState('open');
   const { data, error, loading } = useLoad(() => api.cards(cycle), [cycle], 120_000);
   const bills = useLoad(() => api.bills(), [], 300_000);
-  // A month picked once stays saved with the layout, so the widget also says what is owed overall and offers the way back.
+  // With a month picked, the widget also says what is owed overall and offers the way back.
   const all = useLoad(() => (cycle === 'open' ? Promise.resolve(null) : api.cards('open')), [cycle], 120_000);
   const today = localDay(now.toISOString());
   // The month picked on the chart is listed too, even when it is the current one and no bill of it is closed yet.
@@ -42,7 +44,7 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
       now={now}
       loading={loading && !data}
       error={error}
-      actions={<PeriodSelect value={cycle} options={options} onChange={(id) => setConfig({ cycle: id })} />}
+      actions={<PeriodSelect value={cycle} options={options} onChange={setCycle} />}
       head={
         data && (
           <>
@@ -52,7 +54,7 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
               <div class="muted">
                 Todas as não pagas: {brl(all.data.totals.toPay, hidden)}
                 {all.data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(all.data.totals.nextDueDate)}` : ''}{' '}
-                <button class="link" onClick={() => setConfig({ cycle: 'open' })}>
+                <button class="link" onClick={() => setCycle('open')}>
                   Ver em aberto
                 </button>
               </div>
@@ -63,7 +65,7 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
                   hidden={hidden}
                   height={chartHeight(pixels, 440, 80, 150)}
                   selected={cycle === 'open' ? (bills.data.bars.find((b) => b.current)?.key ?? 'open') : cycle}
-                  onSelect={(key) => setConfig({ cycle: key === cycle ? 'open' : key })}
+                  onSelect={(key) => setCycle(key === cycle ? 'open' : key)}
                   data={barData.map((b) => ({
                     key: b.key,
                     label: monthName(b.key).slice(0, 3),

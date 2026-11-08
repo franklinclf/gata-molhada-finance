@@ -2,6 +2,7 @@ import { api, type OutlookView } from '../api.ts';
 import { brl, dayMonth } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { hrefFor } from '../router.ts';
+import { Go } from '../ui.tsx';
 import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
@@ -130,6 +131,14 @@ export function OutlookWidget({ now, hidden, size }: WidgetProps) {
             <div class="muted">Livre para gastar até {dayMonth(data.monthEnd)}</div>
             <div class={data.free.value < 0 ? 'big bad-text' : 'big'}>{brl(data.free.value, hidden)}</div>
             <div class="muted">{freeNote(data, hidden)}</div>
+            {data.expectedIn.source !== 'registered' && (
+              <div class="muted">
+                {data.expectedIn.source === 'none' ? 'Sem renda cadastrada. ' : 'Entradas estimadas pelos créditos que se repetem. '}
+                <Go page="accounts" params={{ renda: '1' }}>
+                  Cadastrar renda
+                </Go>
+              </div>
+            )}
           </>
         )
       }

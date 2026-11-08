@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { api, type BillCheckView, type CardsView } from '../api.ts';
 import { gapShort, gapText, monthSpan } from '../bill-check.ts';
 import { Bars, Meter, StackedBars } from '../charts.tsx';
-import { brl, dayMonth, localDay, monthName, parseBrl } from '../format.ts';
+import { brl, dayMonth, localDay, monthName } from '../format.ts';
 import { useLoad, useStoredFlag } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { Button, Chip } from '../ds.tsx';
@@ -11,6 +11,7 @@ import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
 import { Select } from '../Select.tsx';
 import { BillEditor } from '../BillEditor.tsx';
+import { IncomePanel } from '../IncomePanel.tsx';
 import { patchParams as openParams } from '../router.ts';
 
 const brlText = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
@@ -560,80 +561,6 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
   );
 }
 
-/** The fixed income the owner registers, and what is left of it each month after the card bills already known. */
-function IncomePanel({ months, hidden }: { months: Array<{ key: string; income: number; bills: number }>; hidden: boolean }) {
-  const list = useLoad(() => api.income(), []);
-  const [form, setForm] = useState<{ id: number | null; name: string; amount: string; day: string } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const run = async (work: () => Promise<unknown>) => {
-    setMessage(null);
-    try {
-      await work();
-      setForm(null);
-      list.reload();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Não foi possível salvar.');
-    }
-  };
-  const items = list.data?.items ?? [];
-  return (
-    <div class="panel">
-      <div class="panel-head">
-        <h3>Renda fixa e o que sobra</h3>
-        <button class="chip" onClick={() => setForm({ id: null, name: '', amount: '', day: '5' })}>+ Nova renda</button>
-      </div>
-      <div class="muted">Cadastre o que entra todo mês (salário, aluguel recebido). A previsão desconta as faturas já conhecidas e mostra quanto sobra para gastar fora do cartão.</div>
-      {items.length > 0 && (
-        <ul class="rows">
-          {items.map((i) => (
-            <li key={i.id}>
-              <span class="grow clip">{i.name} <span class="muted">dia {i.dayOfMonth}</span></span>
-              <strong>{brl(i.amount, hidden)}</strong>
-              <button class="link" onClick={() => setForm({ id: i.id, name: i.name, amount: String(i.amount / 100).replace('.', ','), day: String(i.dayOfMonth) })}>Editar</button>
-              <button class="link" onClick={() => window.confirm(`Remover a renda “${i.name}”? A previsão deixa de contar esse valor.`) && void run(() => api.deleteIncome(i.id))}>Remover</button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {form && (
-        <form
-          class="recat"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const amount = parseBrl(form.amount);
-            if (amount === null) return setMessage('Digite um valor maior que zero.');
-            void run(() => api.saveIncome(form.id, { name: form.name.trim(), amount, dayOfMonth: Number(form.day), fromMonth: null, untilMonth: null }));
-          }}
-        >
-          <input aria-label="Nome da renda" placeholder="Nome (ex.: Salário)" value={form.name} maxLength={60} onInput={(e) => setForm({ ...form, name: (e.currentTarget as HTMLInputElement).value })} />
-          <input aria-label="Valor" inputMode="decimal" placeholder="Valor" value={form.amount} onInput={(e) => setForm({ ...form, amount: (e.currentTarget as HTMLInputElement).value })} />
-          <input aria-label="Dia do mês" type="number" min="1" max="31" value={form.day} onInput={(e) => setForm({ ...form, day: (e.currentTarget as HTMLInputElement).value })} />
-          <button class="primary" disabled={form.name.trim() === ''}>Salvar</button>
-          <button type="button" class="link" onClick={() => setForm(null)}>Cancelar</button>
-        </form>
-      )}
-      {message && <div class="error">{message}</div>}
-      {items.length > 0 && (
-        <table class="table">
-          <thead>
-            <tr><th>Mês</th><th>Renda</th><th>Faturas previstas</th><th>Sobra</th></tr>
-          </thead>
-          <tbody>
-            {months.map((m) => (
-              <tr key={m.key}>
-                <td>{monthName(m.key)}</td>
-                <td>{brl(m.income, hidden)}</td>
-                <td>{brl(m.bills, hidden)}</td>
-                <td><strong class={m.income - m.bills < 0 ? 'bad-text' : 'good-text'}>{brl(m.income - m.bills, hidden)}</strong></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
 function ForecastTab({ hidden, installments, route }: { hidden: boolean; installments: ReturnType<typeof useLoad<import('../api.ts').InstallmentsView>>; route: Route }) {
   const { data, error } = useLoad(() => api.forecast(), []);
   const [open, setOpen] = useState<string | null>(null);
@@ -878,7 +805,11 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
   // A card that has no bill in the chosen month cannot be the focus: the list shows them all again.
   const only = listed.some((card) => card.id === wanted) ? wanted : '';
   // Cards close on different days, so one month can have several due dates: the summary says so instead of showing the earliest as the only one.
-  const billDues = [...new Set(listed.filter((card) => cycle !== 'open' && card.cycle !== null && card.total > 0).map((card) => card.cycle!.dueDate))].sort();
+  const billDues = [...new Set(listed.filter((card) => cycle !== 'open' && card.cycle !== null).map((card) => card.cycle!.dueDate))].sort();
+  // In a chosen month the date comes from the bills listed below, empty ones included: the API's own date can be the one of a bill that is not on the page.
+  const dueText = overdue || cycle === 'open'
+    ? data?.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'
+    : billDues.length > 1 ? `${dayMonth(billDues[0]!)} a ${fullDay(billDues[billDues.length - 1]!)}` : billDues[0] ? fullDay(billDues[0]) : '–';
 
   return (
     <div class="page-body">
@@ -960,7 +891,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
                 )}
                 <div>
                   <span class="muted">{overdue ? 'Vencimento mais antigo em atraso' : cycle === 'open' ? 'Próximo vencimento' : 'Vencimento'}</span>
-                  <strong class={overdue ? 'bad-text' : ''}>{billDues.length > 1 ? `${dayMonth(billDues[0]!)} a ${fullDay(billDues[billDues.length - 1]!)}` : data.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'}</strong>
+                  <strong class={overdue ? 'bad-text' : ''}>{dueText}</strong>
                 </div>
                 {cycle === 'open' && (
                   <>

@@ -8,7 +8,7 @@ import { PeriodPicker } from '../period.tsx';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { CheckList, Go, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
-import { countNote, internalNote } from './page-logic.ts';
+import { billPaymentNote, countNote, internalNote, tileSums } from './page-logic.ts';
 
 const STATES = ['confirmed', 'single_source', 'billed', 'stale_pending', 'ignored'].map((value) => ({ value, label: STATE_LABEL[value] ?? value }));
 
@@ -102,6 +102,9 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const institutions = p.getAll('institution');
   const accountIds = p.getAll('accountId');
   const states = p.getAll('state');
+  // Filtered to one bill, the payment of that bill stays in the list but not in the totals.
+  const byBill = p.get('cycle') !== null;
+  const sums = data ? tileSums(data.sums, data.internal, byBill) : { income: 0, expense: 0, net: 0 };
   const active = [
     ...categories.map((c) => ({ label: c || 'Sem categoria', remove: () => set({ category: categories.filter((x) => x !== c) }) })),
     ...institutions.map((c) => ({ label: c, remove: () => set({ institution: institutions.filter((x) => x !== c) }) })),
@@ -195,6 +198,15 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
       <PeriodPicker from={p.get('from') ?? undefined} to={p.get('to') ?? undefined} now={now} onChange={(r) => set({ from: r.from ?? null, to: r.to ?? null })} />
       <div class="searchbar">
         <input class="search grow" placeholder="Buscar por descrição ou categoria" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
+        {/* One tap to a card or account: the full list of accounts sits in the folded filter panel. */}
+        <Select
+          ariaLabel="Conta ou cartão"
+          value={accountIds.length > 1 ? '__many' : (accountIds[0] ?? '')}
+          placeholder={accountIds.length > 1 ? `${accountIds.length} contas` : 'Conta ou cartão'}
+          emptyLabel="Todas as contas e cartões"
+          options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: f.name }))}
+          onChange={(value) => set({ accountId: value || null })}
+        />
         <Select ariaLabel="Ordem" value={p.get('sort') ?? 'date_desc'} onChange={(value) => set({ sort: value === 'date_desc' ? null : value })} options={SORTS.map((s) => ({ value: s.value, label: s.label }))} />
         <button class={active.length > 0 ? 'chip on filter-toggle' : 'chip filter-toggle'} onClick={() => setSheet(true)}>
           Filtros{active.length > 0 ? ` (${active.length})` : ''}
@@ -273,22 +285,24 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
                 </div>
                 <div>
                   <span class="muted">Entradas</span>
-                  <strong class="good-text">{brl(data.sums.income, hidden)}</strong>
+                  <strong class="good-text">{brl(sums.income, hidden)}</strong>
                 </div>
                 <div>
                   <span class="muted">Saídas</span>
-                  <strong class="bad-text">{brl(data.sums.expense, hidden)}</strong>
+                  <strong class="bad-text">{brl(sums.expense, hidden)}</strong>
                 </div>
                 <div>
                   <span class="muted">Resultado do filtro</span>
-                  <strong>{brl(data.sums.net, hidden)}</strong>
+                  <strong>{brl(sums.net, hidden)}</strong>
                 </div>
               </div>
-              {internalNote(data.internal, hidden) && (
-                <div class="note">
-                  {internalNote(data.internal, hidden)} <button class="link" onClick={() => set({ spendingOnly: 'true' })}>Ver só gastos reais</button>
-                </div>
-              )}
+              {byBill
+                ? billPaymentNote(data.internal, hidden) && <div class="note">{billPaymentNote(data.internal, hidden)}</div>
+                : internalNote(data.internal, hidden) && (
+                    <div class="note">
+                      {internalNote(data.internal, hidden)} <button class="link" onClick={() => set({ spendingOnly: 'true' })}>Ver só gastos reais</button>
+                    </div>
+                  )}
               {data.items.length === 0 ? (
                 <div class="empty">
                   Nenhuma transação com esses filtros. <button class="link" onClick={() => navigate('transactions')}>Limpar filtros</button>
