@@ -54,6 +54,12 @@ export function cardName(institution: string, name: string): string {
   return [institution, productName(institution, name)].filter(Boolean).join(' ');
 }
 
+/** The account or card with its institution once, for lists that do not group by institution ("Bradesco Visa Signature •••• 1234", "Itaú Conta corrente"). */
+export function accountLabel(a: { institution: string; name: string; kind?: string; last4?: string | null }): string {
+  const base = a.kind === 'credit_card' ? cardName(a.institution, a.name) : `${a.institution} ${accountName(a.institution, a.name, a.kind)}`;
+  return `${base}${a.last4 ? ` •••• ${a.last4}` : ''}`;
+}
+
 /** A net worth line. The API writes a bank account as "Institution · bank name" (and may end it with "(saldo negativo)"); other lines stay as they are. */
 export function netWorthLabel(name: string, kind: string): string {
   if (kind !== 'bank') return name;

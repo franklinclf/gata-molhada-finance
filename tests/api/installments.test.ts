@@ -136,3 +136,9 @@ test('installments Meu Pluggy lists as pending charges dated in the future are f
   assert.deepEqual(p.slots.map((s) => [s.number, s.status, s.inferred]), [[1, 'open', false], [2, 'future', false], [3, 'future', false], [4, 'future', false]]);
   assert.deepEqual([p.open, p.future, p.remaining], [1, 3, 20000]);
 });
+
+test('an installment purchase refunded later by an "estorno" with another text plans no more installments', () => {
+  // 1 of 12 charged in July and given back a week later as "Estorno de compra".
+  const store = seeded([...series('Software Exemplo', 12, 1500, [[1, '2026-07-02']]), tx('estorno', '2026-07-09', 1500, 'Estorno de compra')]);
+  assert.equal(installments(store, NOW).purchases.length, 0);
+});

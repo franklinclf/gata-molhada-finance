@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { transactionDetail } from '../../src/api/detail.ts';
-import { explore, type ExplorerQuery } from '../../src/api/explorer.ts';
+import { amountInText, explore, type ExplorerQuery } from '../../src/api/explorer.ts';
 import { bulkEdit, saveGroup, removeGroup, addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import * as views from '../../src/api/views.ts';
@@ -353,4 +353,12 @@ test('explorer: says how much of the sums is card payments, moves between own ac
   const real = explore(store, { ...base, spendingOnly: true }, NOW);
   assert.deepEqual(real.sums, { count: 1, income: 0, expense: 4000, net: -4000 });
   assert.deepEqual(real.internal, { count: 0, income: 0, expense: 0 });
+});
+
+test('a number typed in the search box finds the transactions of that amount', () => {
+  for (const text of ['4,61', 'R$ 4,61', '4.61', '-4,61']) assert.equal(amountInText(text), 461, text);
+  assert.equal(amountInText('1.234,56'), 123456);
+  assert.equal(amountInText('12'), 1200);
+  assert.equal(amountInText('padaria'), null);
+  assert.equal(amountInText('99pay'), null);
 });

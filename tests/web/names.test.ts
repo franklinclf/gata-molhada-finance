@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { accountName, cardName, netWorthLabel, productName } from '../../web/src/names.ts';
+import { accountLabel, accountName, cardName, netWorthLabel, productName } from '../../web/src/names.ts';
 
 test('the institution is not repeated when the bank name already starts with it, ignoring case and accents', () => {
   assert.equal(cardName('Norte', 'Norte Click Plus'), 'Norte Click Plus');
@@ -39,4 +39,9 @@ test('a net worth line for a bank account drops the repeated or generic part of 
   assert.equal(netWorthLabel('Beta · Conta Salário (saldo negativo)', 'bank'), 'Beta · Conta Salário (saldo negativo)');
   assert.equal(netWorthLabel('Dívida no cartão (saldo informado pelo banco)', 'card'), 'Dívida no cartão (saldo informado pelo banco)');
   assert.equal(netWorthLabel('Imóvel · apartamento', 'manual'), 'Imóvel · apartamento');
+});
+
+test('accountLabel names an account or a card with its institution once', () => {
+  assert.equal(accountLabel({ institution: '99Pay', name: '99PAY INSTITUICAO DE PAGAMENTO S.A.', kind: 'checking' }), '99Pay Conta corrente');
+  assert.equal(accountLabel({ institution: 'Banco Exemplo', name: 'Banco Exemplo Visa Gold', kind: 'credit_card', last4: '1234' }), 'Banco Exemplo Visa Gold •••• 1234');
 });

@@ -3,6 +3,7 @@ import { api } from './api.ts';
 import { CategorySelect } from './CategorySelect.tsx';
 import { Select } from './Select.tsx';
 import { localDay, parseBrl } from './format.ts';
+import { accountName, productName } from './names.ts';
 import { useLoad } from './hooks.ts';
 
 export interface ManualDraft {
@@ -94,7 +95,7 @@ export function ManualForm({ initial, now, onSaved, onCancel }: { initial?: Manu
     <section class="panel manual-form">
       <h2>{initial?.id ? 'Editar transação' : 'Nova transação'}</h2>
       <div class="muted">Para o que nenhuma fonte traz: uma cobrança que o banco não manda, um pagamento em dinheiro. Ela entra nos totais e nas faturas como as outras e a sincronização não mexe nela.</div>
-      <Select ariaLabel="Conta ou cartão" value={chosen} onChange={setAccountId} options={items.map((a) => ({ value: a.id, label: `${a.name}${a.last4 ? ` •••• ${a.last4}` : ''}`, group: a.institution }))} />
+      <Select ariaLabel="Conta ou cartão" value={chosen} onChange={setAccountId} options={items.map((a) => ({ value: a.id, label: `${a.kind === 'credit_card' ? productName(a.institution, a.name) || 'Cartão' : accountName(a.institution, a.name, a.kind)}${a.last4 ? ` •••• ${a.last4}` : ''}`, group: a.institution }))} />
       <div class="tabs">
         <button type="button" class={!income ? 'tab on' : 'tab'} onClick={() => setIncome(false)}>
           Gasto

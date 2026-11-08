@@ -1,6 +1,7 @@
 import { api } from '../api.ts';
 import { PALETTE, StackBar } from '../charts.tsx';
 import { ago, brl, dayMonth, isStale, percent } from '../format.ts';
+import { accountName } from '../names.ts';
 import { useLoad } from '../hooks.ts';
 import { navigate, type Route } from '../router.ts';
 import { IncomePanel } from '../IncomePanel.tsx';
@@ -76,7 +77,7 @@ function Balances({ now, hidden, focusIncome }: { now: Date; hidden: boolean; fo
                   .map((a) => (
                     <li key={a.id}>
                       <Go class="grow" page="transactions" params={{ accountId: a.id }}>
-                        {a.name}
+                        {accountName(a.institution, a.name, a.kind)}
                         {a.last4 ? ` •••• ${a.last4}` : ''}
                       </Go>
                       <strong>{brl(a.balance, hidden)}</strong>

@@ -3,6 +3,7 @@ import { Button } from './ds.tsx';
 import { api } from './api.ts';
 import type { TransactionDetail } from './api.ts';
 import { brl, dayMonth, foreignMoney, localDay, monthName } from './format.ts';
+import { accountName, cardName } from './names.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { CopyButton } from './copy.tsx';
@@ -76,6 +77,9 @@ function InstallmentField({ id, d, act }: { id: string; d: Detail; act: Act }) {
   );
 }
 
+/** Fewer characters than this in a merchant key make "Assinatura ou recorrente" ask before it marks every charge with that key. */
+const MIN_RECURRING_KEY = 4;
+
 /** Everything the owner can fix about this one transaction, as one grid of the same kind of control. */
 function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: boolean; act: Act }) {
   const r = d.recurrence;
@@ -84,6 +88,12 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
   const card = d.account.kind === 'credit_card';
   const rev = d.reversal;
   const credit = d.transaction.amount > 0;
+  // A very short key ("99") also matches charges that have nothing to do with this one.
+  const shortKey = r.name.length < MIN_RECURRING_KEY;
+  const markRecurring = (value: string) => {
+    if (value !== '' && value !== 'none' && shortKey && !window.confirm(`A chave desta cobrança tem só ${r.name.length} ${r.name.length === 1 ? 'caractere' : 'caracteres'} (“${r.name}”) e vale para toda cobrança com esse nome, mesmo de outro estabelecimento. Marcar mesmo assim?`)) return;
+    void act.run(() => api.markRecurring(r.key, value === '' ? null : (value as 'subscription' | 'recurring' | 'none')));
+  };
   return (
     <div class="dsec">
       <h3>Corrigir</h3>
@@ -110,13 +120,13 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
             />
           </Field>
         )}
-        <Field label="Assinatura ou recorrente" hint={`${detected.charAt(0).toUpperCase()}${detected.slice(1)}. Vale para todas as cobranças de “${r.name}”.`}>
+        <Field label="Assinatura ou recorrente" hint={`${detected.charAt(0).toUpperCase()}${detected.slice(1)}. Vale para todas as cobranças de “${d.transaction.title}” (chave “${r.name}”).${shortKey ? ' A chave é curta e pode pegar cobranças de outros lugares.' : ''}`}>
           <Select
             ariaLabel="Recorrência"
             value={r.label ?? ''}
             emptyLabel="Automático"
             options={[{ value: 'subscription', label: 'Assinatura (streaming, app, plano)' }, { value: 'recurring', label: 'Conta recorrente (aluguel, internet)' }, { value: 'none', label: 'Não é recorrente' }]}
-            onChange={(value) => void act.run(() => api.markRecurring(r.key, value === '' ? null : (value as 'subscription' | 'recurring' | 'none')))}
+            onChange={markRecurring}
           />
         </Field>
         {!manual && (rev || d.reversalCandidates.length > 0) && (
@@ -159,7 +169,7 @@ function CategorySection({ id, d, manual, act }: { id: string; d: Detail; manual
     setFollowUp(null);
     if (await act.run(() => api.setCategory(id, category, apply))) {
       setSimilar(false);
-      if (category === null) setSaved('Voltou à categoria da fonte.');
+      if (category === null) setSaved(d.rule !== null ? 'Voltou à regra desta descrição, que continua valendo para as outras. Para tirar a regra, use “Remover a regra”.' : 'Voltou à categoria da fonte.');
       else if (apply) setSaved(`Categoria salva também nas ${others} com a mesma descrição e nas próximas.`);
       else {
         setSaved('Categoria salva só nesta transação.');
@@ -209,13 +219,14 @@ function CategorySection({ id, d, manual, act }: { id: string; d: Detail; manual
       {saved && <div class="hint" role="status">{saved}</div>}
       <CategorySelect value="" onChange={pick} categories={categories.data?.items} suggested={suggestionsFor(d)} placeholder="Trocar a categoria..." />
       {followUp !== null && others > 0 && (
-        <div class="links">
-          <button class="link" disabled={act.busy} onClick={() => void save(followUp, true)} title="Cria uma regra para esta descrição: vale para as que já existem e para as próximas">
+        <div class="actions">
+          <Button size="sm" disabled={act.busy} onClick={() => void save(followUp, true)} title="Cria uma regra para esta descrição: vale para as que já existem e para as próximas">
             Aplicar também às {others} com a mesma descrição
-          </button>
+          </Button>
         </div>
       )}
-      {others > 0 && (
+      {/* While the follow-up button is shown the choice is already made, so a box to tick before choosing would do nothing. */}
+      {others > 0 && followUp === null && (
         <label class="check">
           <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />
           Ao escolher, aplicar também às {others} com a descrição “{t.description}”
@@ -223,7 +234,7 @@ function CategorySection({ id, d, manual, act }: { id: string; d: Detail; manual
       )}
       {t.categoryOrigin === 'rule' && d.rule !== null && (
         <button class="link" disabled={act.busy} onClick={() => void removeRule()} title="Apaga a regra desta descrição; vale para todas as que a usam">
-          Remover a regra desta descrição ({d.merchant.count})
+          Remover a regra desta descrição (afeta as {d.merchant.count}, com esta)
         </button>
       )}
       {t.categoryOrigin === 'rule' && d.rule === null && (
@@ -451,7 +462,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
               <dd>{dayMonth(localDay(d.transaction.occurredAt))}/{localDay(d.transaction.occurredAt).slice(0, 4)}</dd>
               <dt>Conta</dt>
               <dd>
-                {d.account.institution} · {d.account.name}
+                {d.account.kind === 'credit_card' ? cardName(d.account.institution, d.account.name) : `${d.account.institution} · ${accountName(d.account.institution, d.account.name, d.account.kind)}`}
                 {d.account.last4 ? ` •••• ${d.account.last4}` : ''}
                 {d.account.last4 && <CopyButton value={d.account.last4} label="Copiar final do cartão" />}
               </dd>

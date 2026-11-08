@@ -86,6 +86,11 @@ function refundedCharges(transactions: EffectiveTransaction[]): Set<string> {
   const out = new Set<string>();
   for (const t of transactions) {
     if (!t.installment || t.excluded || t.amount >= 0) continue;
+    // A refund the app already paired with this charge (an "estorno" can come days later, with another text) cancels it too.
+    if (t.reversal?.side === 'charge' && t.reversal.amount >= -t.amount) {
+      out.add(t.id);
+      continue;
+    }
     const text = seriesText(t.description);
     const day = dayNumber(localDay(t.occurredAt));
     const credit = credits.find((c) => !used.has(c.id) && c.accountId === t.accountId && c.amount === -t.amount && Math.abs(dayNumber(localDay(c.occurredAt)) - day) <= REFUND_DAYS && (seriesText(c.description).startsWith(text) || text.startsWith(seriesText(c.description))));

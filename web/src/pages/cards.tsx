@@ -3,6 +3,7 @@ import { api, type BillCheckView, type CardsView } from '../api.ts';
 import { gapShort, gapText, monthSpan } from '../bill-check.ts';
 import { Bars, Meter, StackedBars } from '../charts.tsx';
 import { brl, dayMonth, localDay, monthName } from '../format.ts';
+import { cardName } from '../names.ts';
 import { useLoad, useStoredFlag } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { Button, Chip } from '../ds.tsx';
@@ -442,7 +443,7 @@ function owedAboveIssuer(c: OwedInput): number | null {
 }
 
 function limitRows(data: CardsView): Array<{ key: string; name: string; shared: boolean; limit: number; used: number }> {
-  const label = (id: string) => { const c = data.cards.find((x) => x.id === id); return c ? `${c.institution} ${c.name}${c.last4 ? ` •••• ${c.last4}` : ''}` : id; };
+  const label = (id: string) => { const c = data.cards.find((x) => x.id === id); return c ? `${cardName(c.institution, c.name)}${c.last4 ? ` •••• ${c.last4}` : ''}` : id; };
   const groups = data.limitGroups.map((g) => ({ key: g.id, name: g.cardIds.map(label).join(' + '), shared: g.cardIds.length > 1, limit: g.creditLimit, used: g.used }));
   const singles = data.cards.filter((c) => c.creditLimit !== null && !data.limitGroups.some((g) => g.cardIds.includes(c.id))).map((c) => ({ key: c.id, name: label(c.id), shared: false, limit: c.creditLimit ?? 0, used: (c.creditLimit ?? 0) - availableOf(c) }));
   return [...groups, ...singles];
@@ -460,7 +461,7 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
     <section class="panel">
       <div class="row-head">
         <h2>
-          {card.institution} {card.name}
+          {cardName(card.institution, card.name)}
           {card.last4 ? ` •••• ${card.last4}` : ''}
         </h2>
         {c && <StatusBadge status={c.status} />}
@@ -501,7 +502,8 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
                 <dd class={c.outstanding > 0 ? 'bad-text' : ''}>{brl(c.outstanding, hidden)}</dd>
               </>
             )}
-            {card.minimumPayment !== null && card.minimumPayment > 0 && c.billTotal !== null && (
+            {/* The card holds one minimum payment, the one of the bill due next: it says nothing about a paid bill or a later one. */}
+            {card.minimumPayment !== null && card.minimumPayment > 0 && c.billTotal !== null && c.outstanding > 0 && card.nextDueDate === c.dueDate && (
               <>
                 <dt>Pagamento mínimo</dt>
                 <dd>{brl(card.minimumPayment, hidden)}</dd>
@@ -805,7 +807,9 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
   // A card that has no bill in the chosen month cannot be the focus: the list shows them all again.
   const only = listed.some((card) => card.id === wanted) ? wanted : '';
   // Cards close on different days, so one month can have several due dates: the summary says so instead of showing the earliest as the only one.
-  const billDues = [...new Set(listed.filter((card) => cycle !== 'open' && card.cycle !== null).map((card) => card.cycle!.dueDate))].sort();
+  // A bill of R$ 0,00 (a card not used that month) can carry another due date, and it would stretch the range for nothing.
+  const withBill = listed.filter((card) => cycle !== 'open' && card.cycle !== null);
+  const billDues = [...new Set((withBill.some((card) => card.total > 0) ? withBill.filter((card) => card.total > 0) : withBill).map((card) => card.cycle!.dueDate))].sort();
   // In a chosen month the date comes from the bills listed below, empty ones included: the API's own date can be the one of a bill that is not on the page.
   const dueText = overdue || cycle === 'open'
     ? data?.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'

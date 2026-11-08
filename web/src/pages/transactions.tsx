@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { brl, monthName, parseBrl } from '../format.ts';
+import { accountLabel } from '../names.ts';
 import { useLoad } from '../hooks.ts';
 import { ManualForm } from '../ManualForm.tsx';
 import { Select } from '../Select.tsx';
@@ -108,7 +109,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const active = [
     ...categories.map((c) => ({ label: c || 'Sem categoria', remove: () => set({ category: categories.filter((x) => x !== c) }) })),
     ...institutions.map((c) => ({ label: c, remove: () => set({ institution: institutions.filter((x) => x !== c) }) })),
-    ...accountIds.map((c) => ({ label: data?.facets.accounts.find((a) => a.id === c)?.name ?? 'Conta', remove: () => set({ accountId: accountIds.filter((x) => x !== c) }) })),
+    ...accountIds.map((c) => ({ label: (() => { const f = data?.facets.accounts.find((a) => a.id === c); return f ? accountLabel(f) : 'Conta'; })(), remove: () => set({ accountId: accountIds.filter((x) => x !== c) }) })),
     ...states.map((c) => ({ label: STATE_LABEL[c] ?? c, remove: () => set({ state: states.filter((x) => x !== c) }) })),
     ...(p.get('merchant') ? [{ label: `Estabelecimento: ${p.get('merchant')}`, remove: () => set({ merchant: null }) }] : []),
     ...(p.get('cycle') ? [{ label: p.get('cycle') === 'open' ? 'Fatura em aberto' : `Fatura ${monthName(p.get('cycle')!)}`, remove: () => set({ cycle: null }) }] : []),
@@ -157,7 +158,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         <CheckList options={(data?.facets.institutions ?? []).map((f) => ({ value: f.name, label: f.name, count: f.count }))} selected={institutions} onChange={(v) => set({ institution: v })} />
       </Section>
       <Section title="Contas e cartões" active={accountIds.length}>
-        <CheckList options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: f.name, count: f.count }))} selected={accountIds} onChange={(v) => set({ accountId: v })} />
+        <CheckList options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: accountLabel(f), count: f.count }))} selected={accountIds} onChange={(v) => set({ accountId: v })} />
       </Section>
       <Section title="Fatura do cartão" active={p.get('cycle') ? 1 : 0}>
         <Select ariaLabel="Fatura" value={p.get('cycle') ?? ''} onChange={(value) => set({ cycle: value || null })} options={[{ value: '', label: 'Qualquer ciclo' }, { value: 'open', label: 'Fatura em aberto' }, ...(cards.data?.cycles ?? []).map((c) => ({ value: c, label: `Fatura com venc. ${monthName(c)}` }))]} />
@@ -197,14 +198,14 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
       )}
       <PeriodPicker from={p.get('from') ?? undefined} to={p.get('to') ?? undefined} now={now} onChange={(r) => set({ from: r.from ?? null, to: r.to ?? null })} />
       <div class="searchbar">
-        <input class="search grow" placeholder="Buscar por descrição ou categoria" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
+        <input class="search grow" placeholder="Buscar por descrição, categoria ou valor" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
         {/* One tap to a card or account: the full list of accounts sits in the folded filter panel. */}
         <Select
           ariaLabel="Conta ou cartão"
           value={accountIds.length > 1 ? '__many' : (accountIds[0] ?? '')}
           placeholder={accountIds.length > 1 ? `${accountIds.length} contas` : 'Conta ou cartão'}
           emptyLabel="Todas as contas e cartões"
-          options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: f.name }))}
+          options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: accountLabel(f) }))}
           onChange={(value) => set({ accountId: value || null })}
         />
         <Select ariaLabel="Ordem" value={p.get('sort') ?? 'date_desc'} onChange={(value) => set({ sort: value === 'date_desc' ? null : value })} options={SORTS.map((s) => ({ value: s.value, label: s.label }))} />

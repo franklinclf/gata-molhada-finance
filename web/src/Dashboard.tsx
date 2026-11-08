@@ -68,7 +68,8 @@ export function Dashboard({ hidden, now }: { hidden: boolean; now: Date }) {
     update([...items!, { id, widget, ...slot, w, h }]);
   }
 
-  const ordered = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+  // On a phone the widgets are one column in layout order; the balance goes first so the daily check does not start with a scroll past the bills.
+  const ordered = [...items].sort((a, b) => (narrow ? Number(b.widget === 'balances') - Number(a.widget === 'balances') : 0) || a.y - b.y || a.x - b.x);
   const render = (item: LayoutItem, pixels?: Pixels) => {
     const { component: Component } = WIDGETS[item.widget];
     const size = narrow || !pixels ? 'md' : sizeClassPx(pixels.width, pixels.height);

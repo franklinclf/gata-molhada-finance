@@ -1,3 +1,4 @@
+import type { BillCheckView } from '../../src/api/bill-check.ts';
 import { brl, monthName } from './format.ts';
 
 const abbreviation = (key: string): string => monthName(key).slice(0, 3);
@@ -17,4 +18,9 @@ export function gapText(gap: number, hidden = false): string {
 /** The same, short enough for the value column of a table: "R$ 250,58 a menos no app". */
 export function gapShort(gap: number, hidden = false): string {
   return `${brl(Math.abs(gap), hidden)} a ${gap < 0 ? 'menos' : 'mais'} no app`;
+}
+
+/** How many bills the Conferir tab of Cartões lists as not closing: the recent ones plus the runs (old paid bills are history). */
+export function billsToCheck(view: Pick<BillCheckView, 'items' | 'runs'>): number {
+  return view.items.filter((i) => !i.old).length + view.runs.length;
 }

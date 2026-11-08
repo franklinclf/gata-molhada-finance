@@ -9,6 +9,14 @@ import { effectiveTransactions, visibleAccounts, type EffectiveTransaction, type
 import { isNonSpending } from './views.ts';
 import { stamp, type Stamped } from './stamp.ts';
 
+/** An amount typed in the search box ("4,61", "R$ 4,61", "4.61", "1.234,56"), in cents; null when the text is not an amount. */
+export function amountInText(text: string): Cents | null {
+  const cleaned = text.replace(/^[-+]?\s*(r\$)?\s*/i, '').trim();
+  const m = /^(\d{1,3}(?:\.\d{3})+|\d+)(?:[,.](\d{1,2}))?$/.exec(cleaned);
+  if (!m) return null;
+  return Number(m[1]!.replace(/\./g, '')) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
+}
+
 export type SortKey = 'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc';
 
 export interface ExplorerQuery {
@@ -64,7 +72,7 @@ export interface ExplorerResult extends Stamped {
   /** The part of `sums` that is not income or spending: card payments, moves between own accounts and investments. The screen says so beside the totals. */
   internal: { count: number; income: Cents; expense: Cents };
   /** Counts for each filter option. A facet ignores its own filter, so the other options stay visible. */
-  facets: { categories: Facet[]; accounts: Array<Facet & { id: string }>; institutions: Facet[] };
+  facets: { categories: Facet[]; accounts: Array<Facet & { id: string; institution: string; kind: string; last4: string | null }>; institutions: Facet[] };
   /** Date range of each card cycle chosen, for the screen to show. */
   cycleRanges: Record<string, { from: string; to: string; dueDate: string }>;
 }
@@ -89,6 +97,8 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
   // The spending view labels uncategorized money "Sem categoria"; accept that label as well as the empty value.
   const wantedCategories = query.categories?.map((c) => (c === 'Sem categoria' ? '' : c));
   const text = query.q?.trim().toLowerCase();
+  // A number in the search box also finds the transactions of that amount (the Valor filter without opening it).
+  const searchedAmount = text ? amountInText(text) : null;
   const recurringKeys = query.recurrence ? new Map(detectRecurring(store, now, opts).map((i) => [i.key, i.label])) : null;
   const wanted = (skip?: Dimension) => (t: EffectiveTransaction): boolean => {
     const account = byId.get(t.accountId);
@@ -128,7 +138,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     }
     if (text) {
       const haystack = `${t.title} ${t.description} ${t.descriptionRaw ?? ''} ${t.category ?? ''}`.toLowerCase();
-      if (!haystack.includes(text)) return false;
+      if (!haystack.includes(text) && !(searchedAmount !== null && size === searchedAmount)) return false;
     }
     return true;
   };
@@ -185,7 +195,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     internal,
     facets: {
       categories: sortFacets(facet('category', (t) => t.category ?? '')),
-      accounts: [...accountFacets.values()].map((f) => ({ ...f, id: f.name, name: `${byId.get(f.name)?.institution ?? ''} ${byId.get(f.name)?.name ?? ''}`.trim() })).sort((a, b) => b.count - a.count),
+      accounts: [...accountFacets.values()].map((f) => { const a = byId.get(f.name); return { ...f, id: f.name, name: a?.name ?? '', institution: a?.institution ?? '', kind: a?.kind ?? '', last4: a?.last4 ?? null }; }).sort((a, b) => b.count - a.count),
       institutions: sortFacets(facet('institution', (t) => byId.get(t.accountId)?.institution ?? '')),
     },
     cycleRanges,

@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { Bars, Meter, Ring } from '../charts.tsx';
 import { brl, dayMonth, localDay, monthName } from '../format.ts';
+import { cardName } from '../names.ts';
 import { chartHeight } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { Go, StatusBadge } from '../ui.tsx';
@@ -32,6 +33,8 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
   // The part of the shared limit no listed purchase explains is in the header total, so it gets its own line to make the rows add up.
   const unexplained = data?.totals.unexplained ?? 0;
   const due = data?.totals.nextDueDate ?? null;
+  // What falls due by the next due date, apart from the later bills the headline also adds up.
+  const dueByNext = due ? (bills.data?.bars ?? []).filter((b) => b.key <= due.slice(0, 7)).reduce((sum, b) => sum + Math.max(0, b.total - b.paid), 0) : 0;
   const late = (day: string | null) => day !== null && day < today;
   const barCount = Math.max(4, Math.min(12, Math.floor((pixels?.width ?? 380) / 52)));
   const barData = (bills.data?.bars ?? []).slice(-barCount);
@@ -50,6 +53,7 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
           <>
             <div class="big">{brl(byMonth ? data.totals.cycleTotal : data.totals.toPay, hidden)}</div>
             <div class="muted" data-tip={closedUnpaid > 0 || data.totals.futureInstallments > 0 ? `${brl(data.totals.toPay - closedUnpaid, hidden)} em fatura aberta + ${brl(closedUnpaid, hidden)} em faturas fechadas não pagas${cycle === 'open' && data.totals.futureInstallments > 0 ? `\nFora do total: ${brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras` : ''}` : undefined}>{byMonth ? `Faturas com vencimento em ${monthName(cycle)} · ${data.totals.toPay > 0 ? `a pagar ${brl(data.totals.toPay, hidden)}` : 'tudo pago'}` : due ? `Todas as faturas não pagas · ${late(due) ? 'venceu em' : 'próximo vencimento'} ${dayMonth(due)}` : 'Todas as faturas não pagas'}</div>
+            {!byMonth && due && dueByNext > 0 && dueByNext < data.totals.toPay && <div class="muted">{brl(dueByNext, hidden)} vencem até {dayMonth(due)}</div>}
             {byMonth && all.data && (
               <div class="muted">
                 Todas as não pagas: {brl(all.data.totals.toPay, hidden)}
@@ -121,7 +125,7 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
                       <li key={c.id}>
                         <div class="grow">
                           <Go class="clip" page="transactions" params={{ accountId: c.id, cycle: c.cycle ? (cycle === 'open' ? 'open' : c.cycle.key) : undefined }}>
-                            {c.institution} {c.name}
+                            {cardName(c.institution, c.name)}
                             {c.last4 ? ` •••• ${c.last4}` : ''}
                           </Go>
                           {cycle === 'open' && <Meter fraction={c.creditLimit ? 1 - (c.availableLimit ?? c.creditLimit - c.balance) / c.creditLimit : 0} tip="Limite usado" />}
