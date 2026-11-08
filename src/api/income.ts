@@ -1,4 +1,5 @@
 import type { IncomeItem, Store } from '../store/store.ts';
+import { NON_BUSINESS_RULES, type NonBusinessRule } from '../core/business-days.ts';
 import { cleanCategoryName } from './mutations.ts';
 
 export type IncomeResult<T = Record<string, never>> = { ok: true; value: T } | { ok: false; status: number; error: string };
@@ -15,6 +16,8 @@ function read(input: Record<string, unknown>): IncomeResult<Omit<IncomeItem, 'id
   if (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0 || amount > MAX_AMOUNT) return { ok: false, status: 400, error: 'amount must be a whole number of cents above zero' };
   const day = input.dayOfMonth;
   if (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 31) return { ok: false, status: 400, error: 'dayOfMonth must be 1 to 31' };
+  const rule = input.nonBusinessRule ?? 'previous';
+  if (typeof rule !== 'string' || !NON_BUSINESS_RULES.includes(rule as NonBusinessRule)) return { ok: false, status: 400, error: 'nonBusinessRule must be previous, next or keep' };
   const month = (value: unknown, label: string): IncomeResult<string | null> => {
     if (value === undefined || value === null || value === '') return { ok: true, value: null };
     return typeof value === 'string' && MONTH.test(value) ? { ok: true, value } : { ok: false, status: 400, error: `${label} must be YYYY-MM` };
@@ -24,7 +27,7 @@ function read(input: Record<string, unknown>): IncomeResult<Omit<IncomeItem, 'id
   const until = month(input.untilMonth, 'untilMonth');
   if (!until.ok) return until;
   if (from.value !== null && until.value !== null && from.value > until.value) return { ok: false, status: 400, error: 'fromMonth must not be after untilMonth' };
-  return { ok: true, value: { name, amount, dayOfMonth: day, fromMonth: from.value, untilMonth: until.value } };
+  return { ok: true, value: { name, amount, dayOfMonth: day, nonBusinessRule: rule as NonBusinessRule, fromMonth: from.value, untilMonth: until.value } };
 }
 
 export function saveIncome(store: Store, id: number | null, input: Record<string, unknown>, now: Date): IncomeResult<{ id: number }> {

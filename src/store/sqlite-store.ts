@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, RecordRef, TransactionLink, TransactionState } from '../core/canonical.ts';
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
+import type { NonBusinessRule } from '../core/business-days.ts';
 import type { BillEdit, IncomeItem, BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
@@ -767,16 +768,16 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     },
 
     listIncome(): IncomeItem[] {
-      const rows = db.prepare('SELECT id, name, amount, day_of_month, from_month, until_month FROM income_items ORDER BY day_of_month, id').all() as Array<{ id: number; name: string; amount: number; day_of_month: number; from_month: string | null; until_month: string | null }>;
-      return rows.map((r) => ({ id: r.id, name: r.name, amount: r.amount, dayOfMonth: r.day_of_month, fromMonth: r.from_month, untilMonth: r.until_month }));
+      const rows = db.prepare('SELECT id, name, amount, day_of_month, non_business_rule, from_month, until_month FROM income_items ORDER BY day_of_month, id').all() as Array<{ id: number; name: string; amount: number; day_of_month: number; non_business_rule: NonBusinessRule; from_month: string | null; until_month: string | null }>;
+      return rows.map((r) => ({ id: r.id, name: r.name, amount: r.amount, dayOfMonth: r.day_of_month, nonBusinessRule: r.non_business_rule, fromMonth: r.from_month, untilMonth: r.until_month }));
     },
 
     saveIncome(item: Omit<IncomeItem, 'id'> & { id?: number }, now: string): number {
       if (item.id !== undefined) {
-        db.prepare('UPDATE income_items SET name = ?, amount = ?, day_of_month = ?, from_month = ?, until_month = ?, updated_at = ? WHERE id = ?').run(item.name, item.amount, item.dayOfMonth, item.fromMonth, item.untilMonth, now, item.id);
+        db.prepare('UPDATE income_items SET name = ?, amount = ?, day_of_month = ?, non_business_rule = ?, from_month = ?, until_month = ?, updated_at = ? WHERE id = ?').run(item.name, item.amount, item.dayOfMonth, item.nonBusinessRule, item.fromMonth, item.untilMonth, now, item.id);
         return item.id;
       }
-      return Number(db.prepare('INSERT INTO income_items (name, amount, day_of_month, from_month, until_month, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(item.name, item.amount, item.dayOfMonth, item.fromMonth, item.untilMonth, now, now).lastInsertRowid);
+      return Number(db.prepare('INSERT INTO income_items (name, amount, day_of_month, non_business_rule, from_month, until_month, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(item.name, item.amount, item.dayOfMonth, item.nonBusinessRule, item.fromMonth, item.untilMonth, now, now).lastInsertRowid);
     },
 
     deleteIncome(id: number): boolean {

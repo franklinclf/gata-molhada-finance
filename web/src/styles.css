@@ -187,6 +187,8 @@ summary.chip::-webkit-details-marker { display: none; }
 .facts.inline dd { text-align: right; white-space: nowrap; }
 .recat { display: flex; gap: 8px; }
 .recat { align-items: center; }
+.income-form { flex-wrap: wrap; }
+.income-rule { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .recat input { flex: 1; min-width: 0; }
 .source { background: var(--card-2); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 
@@ -643,7 +645,7 @@ body.wide .main { max-width: none; }
 .outlook-row.short { background: color-mix(in srgb, var(--bad) 8%, transparent); padding: 4px 6px; margin: 0 -6px; }
 .outlook-committed .facts { margin-top: 6px; }
 @media (max-width: 640px) {
-  .outlook-origin { display: none; }
+  .outlook-origin:not(.outlook-note) { display: none; }
 }
 /* ---------- painel e widgets ---------- */
 /* The page actions keep one line: the menu measures what is left beside them and folds into "Mais" before they would overlap. */

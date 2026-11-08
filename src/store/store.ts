@@ -1,5 +1,6 @@
 import type { CanonicalAccount, CanonicalTransaction, Finding, LimitGroup, ManualMapping, TransactionLink } from '../core/canonical.ts';
 import type { Rule } from '../api/rules-engine.ts';
+import type { NonBusinessRule } from '../core/business-days.ts';
 
 export interface ManualAsset {
   id: number;
@@ -193,6 +194,8 @@ export interface IncomeItem {
   name: string;
   amount: number;
   dayOfMonth: number;
+  /** Where the payment falls when `dayOfMonth` is a weekend or a bank holiday. */
+  nonBusinessRule: NonBusinessRule;
   fromMonth: string | null;
   untilMonth: string | null;
 }
