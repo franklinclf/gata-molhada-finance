@@ -6,6 +6,7 @@ import { TxRow } from '../ui.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { Loading } from '../ui.tsx';
+import { cellMoney, recurringWhen } from './page-logic.ts';
 
 const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const addMonths = (month: string, n: number): string => {
@@ -13,6 +14,18 @@ const addMonths = (month: string, n: number): string => {
   const t = y * 12 + (m - 1) + n;
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
 };
+
+/** A day total. On a phone the cell is about 48 px wide, so thousands are written as "3,8 mil" there and in full on a wide screen. */
+function Amount({ sign, cents, hidden, class: className }: { sign: string; cents: number; hidden: boolean; class: string }) {
+  const text = cellMoney(cents, hidden);
+  return (
+    <span class={className}>
+      {sign}
+      <span class="cal-long">{text.full}</span>
+      <span class="cal-short">{text.short}</span>
+    </span>
+  );
+}
 
 function Cell({ d, today, picked, onPick, hidden }: { d: CalendarDay; today: string; picked: boolean; onPick: () => void; hidden: boolean }) {
   const out = d.projected.filter((p) => p.direction === 'out').reduce((s, p) => s + p.amount, 0);
@@ -23,11 +36,15 @@ function Cell({ d, today, picked, onPick, hidden }: { d: CalendarDay; today: str
   return (
     <button class={className} onClick={onPick} aria-label={`${dayMonth(d.day)}`} aria-pressed={picked}>
       <span class="cal-day">{Number(d.day.slice(8, 10))}</span>
-      {d.inflow > 0 && <span class="cal-in">+{hidden ? '••' : brl(d.inflow).replace(/\s?R\$\s?/, '')}</span>}
-      {d.outflow > 0 && <span class="cal-out">−{hidden ? '••' : brl(d.outflow).replace(/\s?R\$\s?/, '')}</span>}
-      {inn > 0 && <span class="cal-in soft">+{hidden ? '••' : brl(inn).replace(/\s?R\$\s?/, '')}</span>}
-      {out > 0 && <span class="cal-out soft">−{hidden ? '••' : brl(out).replace(/\s?R\$\s?/, '')}</span>}
-      {bills > 0 && <span class={late ? 'cal-tag bad-text' : 'cal-tag'}>{bills === 1 ? 'fatura' : `${bills} faturas`}</span>}
+      {d.inflow > 0 && <Amount sign="+" cents={d.inflow} hidden={hidden} class="cal-in" />}
+      {d.outflow > 0 && <Amount sign="−" cents={d.outflow} hidden={hidden} class="cal-out" />}
+      {inn > 0 && <Amount sign="+" cents={inn} hidden={hidden} class="cal-in soft" />}
+      {out > 0 && <Amount sign="−" cents={out} hidden={hidden} class="cal-out soft" />}
+      {bills > 0 && (
+        <span class={late ? 'cal-tag bad-text' : 'cal-tag'}>
+          {bills === 1 ? 'fatura' : (<><span class="cal-long">{bills} faturas</span><span class="cal-short">{bills} fat.</span></>)}
+        </span>
+      )}
     </button>
   );
 }
@@ -36,6 +53,22 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
   const current = localDay(now.toISOString()).slice(0, 7);
   const month = route.params.get('month') ?? current;
   const { data, error, loading, reload } = useLoad(() => api.calendar(month), [month]);
+  // The item just removed from the list, so one tap can bring it back.
+  const [removed, setRemoved] = useState<{ key: string; name: string; label: 'subscription' | 'recurring' | null } | null>(null);
+  // An item the owner marked only leaves the list when the mark says so; ignoring it would be overridden by the mark.
+  const remove = async (r: { key: string; name: string; manual: boolean; label: 'subscription' | 'recurring' | null }) => {
+    if (r.manual) await api.markRecurring(r.key, 'none');
+    else await api.ignoreRecurring(r.key, true);
+    setRemoved({ key: r.key, name: r.name, label: r.manual ? (r.label === 'subscription' ? 'subscription' : 'recurring') : null });
+    reload();
+  };
+  const restore = async () => {
+    if (!removed) return;
+    if (removed.label) await api.markRecurring(removed.key, removed.label);
+    else await api.ignoreRecurring(removed.key, false);
+    setRemoved(null);
+    reload();
+  };
   // One tap selects a day; a second tap on another day selects the days between; a tap on a selected single day clears it.
   const [picked, setPicked] = useState<{ from: string; to: string } | null>(null);
   const tap = (day: string) => {
@@ -93,27 +126,32 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
       {picked && <Selection from={picked.from} to={picked.to} days={data.days} hidden={hidden} onClear={() => setPicked(null)} />}
       <section class="panel">
         <h2>Contas e entradas que se repetem</h2>
-        <div class="muted">Achadas nas suas transações: pelo menos três, em três meses diferentes, com cerca de um mês entre elas e valor parecido.</div>
+        <div class="muted">Achadas nas suas transações: pelo menos três, em três meses diferentes, com cerca de um mês entre elas e valor parecido. As que você marcou como recorrentes ou assinatura aparecem desde a primeira cobrança, por isso algumas têm menos de três.</div>
+        {removed && (
+          <div class="note">
+            “{removed.name}” saiu da lista. <button class="link" onClick={() => void restore()}>Desfazer</button>
+          </div>
+        )}
         {data.recurring.length === 0 ? (
           <div class="empty">Nenhuma ainda.</div>
         ) : (
           <ul class="rows tall">
             {data.recurring.map((r) => (
-              <li key={`${r.key}|${r.dayOfMonth}`}>
+              <li key={`${r.key}|${r.dayOfMonth}`} class="recurring-row">
                 <div class="grow">
                   <div class="clip">
                     {r.name} {r.label === 'subscription' && <span class="badge info">assinatura</span>} {r.manual && <span class="badge muted">marcada por você</span>} {r.kind === 'variable' && <span class="badge muted">valor varia</span>} {r.account === 'card' && <span class="badge muted">no cartão</span>} {r.late && <span class="badge bad">atrasado</span>} {r.stale && <span class="badge muted">parou de cobrar</span>} {!r.regular && !r.stale && <span class="badge muted">sem periodicidade clara</span>}
                   </div>
                   <div class="muted">
-                    {r.regular && !r.stale ? `todo dia ${r.dayOfMonth} · ${r.occurrences} vezes · próximo ${dayMonth(r.nextDay)}` : `${r.occurrences} ${r.occurrences === 1 ? 'vez' : 'vezes'} · última ${dayMonth(r.lastDay)}`}
+                    {r.regular && !r.stale ? recurringWhen(r, data.today) : `${r.occurrences} ${r.occurrences === 1 ? 'vez' : 'vezes'} · última ${dayMonth(r.lastDay)}`}
                   </div>
                 </div>
                 <strong class={r.direction === 'in' ? 'good-text' : ''}>
                   {r.direction === 'in' ? '+' : '−'}
                   {brl(r.amount, hidden)}
                 </strong>
-                <button class="link" onClick={() => void api.markRecurring(r.key, 'none').then(reload)}>
-                  Não é recorrente
+                <button class="small" title="Não é recorrente: sai desta lista e do calendário" onClick={() => void remove(r)}>
+                  Remover da lista
                 </button>
               </li>
             ))}

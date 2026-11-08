@@ -334,3 +334,23 @@ test('bulk edit moves card purchases to a bill, skips the rest and goes back to 
   assert.equal(transactionDetail(store, 'phone', NOW)?.cycleByUser, false);
   assert.equal(bulkEdit(store, ['phone'], { cycleKey: '12/2026' }, NOW).ok, false);
 });
+
+test('explorer: says how much of the sums is card payments, moves between own accounts and investments', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pierre', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.replaceCanonicalAccounts([acc({ id: 'chk' })], [], NOW.toISOString());
+  const list = [
+    txn('shop', { description: 'Shop', amount: -4000 }),
+    txn('pay', { description: 'Pagamento de fatura', category: 'Pagamento de fatura', amount: -50000 }),
+    txn('own', { description: 'Transferencia mesma titularidade', category: 'Transferências', amount: 20000 }),
+    txn('save', { description: 'Aplicacao CDB', category: 'Investimentos', amount: -10000 }),
+  ];
+  store.replaceCanonicalTransactions(list, list.map((t) => ({ sourceId: 'pierre', externalId: `ext-${t.id}`, transactionId: t.id, matchPass: 0 })), NOW.toISOString());
+  const all = explore(store, base, NOW);
+  assert.deepEqual(all.sums, { count: 4, income: 20000, expense: 64000, net: -44000 });
+  assert.deepEqual(all.internal, { count: 3, income: 20000, expense: 60000 });
+  // The same numbers the "only real spending" filter leaves out.
+  const real = explore(store, { ...base, spendingOnly: true }, NOW);
+  assert.deepEqual(real.sums, { count: 1, income: 0, expense: 4000, net: -4000 });
+  assert.deepEqual(real.internal, { count: 0, income: 0, expense: 0 });
+});

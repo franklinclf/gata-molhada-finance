@@ -592,7 +592,8 @@ body.wide .main { max-width: none; }
 .trend-row > .clip { text-align: left; }
 .trend-note { white-space: nowrap; font-size: 12px; }
 @media (max-width: 760px) {
-  .trend-row { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 2px; }
+  /* Same specificity as the desktop rule above, so the three-column template wins on a phone. */
+  .rows li.trend-row { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 2px; }
   .trend-row > .clip { grid-column: 1 / -1; }
   .trend-row .spark { display: none; }
   .trend-row > :nth-child(3) { text-align: left; }
@@ -704,3 +705,37 @@ body.wide .main { max-width: none; }
 /* Analyst: a long conversation title ends in an ellipsis inside its column instead of running under the chat. */
 .chat-list { min-width: 0; }
 .chat-list .rows li > button.link:first-child { flex: 1; min-width: 0; overflow: hidden; text-align: left; }
+/* Pages review */
+.tile-note { font-size: 12px; margin-top: 2px; }
+.chart-range { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin-top: 2px; }
+.zero-accounts { margin-top: 8px; }
+.zero-accounts > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.cal-short { display: none; }
+.chat-list .rows li > .chat-title { flex: 1; min-width: 0; }
+@media (max-width: 1100px) {
+  /* The date fields stay beside each other: smaller chips and fields leave room for both on one line. */
+  .period .chip { padding: 4px 10px; }
+  .period input[type='date'] { padding: 4px 8px; font-size: 13px; }
+}
+@media (max-width: 760px) {
+  .cal-long { display: none; }
+  .cal-short { display: inline; }
+  .rows li.recurring-row { flex-wrap: wrap; row-gap: 4px; }
+  .rows li.recurring-row > .grow { flex-basis: 100%; }
+  .recurring-row .clip { white-space: normal; }
+  .rows li.recurring-row > button { margin-left: auto; }
+  .rows li.source-row { flex-wrap: wrap; row-gap: 4px; }
+  .rows li.source-row > .grow { flex-basis: 100%; }
+  .rows li.source-row .source-next { white-space: normal; }
+  /* Names that tell things apart wrap to two lines instead of ending in an ellipsis; amounts keep their line. */
+  .wrap-phone { white-space: normal; overflow-wrap: anywhere; }
+  .budget-head > .wrap-phone { flex-basis: 100%; }
+  .budget-head > button.link:last-child { margin-left: auto; }
+  /* A phone shows two compact tiles per line, so the first row of the list is not pushed down. */
+  .tx-main .summary { gap: 6px; }
+  .tx-main .summary > div { padding: 8px 12px; border-radius: 14px; }
+  .tx-main .summary strong { font-size: 16px; }
+  /* The tab strip wraps, so no tab is cut at the edge; the period chips always overflow, so they fade out at the right edge. */
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
+  .period { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
+}

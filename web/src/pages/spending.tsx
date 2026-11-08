@@ -237,14 +237,19 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
             <LineChart points={cumulative(data.daily, data.from, data.to)} hidden={hidden} days={daysBetween(data.from, data.to)} />
             <div class="muted chart-caption">Gasto acumulado de {dayMonth(data.from)} a {dayMonth(data.to)}: de {brl(0, hidden)} até {brl(data.total, hidden)}.</div>
             <h3>Últimos 12 meses (clique em um mês)</h3>
-            <Bars
-              hidden={hidden}
-              height={140}
-              valueOnSelected
-              selected={selectedMonth}
-              onSelect={(m) => patchParams(monthBounds(m, today))}
-              data={months.map((m) => ({ key: m, label: monthName(m).slice(0, 3), value: perMonth.get(m) ?? 0, tip: `${monthName(m)}: ${hidden ? '••••' : brl(perMonth.get(m) ?? 0)}` }))}
-            />
+            {/* Until the year is back, bars would draw zero months as if they were facts. */}
+            {year.data ? (
+              <Bars
+                hidden={hidden}
+                height={140}
+                valueOnSelected
+                selected={selectedMonth}
+                onSelect={(m) => patchParams(monthBounds(m, today))}
+                data={months.map((m) => ({ key: m, label: monthName(m).slice(0, 3), value: perMonth.get(m) ?? 0, tip: `${monthName(m)}: ${hidden ? '••••' : brl(perMonth.get(m) ?? 0)}` }))}
+              />
+            ) : (
+              <Loading error={year.error} />
+            )}
           </div>
           <div class="panel split top">
             <Ring size={170} selected={open} onSelect={(k) => setOpen(open === k ? null : k)} segments={rows.slice(0, 8).map((g, i) => ({ key: g.name, value: g.amount, color: PALETTE[i % PALETTE.length]!, tip: `${g.name}\n${hidden ? '••••' : brl(g.amount)} · ${percent(g.share)}` }))}>
@@ -256,7 +261,7 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
                 <li key={g.name} class="expandable">
                   <button class="row-btn" onClick={() => setOpen(open === g.name ? null : g.name)} aria-expanded={open === g.name}>
                     <span class="swatch" style={{ background: PALETTE[i % PALETTE.length] ?? 'var(--muted)' }} />
-                    <span class="grow clip">{g.name}</span>
+                    <span class="grow clip wrap-phone">{g.name}</span>
                     <span class="muted">{purchases(g.count)} · {percent(g.share)}</span>
                     <strong>{brl(g.amount, hidden)}</strong>
                     <span aria-hidden="true">{open === g.name ? '▾' : '▸'}</span>
@@ -267,7 +272,7 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
                       {g.children.map((c) => (
                         <li key={c.name} class="expandable">
                           <button class="row-btn" onClick={() => setOpenChild(openChild === c.name ? null : c.name)} aria-expanded={openChild === c.name}>
-                            <span class="grow clip">{c.name}</span>
+                            <span class="grow clip wrap-phone">{c.name}</span>
                             <span class="muted">{purchases(c.count)} · {percent(c.amount / g.amount)}</span>
                             <strong>{brl(c.amount, hidden)}</strong>
                             <span aria-hidden="true">{openChild === c.name ? '▾' : '▸'}</span>

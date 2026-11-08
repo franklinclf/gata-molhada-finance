@@ -2,10 +2,11 @@ import { useState } from 'preact/hooks';
 import { ButtonLink } from '../ds.tsx';
 import { api } from '../api.ts';
 import { Meter } from '../charts.tsx';
-import { ago, maskMoney } from '../format.ts';
+import { ago, localDay, maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
 import { Loading } from '../ui.tsx';
+import { whenAhead } from './page-logic.ts';
 
 function alertText(event: string, code: string | null): string {
   if (event === 'item/waiting_user_input') return 'o banco pede um código ou uma confirmação.';
@@ -76,10 +77,10 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
         ) : (
           <ul class="rows">
             {fresh.data.sources.map((s) => (
-              <li key={`${s.sourceId}${s.institution}`}>
+              <li key={`${s.sourceId}${s.institution}`} class="source-row">
                 <span class="grow">
                   {s.institution} <span class="muted">({s.sourceId})</span>
-                  {s.nextSyncAt && <div class="muted small">Próxima leitura automática: {s.nextSyncAt.slice(0, 16).replace('T', ' ')} UTC{s.consentExpiresAt ? ` · consentimento até ${s.consentExpiresAt.slice(0, 10)}` : ''}</div>}
+                  {s.nextSyncAt && <div class="muted small source-next">Próxima leitura automática: {whenAhead(s.nextSyncAt, now)}{s.consentExpiresAt ? ` · consentimento até ${localDay(s.consentExpiresAt).split('-').reverse().join('/')}` : ''}</div>}
                 </span>
                 {s.quotaExhausted && <span class="badge bad">limite do banco atingido</span>}
                 <span class={s.late ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>

@@ -91,3 +91,12 @@ test('the routes work', () => {
   assert.equal(call('PUT', `/api/assets/${id}`, { name: 'Poupança Y' })?.status, 200);
   assert.equal(call('DELETE', `/api/assets/${id}`)?.status, 200);
 });
+
+test('bank rows are named by institution and account kind, not by the source name', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, T);
+  const named = (id: string, kind: CanonicalAccount['kind'], name: string, last4: string | null): CanonicalAccount => ({ ...account(id, kind, 5000), name, last4 });
+  store.replaceCanonicalAccounts([named('c1', 'checking', 'ACME PAGAMENTOS S.A.', null), named('s1', 'savings', 'ACME PAGAMENTOS S.A.', null), named('c2', 'checking', 'Other', '1234'), named('c3', 'checking', 'Third', null)], [], T);
+  const names = netWorth(store, NOW).items.map((i) => i.name).sort();
+  assert.deepEqual(names, ['Bank · Conta corrente ACME PAGAMENTOS S.A.', 'Bank · Conta corrente Third', 'Bank · Conta corrente •••• 1234', 'Bank · Poupança'].sort());
+});
