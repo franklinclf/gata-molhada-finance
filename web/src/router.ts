@@ -39,6 +39,18 @@ export function patchParams(updates: Record<string, string | string[] | null | u
   window.dispatchEvent(new HashChangeEvent('hashchange'));
 }
 
+// A new page opens at its top: without this the scroll of the page left behind carries over (Orçamento opened half way down).
+// Only a change of page counts, so a filter or tab on the same page keeps the place.
+if (typeof window !== 'undefined') {
+  let shownPage = parseHash(location.hash).page;
+  window.addEventListener('hashchange', () => {
+    const page = parseHash(location.hash).page;
+    if (page === shownPage) return;
+    shownPage = page;
+    window.scrollTo(0, 0);
+  });
+}
+
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseHash(location.hash));
   useEffect(() => {

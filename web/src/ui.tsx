@@ -112,7 +112,12 @@ export const STATE_LABEL: Record<string, string> = {
 export function TxRow({ t, hidden, onOpen, pick }: { t: { id: string; sourceIds?: string[]; title?: string; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void; /** When given, the row shows a checkbox and a click toggles it instead of opening the drawer. */ pick?: { on: boolean; toggle: () => void } }) {
   return (
     <li class={pick?.on ? 'tx picked' : 'tx'} data-no-nav onClick={() => (pick ? pick.toggle() : onOpen(t.id))} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && (pick ? pick.toggle() : onOpen(t.id))}>
-      {pick && <input type="checkbox" checked={pick.on} aria-label="Selecionar" onClick={(e) => e.stopPropagation()} onChange={pick.toggle} />}
+      {pick && (
+        // The padding makes the touch target about 44 px; the label's own click must not reach the row, or the row would toggle twice.
+        <label class="tx-pick" onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" checked={pick.on} aria-label="Selecionar" onClick={(e) => e.stopPropagation()} onChange={pick.toggle} />
+        </label>
+      )}
       <div class="grow">
         <div class="clip">{t.title ?? t.description}</div>
         {/* On a narrow screen the account moves to its own line, so the category is the part that keeps its room. */}
@@ -127,17 +132,20 @@ export function TxRow({ t, hidden, onOpen, pick }: { t: { id: string; sourceIds?
             {t.status === 'pending' ? ' · pendente' : ''}
             {t.state === 'ignored' ? ' · ignorada' : t.state === 'stale_pending' ? ' · fora dos totais' : ''}
           </span>
+          {/* The badges sit in the meta line, not beside the text, so the title and the category keep the whole width of the row. */}
+          <span class="tx-badges">
+            {t.foreign && <span class="badge info" data-tip={hidden ? 'Compra em outra moeda' : `Compra em ${foreignMoney(t.foreign.amount, t.foreign.currency)}, cobrada em reais pelo cartão`}>{t.foreign.currency}</span>}
+            {/* With one live source, "only one source has it" says nothing, so only a retired source's leftovers are marked. */}
+            {t.state === 'single_source' && t.sourceIds && t.sourceIds.length === 1 && t.sourceIds[0] !== 'pluggy' && <span class="badge muted" data-tip={`Só o ${t.sourceIds[0]} tem esta transação`}>só {t.sourceIds[0]}</span>}
+            {t.reversal?.side === 'charge' && (
+              <span class="badge good" data-tip={hidden ? 'Estornado' : `${t.reversal.partial ? 'Estorno parcial' : 'Estornado'} em ${dayMonth(t.reversal.otherDay)}: ${brl(t.reversal.amount)} de volta`}>
+                {t.reversal.partial ? 'estorno parcial' : 'estornado'}
+              </span>
+            )}
+            {t.reversal?.side === 'refund' && <span class="badge good" data-tip={`Devolve a compra de ${dayMonth(t.reversal.otherDay)}`}>estorno</span>}
+          </span>
         </div>
       </div>
-      {t.foreign && <span class="badge info" data-tip={hidden ? 'Compra em outra moeda' : `Compra em ${foreignMoney(t.foreign.amount, t.foreign.currency)}, cobrada em reais pelo cartão`}>{t.foreign.currency}</span>}
-      {/* With one live source, "only one source has it" says nothing, so only a retired source's leftovers are marked. */}
-      {t.state === 'single_source' && t.sourceIds && t.sourceIds.length === 1 && t.sourceIds[0] !== 'pluggy' && <span class="badge muted" data-tip={`Só o ${t.sourceIds[0]} tem esta transação`}>só {t.sourceIds[0]}</span>}
-      {t.reversal?.side === 'charge' && (
-        <span class="badge good" data-tip={hidden ? 'Estornado' : `${t.reversal.partial ? 'Estorno parcial' : 'Estornado'} em ${dayMonth(t.reversal.otherDay)}: ${brl(t.reversal.amount)} de volta`}>
-          {t.reversal.partial ? 'estorno parcial' : 'estornado'}
-        </span>
-      )}
-      {t.reversal?.side === 'refund' && <span class="badge good" data-tip={`Devolve a compra de ${dayMonth(t.reversal.otherDay)}`}>estorno</span>}
       <strong class={`${t.amount >= 0 ? 'good-text' : ''}${t.reversal?.side === 'charge' && !t.reversal.partial ? ' struck' : ''}`}>{brl(t.amount, hidden)}</strong>
     </li>
   );

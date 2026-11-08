@@ -32,6 +32,12 @@ export function shiftNavItem(ids: string[], id: string, delta: -1 | 1): string[]
   return next;
 }
 
+/** Puts `id` first, so a section far down the list does not need one click per step. */
+export function topNavItem(ids: string[], id: string): string[] {
+  if (!ids.includes(id) || ids[0] === id) return ids;
+  return [id, ...ids.filter((x) => x !== id)];
+}
+
 /** Puts `id` right before `before`, for the drag on a wide screen. */
 export function moveNavItem(ids: string[], id: string, before: string): string[] {
   if (id === before || !ids.includes(id) || !ids.includes(before)) return ids;
@@ -76,6 +82,7 @@ export function useNavOrder() {
     custom: saved.length > 0,
     move: (id: string, before: string) => write(moveNavItem(ids, id, before)),
     shift: (id: string, delta: -1 | 1) => write(shiftNavItem(ids, id, delta)),
+    top: (id: string) => write(topNavItem(ids, id)),
     reset: () => write([]),
   };
 }

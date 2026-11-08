@@ -20,6 +20,24 @@ export function internalNote(internal: { count: number; income: number; expense:
   return `Nas somas há ${internal.count} ${internal.count === 1 ? 'movimento' : 'movimentos'} que não são renda nem gasto (pagamento de fatura, transferência entre suas contas, investimento): ${parts.join(' e ')}.`;
 }
 
+/**
+ * The totals of the tiles. Filtered to one bill, the payment of that bill is left out: it shows in the list but is money moving between
+ * the account and the card, so counting it would make the purchases and the payment cancel each other out (income = expenses, result 0).
+ */
+export function tileSums(sums: { income: number; expense: number; net: number }, internal: { income: number; expense: number }, bill: boolean): { income: number; expense: number; net: number } {
+  if (!bill) return sums;
+  const income = sums.income - internal.income;
+  const expense = sums.expense - internal.expense;
+  return { income, expense, net: income - expense };
+}
+
+/** Says what a bill's totals leave out (see tileSums); null when the bill has no payment in the list. */
+export function billPaymentNote(internal: { count: number; income: number; expense: number }, hidden: boolean): string | null {
+  if (internal.count === 0) return null;
+  const amount = brl(Math.max(internal.income, internal.expense), hidden);
+  return internal.count === 1 ? `O pagamento da fatura (${amount}) aparece na lista, mas não entra nas somas.` : `${internal.count} pagamentos e movimentos ligados à fatura (${amount}) aparecem na lista, mas não entram nas somas.`;
+}
+
 /** A recurring item whose expected day is already past is not "next" any more: say it was expected then and has not come. */
 export function recurringWhen(r: { dayOfMonth: number; occurrences: number; nextDay: string }, today: string): string {
   const base = `todo dia ${r.dayOfMonth} · ${times(r.occurrences)}`;

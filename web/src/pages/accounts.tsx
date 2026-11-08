@@ -3,6 +3,7 @@ import { PALETTE, StackBar } from '../charts.tsx';
 import { ago, brl, dayMonth, isStale, percent } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { navigate, type Route } from '../router.ts';
+import { IncomePanel } from '../IncomePanel.tsx';
 import { Go, Loading } from '../ui.tsx';
 import { OutlookCommitted, OutlookFacts, OutlookTimeline } from '../widgets/outlook.tsx';
 import { CashflowPage } from './cashflow.tsx';
@@ -23,12 +24,12 @@ export function AccountsPage({ route, now, hidden, view }: { route: Route; now: 
           </button>
         ))}
       </div>
-      {chosen === 'cashflow' ? <CashflowPage route={route} now={now} hidden={hidden} embedded /> : chosen === 'networth' ? <NetWorthPage now={now} hidden={hidden} embedded /> : <Balances now={now} hidden={hidden} />}
+      {chosen === 'cashflow' ? <CashflowPage route={route} now={now} hidden={hidden} embedded /> : chosen === 'networth' ? <NetWorthPage now={now} hidden={hidden} embedded /> : <Balances now={now} hidden={hidden} focusIncome={route.params.get('renda') === '1'} />}
     </div>
   );
 }
 
-function Balances({ now, hidden }: { now: Date; hidden: boolean }) {
+function Balances({ now, hidden, focusIncome }: { now: Date; hidden: boolean; focusIncome: boolean }) {
   const { data, error, loading } = useLoad(() => api.balances(), []);
   const outlook = useLoad(() => api.outlook(), [], 120_000);
   return (
@@ -50,12 +51,14 @@ function Balances({ now, hidden }: { now: Date; hidden: boolean }) {
                   ? `O saldo não cobre ${outlook.data.firstUncovered.name} em ${dayMonth(outlook.data.firstUncovered.day)}: faltam ${brl(outlook.data.firstUncovered.shortfall, hidden)}.`
                   : 'O saldo projetado cobre todos os vencimentos da lista.'}{' '}
                 Entradas e contas fixas vêm do que se repete todo mês nas suas contas.
+                {outlook.data.expectedIn.source !== 'registered' && ' Cadastre sua renda logo abaixo para a previsão contar com os dias certos.'}
               </div>
               <OutlookFacts data={outlook.data} hidden={hidden} />
               <OutlookTimeline data={outlook.data} hidden={hidden} limit={12} detail />
               <OutlookCommitted data={outlook.data} hidden={hidden} />
             </section>
           )}
+          <IncomePanel hidden={hidden} focus={focusIncome} />
           {data.institutions.map((inst, n) => (
             <section class="panel" key={inst.institution}>
               <div class="row-head">

@@ -766,11 +766,14 @@ function MenuOrderSection() {
   return (
     <section class="panel">
       <h2>Ordem do menu superior</h2>
-      <div class="muted">Vale para telas largas e só neste navegador. Use as setas para subir ou descer cada seção. Com a barra cheia, as últimas ficam em “Mais”.</div>
+      <div class="muted">Vale para telas largas e só neste navegador. Use as setas para subir ou descer cada seção, ou “Topo” para levá-la ao início. Com a barra cheia, as últimas ficam em “Mais”.</div>
       <ol class="rows order-list">
         {order.items.map(([id, label], index) => (
           <li key={id}>
             <span class="grow">{label}</span>
+            <Button size="sm" aria-label={`Mover ${label} para o topo`} title="Mover para o topo" disabled={index === 0} onClick={() => order.top(id)}>
+              Topo
+            </Button>
             <Button size="sm" aria-label={`Subir ${label}`} disabled={index === 0} onClick={() => order.shift(id, -1)}>
               ↑
             </Button>
