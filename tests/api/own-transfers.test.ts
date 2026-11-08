@@ -106,3 +106,33 @@ test('a card purchase labelled as an investment is a purchase, and a role label 
   assert.deepEqual([rows.get('rdb')?.role, rows.get('rdb')?.category], ['investment', 'Investimentos']);
   assert.equal(spending(store, { from: '2026-09-01', to: '2026-10-31' }, 'category', NOW).groups.some((g) => g.name === 'Investimentos'), false);
 });
+
+test('the closest pair is matched first, so an earlier unrelated credit does not take the mirror from the real other side', () => {
+  const store = seeded([
+    tx('out', 'a', '2026-03-10', -10000, 'Transferência enviada|Ana Paula Ribeiro Costa', 'Same person transfer'),
+    // Two days earlier than the move, on another account: it comes first in time, but it is the farther one.
+    tx('stranger', 'c', '2026-03-08', 10000, 'PIX RECEBIDO - REM  Maria Souza Lima 08/03', 'Transfer - PIX'),
+    tx('real', 'b', '2026-03-10', 10000, 'PIX RECEBIDO - REM  Ana Paula Ribeir 10/03', 'Transfer - PIX'),
+  ]);
+  const rows = byId(store);
+  assert.deepEqual([rows.get('real')?.role, rows.get('stranger')?.role], ['own_transfer', null]);
+});
+
+test('a marked move that already has its opposite on the same account takes no mirror on another account', () => {
+  const store = seeded([
+    // Money in and out of one account on the same day, both marked: they are each other\'s other side.
+    tx('in-a', 'a', '2026-02-20', 100000, 'Transferência Recebida|Ana Paula Ribeiro Costa', 'Same person transfer'),
+    tx('out-a', 'a', '2026-02-20', -100000, 'Transferência enviada|Ana Paula Ribeiro Costa', 'Same person transfer'),
+    tx('pix-b', 'b', '2026-02-21', 100000, 'PIX RECEBIDO - REM  Bruno Teixeira Lima 21/02', 'Transfer - PIX'),
+  ]);
+  assert.equal(byId(store).get('pix-b')?.role, null, 'income from someone else stays income');
+});
+
+test('the mirror is found when the view is limited to one account', () => {
+  const store = seeded([
+    tx('out', 'a', '2026-09-16', -187310, 'Transferência enviada|Ana Paula Ribeiro Costa', 'Same person transfer'),
+    tx('in', 'b', '2026-09-16', 187310, 'PIX RECEBIDO - REM  Ana Paula Ribeir 16/09 - DOCTO: 123456', 'Transfer - PIX'),
+  ]);
+  const scoped = effectiveTransactions(store, { accountId: 'b' });
+  assert.deepEqual(scoped.map((t) => [t.id, t.role]), [['in', 'own_transfer']]);
+});

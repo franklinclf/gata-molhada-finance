@@ -51,8 +51,16 @@ function projectedByDay(store: Store, recurring: RecurringItem[], now: Date, opt
   // Money out of the bank: recurring payments. One that is late has not shown up and is still expected today, once; the next ones keep their days.
   for (const r of recurring) {
     if (r.account === 'card' || r.direction !== 'out' || !isExpected(r)) continue;
-    if (r.nextDay < today) add(r.nextDay, { name: r.name, amount: r.amount, direction: 'out', kind: 'recurring', late: r.late });
-    for (const day of monthlyDays(r.nextDay, r.dayOfMonth, today, until)) add(day, { name: r.name, amount: r.amount, direction: 'out', kind: 'recurring', late: false });
+    // Rent paid in parts: what is still due this month comes first, the ones after it are the whole.
+    let amount = r.rest ?? r.amount;
+    if (r.nextDay < today) {
+      add(r.nextDay, { name: r.name, amount, direction: 'out', kind: 'recurring', late: r.late });
+      amount = r.amount;
+    }
+    for (const day of monthlyDays(r.nextDay, r.dayOfMonth, today, until)) {
+      add(day, { name: r.name, amount, direction: 'out', kind: 'recurring', late: false });
+      amount = r.amount;
+    }
   }
   // Money in: the same rule as the outlook (the income the owner registered, else the credits that repeat every month).
   for (const e of incomeEvents(store, recurring, today, until).events) add(e.day, { name: e.name, amount: e.amount, direction: 'in', kind: 'recurring', late: false });

@@ -30,6 +30,8 @@ export interface RecurringItem {
   manual: boolean;
   /** The charges come about once a month. False for a marked item whose history says otherwise: its day and next date are not a promise, and it is not projected or counted as a monthly weight. */
   regular: boolean;
+  /** Rent paid in parts: what is still due this month when part of it was already paid. The next day is then in this month. Null otherwise. */
+  rest: number | null;
   /** A marked item that stopped: nothing came for more than two intervals. It stays listed so the owner sees it and can remove the mark, but is not expected any more. */
   stale: boolean;
 }
@@ -100,24 +102,36 @@ function byDayOfMonth(list: Occurrence[]): Occurrence[][] {
   return clusters.map((c) => c.sort((a, b) => a.day - b.day));
 }
 
-/** Rent paid in two months in a row with about the same total (one month may be split in two payments): the latest month's total. */
-function rentAmount(sorted: Occurrence[]): number | null {
+/**
+ * Rent paid in two months in a row with about the same total (one month may be split in two payments): the latest month's total.
+ * When the latest month is the current one and only part of it is paid, the rhythm is judged on the last two complete months
+ * instead, and `rest` is what is still due this month.
+ */
+function rentAmount(sorted: Occurrence[], today: string): { amount: number; rest: number | null } | null {
   if (!sorted.some((o) => o.category !== null && RENT_CATEGORIES.has(o.category))) return null;
   const totals = new Map<string, number>();
   for (const o of sorted) totals.set(o.month, (totals.get(o.month) ?? 0) + o.amount);
   const months = [...totals.keys()].sort();
-  if (months.length < 2) return null;
-  const [before, last] = [months.at(-2)!, months.at(-1)!];
-  if (nextMonth(before) !== last) return null;
-  const [a, b] = [totals.get(before)!, totals.get(last)!];
-  return Math.abs(a - b) <= Math.max(a, b) * 0.1 ? b : null;
+  const judge = (list: string[]): number | null => {
+    if (list.length < 2 || nextMonth(list.at(-2)!) !== list.at(-1)) return null;
+    const [a, b] = [totals.get(list.at(-2)!)!, totals.get(list.at(-1)!)!];
+    return Math.abs(a - b) <= Math.max(a, b) * 0.1 ? b : null;
+  };
+  const whole = judge(months);
+  if (whole !== null) return { amount: whole, rest: null };
+  const current = today.slice(0, 7);
+  if (months.at(-1) !== current) return null;
+  const complete = judge(months.filter((m) => m < current));
+  if (complete === null) return null;
+  const rest = complete - totals.get(current)!;
+  return { amount: complete, rest: rest > 0 ? rest : null };
 }
 
 /**
  * Charges and credits that come back about every month with a steady amount, found from the transactions themselves:
  * at least three, in three different months, a gap of about a month between them, an amount that stays within 10%
  * (fixed) or 45% (variable), and a last one recent enough that it was not cancelled. Rent needs only two months in a row.
- * A payer that pays more than once a month is split by the day of the month. Installments have their own plan and are
+ * A payer that pays more than once a month is split by the day of the month, also when the owner marked it. Installments have their own plan and are
  * left out, and so are moves the app does not count as spending or income.
  */
 export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {}): RecurringItem[] {
@@ -144,7 +158,10 @@ export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {})
     if (ignored.has(key) && mark === null) continue;
     const merged = mergeSameDay(list);
     const gaps = gapsOf(merged);
-    const parts = mark === null && key.startsWith('in|') && gaps.length >= MIN_OCCURRENCES && median(gaps) < SPLIT_BELOW_DAYS ? byDayOfMonth(merged) : [merged];
+    const split = key.startsWith('in|') && gaps.length >= MIN_OCCURRENCES && median(gaps) < SPLIT_BELOW_DAYS ? byDayOfMonth(merged) : [merged];
+    // A marked payer is split too, or marking it would turn two monthly credits into one with gaps of two weeks. Only when the split
+    // finds two rhythms with more than one credit each, so scattered days are not turned into several items.
+    const parts = mark === null || split.filter((c) => c.length >= 2).length >= 2 ? split : [merged];
     for (const sorted of parts) {
       const item = itemOf(key, sorted, gapsOf(sorted), mark, today);
       if (item) items.push(item);
@@ -161,13 +178,15 @@ function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscr
   let kind: 'fixed' | 'variable' | null = near(0.1) >= 0.7 ? 'fixed' : near(0.45) >= 0.8 ? 'variable' : null;
   const monthly = gaps.length > 0 && gaps.filter((g) => g >= INTERVAL.low && g <= INTERVAL.high).length / gaps.length >= 0.7 && interval >= INTERVAL.low && interval <= INTERVAL.high;
   let regular = true;
+  // The part of this month's rent still to pay: the typical day and the next date then come from the complete months.
+  let rest: number | null = null;
   if (mark === null) {
     // Detected from the charges alone.
     const enough = sorted.length >= MIN_OCCURRENCES && new Set(sorted.map((o) => o.month)).size >= MIN_OCCURRENCES;
-    const rent = key.startsWith('out|') ? rentAmount(sorted) : null;
+    const rent = key.startsWith('out|') ? rentAmount(sorted, today) : null;
     if (!(enough && monthly && kind !== null)) {
       if (rent === null) return null;
-      [amount, kind, interval] = [rent, 'fixed', 30];
+      [amount, kind, interval, rest] = [rent.amount, 'fixed', 30, rent.rest];
     }
   } else {
     // The owner said it is recurring: it is listed from the first charge, assumed monthly unless the gaps say otherwise.
@@ -179,12 +198,14 @@ function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscr
   const stale = dayNumber(today) - last.day > interval * 2.2;
   if (stale && mark === null) return null;
   // The typical day comes from the last three; when they are far apart (or across the turn of a month) the last one is the best guess.
-  const recent = sorted.slice(-3).map(dayOfMonthOf);
+  const basis = rest === null ? sorted : sorted.filter((o) => o.month < today.slice(0, 7));
+  const anchor = basis.at(-1)!;
+  const recent = basis.slice(-3).map(dayOfMonthOf);
   const dayOfMonth = Math.max(...recent) - Math.min(...recent) > SAME_DAY_SPREAD ? recent.at(-1)! : median(recent);
   // The next one is the typical day in the month of the last one, moved a month ahead until it is a real interval after the last one.
-  let month = dayString(last.day).slice(0, 7);
+  let month = dayString(anchor.day).slice(0, 7);
   let next = dayInMonth(month, dayOfMonth);
-  while (dayNumber(next) - last.day < INTERVAL.low) {
+  while (dayNumber(next) - anchor.day < INTERVAL.low) {
     month = nextMonth(month);
     next = dayInMonth(month, dayOfMonth);
   }
@@ -206,6 +227,7 @@ function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscr
     label,
     manual: mark !== null,
     regular,
+    rest,
     stale,
   };
 }

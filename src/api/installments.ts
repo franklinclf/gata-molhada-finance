@@ -76,22 +76,32 @@ const REFUND_DAYS = 3;
 
 const seriesText = (description: string) => normalizeName(seriesDescription(description));
 
+/** A refund text that holds the purchase text ("estorno magalu tv" for "magalu tv"), or the other way round. Very short texts say nothing. */
+const namesSeries = (refund: string, series: string) => Math.min(refund.length, series.length) >= 4 && (refund.includes(series) || series.includes(refund));
+
 /**
  * Installment charges cancelled by a credit of the same amount and text a few days later (a purchase refunded right away).
  * A cancelled purchase has no installments to come, so it must not plan any.
  */
-function refundedCharges(transactions: EffectiveTransaction[]): Set<string> {
+export function refundedCharges(transactions: EffectiveTransaction[]): Set<string> {
+  const byId = new Map(transactions.map((t) => [t.id, t]));
   const credits = transactions.filter((t) => !t.excluded && t.amount > 0 && t.role === null);
   const used = new Set<string>();
   const out = new Set<string>();
   for (const t of transactions) {
     if (!t.installment || t.excluded || t.amount >= 0) continue;
-    // A refund the app already paired with this charge (an "estorno" can come days later, with another text) cancels it too.
-    if (t.reversal?.side === 'charge' && t.reversal.amount >= -t.amount) {
-      out.add(t.id);
-      continue;
-    }
     const text = seriesText(t.description);
+    // A refund the app already paired with this charge (an "estorno" can come days later, with another text) cancels it too. The
+    // pairing of an "estorno" with the nearest purchase of the same amount is a guess, so it cancels the plan only when the owner
+    // linked them, the refund names the purchase, or it returns the whole purchase (every installment).
+    if (t.reversal?.side === 'charge' && t.reversal.amount >= -t.amount) {
+      const refund = byId.get(t.reversal.otherId);
+      const named = refund !== undefined && namesSeries(seriesText(refund.description), text);
+      if (t.reversal.byUser || named || (refund?.amount ?? 0) >= -t.amount * t.installment.total - t.installment.total) {
+        out.add(t.id);
+        continue;
+      }
+    }
     const day = dayNumber(localDay(t.occurredAt));
     const credit = credits.find((c) => !used.has(c.id) && c.accountId === t.accountId && c.amount === -t.amount && Math.abs(dayNumber(localDay(c.occurredAt)) - day) <= REFUND_DAYS && (seriesText(c.description).startsWith(text) || text.startsWith(seriesText(c.description))));
     if (!credit) continue;

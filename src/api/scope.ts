@@ -156,7 +156,8 @@ export function effectiveTransactions(
   const institutionOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a.institution]));
   const published = publishedBills(store);
   // A set-aside pending entry the owner called posted is brought back, so it must be loaded even when excluded ones are not wanted.
-  const loaded = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: true });
+  // Every account is loaded, also when one is asked for, so the other side of a move between accounts is found the same way on every screen.
+  const loaded = store.listCanonicalTransactions({ includeExcluded: true });
   const all = options.includeExcluded ? loaded : loaded.filter((t) => !t.excluded || (t.state === 'stale_pending' && txOverrides.get(t.id)?.status === 'posted'));
   const { labels: labelsOf, parties: partiesOf } = sourceFacts(store);
   const engineRules = sortRules(store.listRules());
@@ -221,7 +222,7 @@ export function effectiveTransactions(
     });
   const mirrored = ownMirrors(built, cardIds);
   const rows = built
-    .filter((t) => ids.has(t.accountId))
+    .filter((t) => ids.has(t.accountId) && (options.accountId === undefined || t.accountId === options.accountId))
     .map((t) => (mirrored.has(t.id) ? { ...t, role: 'own_transfer' as const, category: ROLE_CATEGORY.own_transfer, title: titleOf({ description: t.description, amount: t.amount, role: 'own_transfer', operation: t.operation, counterparty: t.counterparty }) } : t));
   // A refund and the purchase it returned are one entry. The refund takes the category of the purchase (unless the owner chose its own),
   // so the category's total is net of it instead of the credit landing in "Estorno" or in income.
@@ -246,42 +247,42 @@ const MIRROR_DAYS = 2;
  * Bank Pix and transfers with no role that are the other side of a move the source did mark as between the owner's
  * accounts. Some banks write the owner's name cut short ("REM <name> dd/mm") or no name at all, and a cut name can also be
  * the start of a relative's name, so the name proves nothing: the mirror does. A mirror is a marked move on another bank
- * account with the opposite sign and the same amount, at most two days apart. Marked moves pair with each other first and
- * each mirror is used once, so a payment to someone else of the same amount does not take a mirror that already has its
- * other side. A category the owner chose (by hand or by a rule) is never changed.
+ * account with the opposite sign and the same amount, at most two days apart. The closest pairs are matched first, over all
+ * accounts at once (by days apart, then by time), and each side is used once, so a payment to someone else of the same amount
+ * does not take a mirror from its real other side. Marked moves pair with each other before they pair with anything else, and a
+ * marked move whose opposite sits on its own account (a pair of one account) has its other side there and takes no mirror.
+ * A category the owner chose (by hand or by a rule) is never changed.
  */
-function ownMirrors(rows: EffectiveTransaction[], cardIds: Set<string>): Set<string> {
+export function ownMirrors(rows: EffectiveTransaction[], cardIds: Set<string>): Set<string> {
   const dayOf = (t: EffectiveTransaction) => dayNumber(localDay(t.occurredAt));
-  const bank = rows.filter((t) => !t.excluded && t.amount !== 0 && !cardIds.has(t.accountId)).sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
-  const free = new Map<number, EffectiveTransaction[]>();
-  for (const t of bank) if (t.role === 'own_transfer') free.set(Math.abs(t.amount), [...(free.get(Math.abs(t.amount)) ?? []), t]);
-  // The closest marked move on another account with the opposite sign, taken out of the free ones.
-  const take = (t: EffectiveTransaction): EffectiveTransaction | null => {
-    const list = free.get(Math.abs(t.amount)) ?? [];
-    let best = -1;
-    for (let i = 0; i < list.length; i++) {
-      const o = list[i]!;
-      const apart = Math.abs(dayOf(o) - dayOf(t));
-      if (o.id !== t.id && o.accountId !== t.accountId && o.amount === -t.amount && apart <= MIRROR_DAYS && (best < 0 || apart < Math.abs(dayOf(list[best]!) - dayOf(t)))) best = i;
+  const bank = rows.filter((t) => !t.excluded && t.amount !== 0 && !cardIds.has(t.accountId));
+  const marked = bank.filter((t) => t.role === 'own_transfer');
+  const candidates = bank.filter((t) => t.role === null && (t.categoryOrigin === 'source' || t.categoryOrigin === 'ai') && (/^(pix|ted)$/i.test(t.operation ?? '') || /transfer/i.test(`${t.sourceLabels.join(' ')} ${t.description}`)));
+  const markedBy = new Map<number, EffectiveTransaction[]>();
+  for (const t of marked) markedBy.set(Math.abs(t.amount), [...(markedBy.get(Math.abs(t.amount)) ?? []), t]);
+  const used = new Set<string>();
+  // Every pair of a row from `side` and a marked move with the opposite sign and amount, closest first: days apart, then time apart.
+  const match = (side: EffectiveTransaction[], sameAccount: boolean): EffectiveTransaction[] => {
+    const pairs: Array<{ a: EffectiveTransaction; b: EffectiveTransaction; days: number; ms: number }> = [];
+    for (const a of side) {
+      for (const b of markedBy.get(Math.abs(a.amount)) ?? []) {
+        const days = Math.abs(dayOf(a) - dayOf(b));
+        if (a.id !== b.id && b.amount === -a.amount && (a.accountId === b.accountId) === sameAccount && days <= MIRROR_DAYS) pairs.push({ a, b, days, ms: Math.abs(Date.parse(a.occurredAt) - Date.parse(b.occurredAt)) });
+      }
     }
-    return best < 0 ? null : list.splice(best, 1)[0]!;
+    pairs.sort((x, y) => x.days - y.days || x.ms - y.ms || x.a.id.localeCompare(y.a.id) || x.b.id.localeCompare(y.b.id));
+    const taken: EffectiveTransaction[] = [];
+    for (const { a, b } of pairs) {
+      if (used.has(a.id) || used.has(b.id)) continue;
+      used.add(a.id);
+      used.add(b.id);
+      taken.push(a);
+    }
+    return taken;
   };
-  for (const t of bank) {
-    if (t.role !== 'own_transfer') continue;
-    const list = free.get(Math.abs(t.amount))!;
-    const at = list.indexOf(t);
-    // Already taken as the other side of an earlier move.
-    if (at < 0) continue;
-    list.splice(at, 1);
-    if (!take(t)) list.splice(at, 0, t);
-  }
-  const found = new Set<string>();
-  for (const t of bank) {
-    if (t.role !== null || (t.categoryOrigin !== 'source' && t.categoryOrigin !== 'ai')) continue;
-    if (!/^(pix|ted)$/i.test(t.operation ?? '') && !/transfer/i.test(`${t.sourceLabels.join(' ')} ${t.description}`)) continue;
-    if (take(t)) found.add(t.id);
-  }
-  return found;
+  match(marked, false);
+  match(marked, true);
+  return new Set(match(candidates, false).map((t) => t.id));
 }
 
 /** Hash of the other side's document per transaction, for comparing two records without exposing it on screen. */

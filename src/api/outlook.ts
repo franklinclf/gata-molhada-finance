@@ -143,7 +143,9 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
     if (r.nextDay < today) days.unshift(today);
     for (const day of days) {
       const isLate = r.nextDay < today && day === today;
-      events.push({ day, name: r.name, amount: r.amount, direction: 'out', kind: 'recurring', origin: r.kind === 'fixed' ? `repete todo mês, dia ${r.dayOfMonth}` : `repete todo mês, dia ${r.dayOfMonth}, valor varia (usado o valor típico)`, late: isLate && r.late, estimate: r.kind === 'variable' });
+      // Rent paid in parts: this month's event is what is still due, the ones after it are the whole.
+      const first = day === days[0];
+      events.push({ day, name: r.name, amount: first && r.rest !== null ? r.rest : r.amount, direction: 'out', kind: 'recurring', origin: r.kind === 'fixed' ? `repete todo mês, dia ${r.dayOfMonth}` : `repete todo mês, dia ${r.dayOfMonth}, valor varia (usado o valor típico)`, late: isLate && r.late, estimate: r.kind === 'variable' });
     }
   }
 

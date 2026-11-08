@@ -648,3 +648,18 @@ test('the second installment the bank has not listed yet explains what its bill 
   assert.deepEqual([sep.total, sep.posted, sep.plannedInstallments], [11293, 6298, 4995]);
   assert.deepEqual(billCheck(store, today).items.filter((i) => i.cycleKey === '2026-11'), [], 'the gap is the installment, so nothing is reported missing');
 });
+
+test('a credit balance returned after the next closing offsets the bill that was paid twice, not the bill it falls in', () => {
+  const { store, card1 } = setup();
+  // October (68000) is paid twice; the bank returns the second payment on 12/11, in the window of the November bill, which is paid in full.
+  store.upsertSourceBills('pierre', [{ externalId: 'b-nov', accountExternalId: 'ext-card1', dueDate: '2026-11-15', closingDate: '2026-11-08', total: 30000, minimumPayment: null }], NOW.toISOString());
+  const base = store.listCanonicalTransactions();
+  store.replaceCanonicalTransactions([...base, tx('buy-nov', 'card1', '2026-10-20', -30000), tx('pay-oct-again', 'card1', '2026-10-16', 68000, 'Pagamento de cartão de crédito'), tx('pay-oct-back', 'card1', '2026-11-12', -68000, 'Pagamento de cartão de crédito'), tx('pay-nov', 'card1', '2026-11-15', 30000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const [, oct, nov] = cyclesFor(store, card1, effectiveTransactions(store), '2026-11-20');
+  assert.deepEqual([oct!.key, oct!.paid, oct!.overpaid], ['2026-10', 68000, 0], 'the excess of October is given back');
+  assert.deepEqual([nov!.key, nov!.paid, nov!.outstanding, nov!.status], ['2026-11', 30000, 0, 'paid'], 'November is not left looking unpaid');
+  // A return bigger than any excess still takes the rest from its own window.
+  store.replaceCanonicalTransactions([...base, tx('pay-oct-again', 'card1', '2026-10-16', 5000, 'Pagamento de cartão de crédito'), tx('pay-oct-back', 'card1', '2026-11-12', -8000, 'Pagamento de cartão de crédito'), tx('pay-nov', 'card1', '2026-11-15', 30000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const [, oct2, nov2] = cyclesFor(store, card1, effectiveTransactions(store), '2026-11-20');
+  assert.deepEqual([oct2!.paid, oct2!.overpaid, nov2!.paid], [68000, 0, 27000]);
+});
