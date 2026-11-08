@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { billPaymentNote, cellMoney, countNote, endpoints, internalNote, localStamp, recurringWhen, splitZero, tileSums, times, whenAhead } from '../../web/src/pages/page-logic.ts';
+import { billPaymentNote, cellMoney, countNote, endpoints, internalNote, localStamp, recurringWhen, splitZero, tileSums, times, trendChange, whenAhead } from '../../web/src/pages/page-logic.ts';
 
 const NOW = new Date('2026-11-08T15:00:00Z');
 
@@ -72,4 +72,18 @@ test('the totals of one bill leave out its payment, which would cancel the purch
   assert.match(billPaymentNote(internal, false)!, /^O pagamento da fatura \(R\$\s?1\.345,30\) aparece na lista, mas não entra nas somas\.$/);
   assert.equal(billPaymentNote({ count: 0, income: 0, expense: 0 }, false), null);
   assert.match(billPaymentNote({ count: 2, income: 1000, expense: 500 }, false)!, /^2 pagamentos e movimentos/);
+});
+
+test('the trend row compares the month in progress with the whole month before, and flags only a rise', () => {
+  assert.equal(trendChange(100, null, false), null, 'no month before');
+  assert.equal(trendChange(0, 0, false), null);
+  assert.deepEqual(trendChange(5000, 0, false), { text: 'nada no mês passado', rising: false });
+  const up = trendChange(30000, 20000, false)!;
+  assert.match(up.text, /^\+R\$\s?100,00$/);
+  assert.equal(up.rising, true);
+  const down = trendChange(5000, 20000, false)!;
+  assert.match(down.text, /^−R\$\s?150,00$/);
+  assert.equal(down.rising, false);
+  assert.equal(trendChange(20000, 20000, false)!.text, 'igual');
+  assert.doesNotMatch(trendChange(30000, 20000, true)!.text, /\d,\d\d/);
 });

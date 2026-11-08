@@ -84,7 +84,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await response.text();
   const body = text ? (JSON.parse(text) as unknown) : null;
   // A change made by the owner (not a login or a chat question) can alter any list on screen.
-  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && path !== '/api/layout';
+  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && path !== '/api/layout' && path !== '/api/rules/preview';
   if (!response.ok) {
     const message = (body as { message?: string; error?: string } | null)?.message ?? (body as { error?: string } | null)?.error ?? response.statusText;
     throw new ApiError(response.status, message);

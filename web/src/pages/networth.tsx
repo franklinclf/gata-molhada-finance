@@ -84,9 +84,9 @@ export function NetWorthPage({ now, hidden, embedded = false }: { now: Date; hid
         <div class="muted">
           {brl(data.assets, hidden)} em bens e saldos, menos {brl(data.liabilities, hidden)} em dívidas
         </div>
-        <LineChart points={data.history.map((p) => p.net)} days={data.history.map((p) => p.day)} hidden={hidden} label="Patrimônio" />
+        <LineChart points={data.history.map((p) => p.net)} days={data.history.map((p) => p.day)} hidden={hidden} label="Patrimônio" axis scale="fit" />
         {ends && (
-          <div class="muted chart-range">
+          <div class="muted chart-range with-axis">
             <span>{ends.from}</span>
             <span>{ends.to}</span>
           </div>

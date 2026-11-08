@@ -1,13 +1,15 @@
 import { useState } from 'preact/hooks';
 import { Button } from './ds.tsx';
 import { api } from './api.ts';
-import type { TransactionDetail } from './api.ts';
+import { ApiError } from './api.ts';
+import type { CategoryRow, TransactionDetail } from './api.ts';
 import { brl, dayMonth, foreignMoney, localDay, monthName } from './format.ts';
 import { accountName, cardName } from './names.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { CopyButton } from './copy.tsx';
 import { CategorySelect } from './CategorySelect.tsx';
+import { partyRuleApplies, partyRuleConditions, partyRuleName } from './party-rule.ts';
 import { ManualForm } from './ManualForm.tsx';
 import { Select } from './Select.tsx';
 import { Loading, StatusBadge } from './ui.tsx';
@@ -232,6 +234,7 @@ function CategorySection({ id, d, manual, act }: { id: string; d: Detail; manual
           Ao escolher, aplicar também às {others} com a descrição “{t.description}”
         </label>
       )}
+      {partyRuleApplies(t) && <PartyRule key={t.counterparty!.name} d={d} categories={categories.data?.items} act={act} onSaved={setSaved} />}
       {t.categoryOrigin === 'rule' && d.rule !== null && (
         <button class="link" disabled={act.busy} onClick={() => void removeRule()} title="Apaga a regra desta descrição; vale para todas as que a usam">
           Remover a regra desta descrição (afeta as {d.merchant.count}, com esta)
@@ -254,6 +257,32 @@ function CategorySection({ id, d, manual, act }: { id: string; d: Detail; manual
         </button>
       )}
     </div>
+  );
+}
+
+/** A rule on the person or company of a Pix or TED: the bank text carries the name, so "same description" would catch one transaction only. */
+function PartyRule({ d, categories, act, onSaved }: { d: Detail; categories: readonly CategoryRow[] | undefined; act: Act; onSaved: (message: string) => void }) {
+  const t = d.transaction;
+  const name = t.counterparty!.name!.trim();
+  const direction = t.amount < 0 ? 'out' : 'in';
+  const preview = useLoad(() => api.previewRule(partyRuleConditions(name, direction), ''), [name, direction], undefined, 'party-rule-preview');
+  const count = preview.data?.matched;
+  const create = async (category: string) => {
+    if (category.trim() === '') return;
+    const ok = await act.run(async () => {
+      try {
+        await api.saveRule({ name: partyRuleName(name, direction), active: true, conditions: partyRuleConditions(name, direction), actions: { category } });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) throw new Error(`Já existe uma regra “${partyRuleName(name, direction)}”. Edite-a em Ajustes, aba Regras.`);
+        throw e;
+      }
+    });
+    if (ok) onSaved(`Regra criada: as transferências ${direction === 'out' ? 'para' : 'de'} ${name} vão para “${category}”, as que já existem e as próximas. Uma escolha sua para uma transação sozinha continua valendo.`);
+  };
+  return (
+    <Field label={`Criar regra para todas as transferências ${direction === 'out' ? 'para' : 'de'} ${name}${count === undefined ? '' : ` (${count})`}`} hint="Vale para o nome, qualquer que seja o texto do banco.">
+      <CategorySelect value="" onChange={(category) => void create(category)} categories={categories} ariaLabel="Categoria da regra" placeholder="Escolher a categoria da regra..." />
+    </Field>
   );
 }
 

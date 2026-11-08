@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
-import { brl, brlShort, dayMonth } from './format.ts';
+import { lineExtent } from './chart-scale.ts';
+import { brl, brlCompact, brlShort, dayMonth } from './format.ts';
 
 /** Chart colors come from the palette (--chart-1 is the accent), so slices stay visible on light and dark cards. */
 export const PALETTE = Array.from({ length: 8 }, (_, i) => `var(--chart-${i + 1})`);
@@ -133,23 +134,26 @@ export function Bars({ data, hidden, selected, onSelect, height = 130, valueOnSe
   );
 }
 
-/** Running total as a line with a soft fill and a pointer that reads the value of the day under it. */
-export function LineChart({ points, hidden, days, label: title = 'Gastos acumulados', height: boxHeight }: { points: number[]; hidden: boolean; days?: string[]; label?: string; /** Height of the chart in px; 90 when not given. */ height?: number }) {
+/**
+ * Running total as a line with a soft fill and a pointer that reads the value of the day under it.
+ * `axis` adds the highest and lowest value of the scale on the left, with a light line at each; `scale="fit"` draws from the lowest
+ * point instead of from zero.
+ */
+export function LineChart({ points, hidden, days, label: title = 'Gastos acumulados', height: boxHeight, axis = false, scale = 'zero' }: { points: number[]; hidden: boolean; days?: string[]; label?: string; /** Height of the chart in px; 90 when not given. */ height?: number; axis?: boolean; scale?: 'zero' | 'fit' }) {
   const [at, setAt] = useState<number | null>(null);
   if (points.length < 2) return <div class="empty">Sem dados no período</div>;
   const width = 300;
   const height = 90;
-  const max = Math.max(1, ...points);
-  const min = Math.min(0, ...points);
+  const { min, max } = lineExtent(points, scale);
   const x = (i: number) => (i / (points.length - 1)) * width;
   const y = (v: number) => height - ((v - min) / (max - min)) * (height - 6) - 3;
   const path = points.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
   const shown = at ?? points.length - 1;
   const label = `${days?.[shown] ? `${dayMonth(days[shown]!)}: ` : ''}${hidden ? '••••' : brl(points[shown] ?? 0)}`;
-  return (
+  const chart = (
     <div
       class="line-wrap"
-      style={boxHeight ? { height: `${boxHeight}px` } : undefined}
+      style={boxHeight && !axis ? { height: `${boxHeight}px` } : undefined}
       data-tip={at === null ? undefined : label}
       onMouseMove={(e) => {
         const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -158,11 +162,23 @@ export function LineChart({ points, hidden, days, label: title = 'Gastos acumula
       onMouseLeave={() => setAt(null)}
     >
       <svg class="line" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={hidden ? title : `${title}, ${brl(points[points.length - 1] ?? 0)}`}>
+        {axis && <line x1="0" x2={width} y1={y(max)} y2={y(max)} stroke="var(--track)" stroke-width="1" vector-effect="non-scaling-stroke" stroke-dasharray="2 4" />}
+        {axis && <line x1="0" x2={width} y1={y(min)} y2={y(min)} stroke="var(--track)" stroke-width="1" vector-effect="non-scaling-stroke" stroke-dasharray="2 4" />}
         <path d={`${path} L${width} ${height} L0 ${height} Z`} fill="var(--accent)" opacity="0.12" />
         <path d={path} fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke" />
         {at !== null && <line x1={x(at)} x2={x(at)} y1="0" y2={height} stroke="var(--muted)" stroke-width="1" vector-effect="non-scaling-stroke" stroke-dasharray="3 3" />}
         {at !== null && <circle cx={x(at)} cy={y(points[at] ?? 0)} r="3.5" fill="var(--accent)" vector-effect="non-scaling-stroke" />}
       </svg>
+    </div>
+  );
+  if (!axis) return chart;
+  return (
+    <div class="line-axis" style={boxHeight ? { height: `${boxHeight}px` } : undefined}>
+      <div class="axis-y" aria-hidden="true">
+        <span>{brlCompact(max, hidden)}</span>
+        <span>{brlCompact(min, hidden)}</span>
+      </div>
+      {chart}
     </div>
   );
 }

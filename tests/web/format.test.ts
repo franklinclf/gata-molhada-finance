@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ago, brl, brlShort, cumulative, dayMonth, isStale, localDay, MASK, maskMoney, parseBrl, periodRange } from '../../web/src/format.ts';
+import { ago, brl, brlCompact, brlShort, cumulative, dayMonth, isStale, localDay, MASK, maskMoney, parseBrl, periodRange } from '../../web/src/format.ts';
 
 const NOW = new Date('2026-10-27T15:00:00Z');
 
@@ -76,4 +76,13 @@ test('parseBrl rejects what it cannot read and applies the zero and negative opt
   assert.equal(parseBrl('-5,00'), null);
   assert.equal(parseBrl('-5,00', { allowNegative: true }), -500);
   assert.equal(parseBrl('-R$ 5,00', { allowNegative: true }), -500);
+});
+
+test('axis labels are short: thousands as "mil", millions as "mi", and masked when values are hidden', () => {
+  const plain = (cents: number) => brlCompact(cents).replace(/\s/g, ' ');
+  assert.equal(plain(95000), 'R$ 950');
+  assert.equal(plain(1_234_500), 'R$ 12,3 mil');
+  assert.equal(plain(125_000_000), 'R$ 1,3 mi');
+  assert.equal(plain(-150_000), '-R$ 1,5 mil');
+  assert.equal(brlCompact(1_234_500, true), '••••');
 });

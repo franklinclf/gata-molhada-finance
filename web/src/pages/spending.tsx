@@ -8,6 +8,7 @@ import { PeriodPicker, PRESETS } from '../period.tsx';
 import { patchParams, type Route } from '../router.ts';
 import { localDay } from '../format.ts';
 import { Go, Loading, TxRow } from '../ui.tsx';
+import { trendChange } from './page-logic.ts';
 
 /** What a category (or merchant) is made of: the individual transactions, loaded when the row is opened. */
 function Members({ name, by, from, to, hidden }: { name: string; by: 'category' | 'merchant'; from: string; to: string; hidden: boolean }) {
@@ -201,12 +202,23 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
         ) : (
           <section class="panel">
             <h2>Gasto por categoria nos últimos {trend.data.months.length} meses</h2>
-            <div class="muted">A linha vai de {monthName(trend.data.months[0]!)} a {monthName(trend.data.months.at(-1)!)}; o último ponto é o mês em andamento. A seta só aparece quando o mês em andamento já passou da média dos meses fechados, e novo é uma categoria sem gasto nos meses fechados. Clique no nome para ver as compras do mês.</div>
+            <div class="muted">A linha vai de {monthName(trend.data.months[0]!)} a {monthName(trend.data.months.at(-1)!)}; o último ponto é o mês em andamento. A seta só aparece quando o mês em andamento já passou da média dos meses fechados, e novo é uma categoria sem gasto nos meses fechados. O mês passado é o mês inteiro, e o número abaixo do valor deste mês mostra a diferença para ele; só uma alta é destacada, porque o mês em andamento ainda não terminou. Clique no nome para ver as compras do mês.</div>
             <ul class="rows tall">
+              <li class="trend-row trend-head" aria-hidden="true">
+                <span>Categoria</span>
+                <span />
+                <span>Média</span>
+                <span>Mês passado</span>
+                <span>Este mês</span>
+                <span />
+              </li>
               {trend.data.rows.map((r) => {
                 // The current month is partial, so being under the average of whole months says nothing yet; only a rise is a signal.
                 const diff = r.average > 0 ? r.current / r.average - 1 : null;
                 const note = diff === null ? (r.current > 0 ? 'novo' : '') : diff > 0 ? `▲ ${percent(diff)}` : 'mês em andamento';
+                // The month before the current one, when the data goes back that far.
+                const previous = r.points.length >= 2 ? r.points.at(-2)! : null;
+                const change = trendChange(r.current, previous, hidden);
                 return (
                   <li key={r.name} class="trend-row">
                     <Go class="clip" page="transactions" params={{ category: r.name, from: `${today.slice(0, 7)}-01`, to: today, netSpending: 'true' }}>
@@ -214,8 +226,16 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
                       {r.parent && <span class="muted"> · {r.parent}</span>}
                     </Go>
                     <Sparkline points={r.points} tip={r.points.map((p, i) => `${monthName(trend.data!.months[i]!)}: ${hidden ? '••••' : brl(p)}`).join('\n')} />
-                    <span class="muted">média {brl(r.average, hidden)}</span>
-                    <strong>{brl(r.current, hidden)}</strong>
+                    <span class="muted">
+                      <span class="t-lbl">média</span> {brl(r.average, hidden)}
+                    </span>
+                    <span class="muted">
+                      <span class="t-lbl">mês passado</span> {previous === null ? '—' : brl(previous, hidden)}
+                    </span>
+                    <span class="t-now">
+                      <span class="t-lbl muted">este mês</span> <strong>{brl(r.current, hidden)}</strong>
+                      {change && <small class={change.rising ? 'bad-text t-change' : 'muted t-change'}>{change.text}</small>}
+                    </span>
                     <span class={diff !== null && diff > 0.25 ? 'bad-text trend-note' : 'muted trend-note'}>{note}</span>
                   </li>
                 );

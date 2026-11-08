@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { normalizeTransaction as pluggyNormalize } from '../../src/adapters/pluggy/normalize.ts';
+import { createRule, previewRule } from '../../src/api/rules.ts';
 import { effectiveTransactions } from '../../src/api/scope.ts';
 import { partyFrom } from '../../src/core/parties.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -84,6 +85,23 @@ test('a person is named by the document: a Pix with no name in its text gets the
   assert.equal(byId.get('o3')?.counterparty?.name?.toLowerCase(), 'maria souza');
   assert.equal(byId.get('o3')?.counterparty?.last4, '7788');
   assert.equal(byId.get('in1')?.counterparty?.isOwner, false);
+});
+
+test('a rule on the counterparty name catches every Pix to that person, also the one with no name in its text', () => {
+  const store = seeded();
+  const to = (direction: string) => ({ match: 'all', items: [{ field: 'counterparty', operator: 'equals', value: 'maria souza' }, { field: 'direction', operator: 'equals', value: direction }] });
+  const preview = previewRule(store, { conditions: to('out'), actions: { category: 'Mesada' } });
+  assert.ok(preview.ok);
+  assert.equal(preview.ok && preview.value.matched, 3, 'o1 and o2 carry the name, o3 gets it from the document');
+  assert.deepEqual(preview.ok && preview.value.sample.map((s) => s.id).sort(), ['o1', 'o2', 'o3']);
+  assert.equal(createRule(store, { name: 'Transferências para Maria Souza', conditions: to('out'), actions: { category: 'Mesada' } }, NOW).ok, true);
+  const byId = new Map(effectiveTransactions(store).map((t) => [t.id, t]));
+  assert.deepEqual(['o1', 'o2', 'o3'].map((id) => byId.get(id)?.category), ['Mesada', 'Mesada', 'Mesada']);
+  assert.equal(byId.get('o3')?.categoryOrigin, 'rule');
+  assert.notEqual(byId.get('own')?.category, 'Mesada', 'the owner is not Maria');
+  assert.notEqual(byId.get('in1')?.category, 'Mesada', 'money received from her is the other direction');
+  const received = previewRule(store, { conditions: to('in'), actions: { category: '' } });
+  assert.equal(received.ok && received.value.matched, 3);
 });
 
 test('the merchant code names the category when the source label does not', () => {

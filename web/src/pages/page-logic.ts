@@ -79,3 +79,15 @@ export function endpoints(days: string[], values: number[], hidden: boolean): { 
   const at = (i: number) => `${dayMonth(days[i]!)}/${days[i]!.slice(0, 4)}: ${hidden ? MASK : brl(values[i]!)}`;
   return { from: at(0), to: at(days.length - 1) };
 }
+
+/**
+ * How the month in progress stands against the whole month before, in a few characters.
+ * The month is not over, so a fall says little: only a rise is flagged. Null when there is no month before to compare with.
+ */
+export function trendChange(current: number, previous: number | null, hidden: boolean): { text: string; rising: boolean } | null {
+  if (previous === null) return null;
+  if (previous === 0) return current > 0 ? { text: 'nada no mês passado', rising: false } : null;
+  const delta = current - previous;
+  if (delta === 0) return { text: 'igual', rising: false };
+  return { text: `${delta > 0 ? '+' : '−'}${brl(Math.abs(delta), hidden)}`, rising: delta > 0 };
+}
