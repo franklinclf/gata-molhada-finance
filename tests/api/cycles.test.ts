@@ -135,6 +135,16 @@ test('cards view: an unpaid closed bill is outstanding, due first, and not mixed
   assert.equal(v.totals.outstanding, 148000);
 });
 
+test('cards view: the open bill estimate is the same whether the open month or "em aberto" is chosen', () => {
+  const { store } = setup({ payments: false });
+  // The issuer balance holds the two unpaid bills plus 120,00 still open.
+  store.replaceCanonicalAccounts([account('card1', { balance: 160000 })], [], NOW.toISOString());
+  const open = cards(store, NOW).cards[0]!;
+  const month = cards(store, NOW, {}, open.cycle!.key).cards[0]!;
+  assert.equal(open.total, 12000);
+  assert.equal(month.total, open.total);
+});
+
 test('cards view: cards on a shared limit count the open cycle once', () => {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   const a = account('cardA', { balance: 335600, limitGroupId: 'g1', refs: [] });

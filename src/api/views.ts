@@ -169,7 +169,8 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       // A closed month the issuer published no bill for has no balance estimate: only the open cycle is priced from the balance.
       else if (cycle.status !== 'open') total = posted + planned;
       else if (a.limitGroupId === null) {
-        total = Math.max(a.balance - outstanding - futureOf(a.id), posted + planned);
+        // The balance covers every unpaid bill of the card, so the estimate takes all of them out, also when one month is chosen.
+        total = Math.max(a.balance - outstandingOf(a.id) - futureOf(a.id), posted + planned);
         estimated = total !== posted + planned;
       } else total = posted + planned;
     }
