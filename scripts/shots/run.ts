@@ -1,15 +1,17 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { buildFixtures, type FixtureVariant } from './fixtures.ts';
+import { buildFixtures, realFixtures, type FixtureVariant } from './fixtures.ts';
 
 /**
  * Photographs the app at several screen sizes with the Chrome installed on the machine, using invented data.
  * No server and no login are needed.
- * Usage: npm run shots [-- <route> ...] [--size desktop,laptop,tablet,phone] [--scenario <name>]
+ * Usage: npm run shots [-- <route> ...] [--size desktop,laptop,tablet,phone] [--scenario <name>] [--db <file>]
  * Scenarios: `default` (values hidden, as a new device opens), `visible` (values shown), `light` (light palette),
  * `empty` (nothing connected yet), `dense` (more cards, long names, large values).
  * Photos go to shots/<scenario>/ (not committed). Tall pages are photographed with a tall window.
+ * `--db` photographs the real data of a database copy instead (values shown unless a scenario is given), into shots/real/
+ * or shots/real-<scenario>/. Those photos hold real data: keep them out of the repository and of anything shared.
  */
 const root = resolve(import.meta.dirname, '../..');
 const out = resolve(root, 'shots');
@@ -72,22 +74,27 @@ const ROUTES: Array<[string, string, number]> = [
 const args = process.argv.slice(2);
 const flag = (name: string) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : undefined);
 const sizes = flag('--size') ? flag('--size')!.split(',') : Object.keys(SIZES);
-const scenarioName = flag('--scenario') ?? 'default';
+const dbFile = flag('--db');
+const scenarioName = flag('--scenario') ?? (dbFile ? 'visible' : 'default');
 const scenario = SCENARIOS[scenarioName];
 if (!scenario) throw new Error(`unknown scenario ${scenarioName}; use ${Object.keys(SCENARIOS).join(', ')}`);
-const flagValues = new Set(['--size', '--scenario'].map((f) => args.indexOf(f) + 1).filter((i) => i > 0));
+if (dbFile && scenario.fixtures !== 'default') throw new Error('--db shows the data of the file, so only the default, visible and light scenarios apply');
+if (dbFile && !existsSync(dbFile)) throw new Error(`database not found: ${dbFile}`);
+const flagValues = new Set(['--size', '--scenario', '--db'].map((f) => args.indexOf(f) + 1).filter((i) => i > 0));
 const wanted = args.filter((a, i) => !a.startsWith('--') && !flagValues.has(i));
 
 console.log('building the app for photos...');
 execFileSync('npx', ['vite', 'build', '--config', 'web/vite.config.ts', '--base', './', '--outDir', '../dist/shots', '--emptyOutDir'], { cwd: root, stdio: 'ignore' });
-const fixtures = buildFixtures(new Date(), scenario.fixtures);
+const fixtures = dbFile ? realFixtures(resolve(dbFile), new Date()) : buildFixtures(new Date(), scenario.fixtures);
 // The preferences a device would have saved (values shown, palette), set before the app reads them.
 const storage = `<script>localStorage.clear();${Object.entries(scenario.storage).map(([k, v]) => `localStorage.setItem(${JSON.stringify(k)},${JSON.stringify(v)});`).join('')}</script>`;
 const html = readFileSync(resolve(site, 'index.html'), 'utf8').replace('<head>', `<head>${storage}<script>window.__FIXTURES__=${JSON.stringify(fixtures).replace(/</g, '\\u003c')};</script><script>${readFileSync(resolve(import.meta.dirname, 'mock.js'), 'utf8')}</script>`);
 writeFileSync(resolve(site, 'index.html'), html);
 if (fixtures.pastCycle) ROUTES.push(['cartoes-ciclo-passado', `cards?cycle=${fixtures.pastCycle}`, 1500]);
+const analyst = ROUTES.find(([name]) => name === 'analista');
+if (analyst && fixtures.chatId !== null) analyst[1] = `chat?c=${fixtures.chatId}`;
 
-const dir = resolve(out, scenarioName);
+const dir = resolve(out, dbFile ? (scenarioName === 'visible' ? 'real' : `real-${scenarioName}`) : scenarioName);
 rmSync(dir, { recursive: true, force: true });
 mkdirSync(dir, { recursive: true });
 let count = 0;
@@ -106,3 +113,5 @@ for (const size of sizes) {
   }
 }
 console.log(`${count} photos in ${dir}`);
+// The built page carries the data inline; with real data it should not outlive the photos.
+if (dbFile) rmSync(site, { recursive: true, force: true });

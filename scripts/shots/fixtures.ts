@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { apiRoute } from '../../src/api/routes.ts';
 import { monthRange } from '../../src/api/views.ts';
@@ -7,6 +11,7 @@ import { addAsset } from '../../src/api/networth.ts';
 import { setBudget } from '../../src/api/budgets.ts';
 import { createRule } from '../../src/api/rules.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
+import type { Store } from '../../src/store/store.ts';
 import { addDays, addMonthsToDay } from '../../src/api/cycles.ts';
 import { localDay } from '../../src/core/time.ts';
 import { saveIncome } from '../../src/api/income.ts';
@@ -41,6 +46,8 @@ export interface Fixtures {
   responses: Record<string, unknown>;
   /** A due month (YYYY-MM) of a closed bill, for photographing a past cycle. */
   pastCycle: string | null;
+  /** The conversation the analyst screen opens. */
+  chatId: number | null;
 }
 
 /**
@@ -174,12 +181,49 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
 
   saveIncome(store, null, { name: 'Salário', amount: 650000, dayOfMonth: 5 }, now);
   if (dense) saveIncome(store, null, { name: 'Aluguel recebido do apartamento da praia', amount: 180000, dayOfMonth: 10 }, now);
-  const call = (path: string, query = '', method = 'GET', body = '') => apiRoute(method, path, new URLSearchParams(query), store, now, body)?.body;
+  const detailId = list.find((t) => t.installment && t.accountId === 'cardA')!.id;
+  return screenResponses(store, now, { detailId, cardId: 'cardA' });
+}
+
+/**
+ * The screens with the owner's real data, from a copy of the database (one restored with `npm run restore:backup`).
+ * The file is only read: the app works on a temporary copy that is deleted at the end. Login data is not read, so the
+ * security tab shows invented devices. The photos this feeds hold real data and must never be committed.
+ */
+export function realFixtures(file: string, now = new Date()): Fixtures {
+  const dir = mkdtempSync(join(tmpdir(), 'gmf-shots-'));
+  const copy = join(dir, 'copy.sqlite');
+  try {
+    const source = new DatabaseSync(file, { readOnly: true });
+    source.exec(`VACUUM INTO '${copy.replaceAll("'", "''")}'`);
+    source.close();
+    const store = openSqliteStore(copy, MIGRATIONS);
+    try {
+      const get = (path: string, query = '') => apiRoute('GET', path, new URLSearchParams(query), store, now, '')?.body;
+      const accounts = (get('/api/accounts') as { items: Array<{ id: string; kind: string; hidden: boolean }> }).items;
+      const cardId = accounts.find((a) => a.kind === 'credit_card' && !a.hidden)?.id ?? null;
+      const recent = (get('/api/transactions', 'limit=200') as { items: Array<{ id: string; accountId: string; installment: unknown }> }).items;
+      const detailId = (recent.find((t) => t.installment && t.accountId === cardId) ?? recent[0])?.id ?? null;
+      return screenResponses(store, now, { detailId, cardId });
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** What each screen asks the API for, read from `store`, plus the answers that need no data (login, version, reset). */
+function screenResponses(store: Store, now: Date, pick: { detailId: string | null; cardId: string | null }): Fixtures {
+  const at = now.toISOString();
+  const today = localDay(at);
+  const call = (path: string, query = '') => apiRoute('GET', path, new URLSearchParams(query), store, now, '')?.body;
   const cardsView = call('/api/cards') as { cycles: string[] };
   const pastCycle = cardsView.cycles[1] ?? null;
   const range = monthRange(now);
   const before = previousMonth(range.from);
-  const detailId = list.find((t) => t.installment && t.accountId === 'cardA')!.id;
+  const conversations = call('/api/chat/conversations') as { items: Array<{ id: number }> };
+  const chatId = conversations.items[0]?.id ?? null;
   const responses: Record<string, unknown> = {
     '/api/auth/session': { authenticated: true, strength: 'password' },
     '/api/auth/methods': { password: true, passkeys: true },
@@ -207,8 +251,8 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
     '/api/networth': call('/api/networth'),
     '/api/goals': call('/api/goals'),
     '/api/chat/status': { available: true },
-    '/api/chat/conversations': call('/api/chat/conversations'),
-    '/api/chat/conversations/1': call('/api/chat/conversations/1'),
+    '/api/chat/conversations': conversations,
+    ...(chatId !== null ? { [`/api/chat/conversations/${chatId}`]: call(`/api/chat/conversations/${chatId}`) } : {}),
     '/api/calendar': call('/api/calendar'),
     '/api/spending/compare': call('/api/spending/compare'),
     '/api/outlook': call('/api/outlook'),
@@ -218,11 +262,11 @@ export function buildFixtures(now = new Date(), variant: FixtureVariant = 'defau
     '/api/accounts': call('/api/accounts'),
     '/api/ai': call('/api/ai'),
     '/api/ai/decisions': call('/api/ai/decisions', 'status=applied'),
-    '/api/cycles': call('/api/cycles', 'accountId=cardA'),
-    detail: call(`/api/transactions/${detailId}`),
+    ...(pick.cardId ? { '/api/cycles': call('/api/cycles', `accountId=${pick.cardId}`) } : {}),
+    detail: pick.detailId ? call(`/api/transactions/${pick.detailId}`) : null,
     candidates: { items: [] },
   };
-  return { now: at, responses, pastCycle };
+  return { now: at, responses, pastCycle, chatId };
 }
 
 /** The whole month before the one `from` opens: the cash flow widget asks for it to show the comparison block. */
@@ -258,5 +302,5 @@ function emptyFixtures(now: Date): Fixtures {
     detail: null,
     candidates: { items: [] },
   });
-  return { now: at, responses, pastCycle: null };
+  return { now: at, responses, pastCycle: null, chatId: null };
 }
