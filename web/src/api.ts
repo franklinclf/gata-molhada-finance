@@ -190,6 +190,7 @@ export const api = {
   deleteGoal: (id: number) => request<unknown>(`/api/goals/${id}`, { method: 'DELETE' }),
   outlook: () => request<OutlookView>('/api/outlook'),
   calendar: (month: string) => request<CalendarView>(`/api/calendar${query({ month })}`),
+  recurring: () => request<{ items: RecurringItem[] }>('/api/recurring'),
   markRecurring: (key: string, label: 'subscription' | 'recurring' | 'none' | null) =>
     request<{ ok: true }>('/api/recurring/mark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, label }) }),
   ignoreRecurring: (key: string, ignored: boolean) =>

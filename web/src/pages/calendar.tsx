@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import type { CalendarDay } from '../api.ts';
 import { brl, dayMonth, localDay, monthName } from '../format.ts';
-import { TxRow } from '../ui.tsx';
+import { Go, TxRow } from '../ui.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { Loading } from '../ui.tsx';
@@ -145,6 +145,11 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
                   <div class="muted">
                     {r.regular && !r.stale ? recurringWhen(r, data.today) : `${r.occurrences} ${r.occurrences === 1 ? 'vez' : 'vezes'} · última ${dayMonth(r.lastDay)}`}
                   </div>
+                  {r.direction === 'in' && (
+                    <Go page="accounts" params={{ renda: '1', nome: r.name, valor: String(r.amount), dia: String(r.dayOfMonth) }}>
+                      Corrigir dia ou valor
+                    </Go>
+                  )}
                 </div>
                 <strong class={r.direction === 'in' ? 'good-text' : ''}>
                   {r.direction === 'in' ? '+' : '−'}

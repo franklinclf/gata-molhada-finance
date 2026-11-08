@@ -25,12 +25,20 @@ export function AccountsPage({ route, now, hidden, view }: { route: Route; now: 
           </button>
         ))}
       </div>
-      {chosen === 'cashflow' ? <CashflowPage route={route} now={now} hidden={hidden} embedded /> : chosen === 'networth' ? <NetWorthPage now={now} hidden={hidden} embedded /> : <Balances now={now} hidden={hidden} focusIncome={route.params.get('renda') === '1'} />}
+      {chosen === 'cashflow' ? <CashflowPage route={route} now={now} hidden={hidden} embedded /> : chosen === 'networth' ? <NetWorthPage now={now} hidden={hidden} embedded /> : <Balances now={now} hidden={hidden} focusIncome={route.params.get('renda') === '1'} prefill={incomePrefill(route.params)} />}
     </div>
   );
 }
 
-function Balances({ now, hidden, focusIncome }: { now: Date; hidden: boolean; focusIncome: boolean }) {
+/** "Corrigir" on a detected income sends its name, value (cents) and day, so the form opens filled in. */
+function incomePrefill(params: URLSearchParams): { name: string; amount: number; day: number } | null {
+  const name = params.get('nome');
+  const amount = Number(params.get('valor'));
+  const day = Number(params.get('dia'));
+  return name && Number.isInteger(amount) && amount > 0 && Number.isInteger(day) && day >= 1 && day <= 31 ? { name, amount, day } : null;
+}
+
+function Balances({ now, hidden, focusIncome, prefill }: { now: Date; hidden: boolean; focusIncome: boolean; prefill: { name: string; amount: number; day: number } | null }) {
   const { data, error, loading } = useLoad(() => api.balances(), []);
   const outlook = useLoad(() => api.outlook(), [], 120_000);
   return (
@@ -59,7 +67,7 @@ function Balances({ now, hidden, focusIncome }: { now: Date; hidden: boolean; fo
               <OutlookCommitted data={outlook.data} hidden={hidden} />
             </section>
           )}
-          <IncomePanel hidden={hidden} focus={focusIncome} />
+          <IncomePanel hidden={hidden} focus={focusIncome} prefill={prefill} />
           {data.institutions.map((inst, n) => (
             <section class="panel" key={inst.institution}>
               <div class="row-head">

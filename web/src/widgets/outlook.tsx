@@ -66,6 +66,14 @@ export function OutlookTimeline({ data, hidden, limit, detail = false, linkMore 
               {e.afterMonth && <span class="badge">próximo mês</span>}
               {e.note && <small class="muted outlook-origin outlook-note">{e.note}</small>}
               {detail && <small class="muted outlook-origin">{e.origin}</small>}
+              {/* A detected income only knows the day the bank posted it; the owner can say the real payment day. */}
+              {e.direction === 'in' && data.expectedIn.source === 'recurring' && (
+                <small class="outlook-origin">
+                  <Go page="accounts" params={{ renda: '1', nome: e.name, valor: String(e.amount), dia: /dia (\d+)/.exec(e.origin)?.[1] ?? String(Number(e.day.slice(8, 10))) }}>
+                    Corrigir dia ou valor
+                  </Go>
+                </small>
+              )}
             </span>
             <span class="outlook-amount">
               <strong class={e.direction === 'in' ? 'good-text' : ''}>
@@ -134,9 +142,9 @@ export function OutlookWidget({ now, hidden, size }: WidgetProps) {
             <div class="muted">{freeNote(data, hidden)}</div>
             {data.expectedIn.source !== 'registered' && (
               <div class="muted">
-                {data.expectedIn.source === 'none' ? 'Sem renda cadastrada. ' : 'Entradas estimadas pelos créditos que se repetem. '}
+                {data.expectedIn.source === 'none' ? 'Sem renda cadastrada. ' : 'Entradas estimadas pelos dias em que o banco lançou. '}
                 <Go page="accounts" params={{ renda: '1' }}>
-                  Cadastrar renda
+                  {data.expectedIn.source === 'none' ? 'Cadastrar renda' : 'Corrigir dias e valores'}
                 </Go>
               </div>
             )}
