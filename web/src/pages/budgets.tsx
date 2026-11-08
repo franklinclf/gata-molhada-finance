@@ -37,16 +37,16 @@ function Line({ line, month, hidden, onChanged, onError }: { line: BudgetLine; m
     <li class="budget-line">
       <div class="budget-head">
         {params ? (
-          <Go class="grow clip" page="transactions" params={{ ...params, to: `${month}-${String(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()).padStart(2, '0')}` }}>
+          <Go class="grow clip wrap-phone" page="transactions" params={{ ...params, to: `${month}-${String(new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()).padStart(2, '0')}` }}>
             {line.name}
           </Go>
         ) : (
-          <span class="grow clip">
+          <span class="grow clip wrap-phone">
             {line.name} <span class="badge muted">grupo</span>
           </span>
         )}
         <strong class={over ? 'bad-text' : ''}>{brl(line.actual, hidden)}</strong>
-        <span class="muted">de {line.budget !== null ? brl(line.budget, hidden) : 'sem orçamento'}</span>
+        <span class="muted">{line.budget !== null ? `de ${brl(line.budget, hidden)}` : 'sem limite definido'}</span>
         <button class="link" onClick={() => setEditing(!editing)}>
           {line.budget === null ? 'Definir' : 'Editar'}
         </button>
@@ -182,6 +182,8 @@ export function BudgetsPage({ route, now, hidden }: { route: Route; now: Date; h
   const [overwrite, setOverwrite] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const go = (m: string) => patchParams({ month: m === current ? null : m });
+  const withBudget = data?.lines.filter((l) => l.budget !== null) ?? [];
+  const withoutBudget = data?.lines.filter((l) => l.budget === null) ?? [];
   const copy = async () => {
     try {
       const r = await api.copyBudgets(addMonths(month, -1), month, Number(adjust.replace(',', '.')) || 0, overwrite);
@@ -251,11 +253,25 @@ export function BudgetsPage({ route, now, hidden }: { route: Route; now: Date; h
             {data.lines.length === 0 ? (
               <div class="empty">Sem gastos nem orçamentos neste mês.</div>
             ) : (
-              <ul class="rows tall">
-                {data.lines.map((l) => (
-                  <Line key={`${l.scope}${l.name}${l.budget}`} line={l} month={month} hidden={hidden} onChanged={reload} onError={setMessage} />
-                ))}
-              </ul>
+              <>
+                {withBudget.length > 0 && (
+                  <ul class="rows tall">
+                    {withBudget.map((l) => (
+                      <Line key={`${l.scope}${l.name}${l.budget}`} line={l} month={month} hidden={hidden} onChanged={reload} onError={setMessage} />
+                    ))}
+                  </ul>
+                )}
+                {withoutBudget.length > 0 && (
+                  <>
+                    <h3>Gastos sem orçamento</h3>
+                    <ul class="rows tall">
+                      {withoutBudget.map((l) => (
+                        <Line key={`${l.scope}${l.name}${l.budget}`} line={l} month={month} hidden={hidden} onChanged={reload} onError={setMessage} />
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
             )}
             <NewBudget month={month} onSaved={reload} onError={setMessage} />
             <div class="note">Um grupo e uma categoria dentro dele não podem ter orçamento ao mesmo tempo.</div>

@@ -23,7 +23,7 @@ flowchart TD
   end
 
   subgraph REC["3. Reconciliação (runReconciliation)"]
-    ST --> TRIM["Corta antes de DEFAULT_DATA_START<br/>2026-01-01"]
+    ST --> TRIM["Deixa de fora o que é anterior a DEFAULT_DATA_START<br/>2026-01-01 (os registros ficam guardados)"]
     TRIM --> ACC["Contas canônicas<br/>reconcile/accounts.ts"]
     ACC --> TX["Transações canônicas<br/>reconcile/transactions.ts<br/>estados: single_source, confirmed,<br/>stale_pending (só conta), billed, ignored"]
     TX --> PROOF["Prova por fatura<br/>reconcile/bill-proof.ts"]
@@ -75,7 +75,7 @@ flowchart LR
   H --> K
 ```
 
-Cartão: uma pendente nunca é posta de lado por idade, porque o Meu Pluggy mantém toda compra da fatura aberta como pendente.
+Cartão: uma pendente nunca é posta de lado por idade, porque o Meu Pluggy mantém toda compra da fatura aberta como pendente. Na camada efetiva, a compra de cartão que a fonte ainda chama de pendente aparece como lançada quando a fatura dela já foi publicada (`statusByBill` em `src/api/scope.ts`): pela fatura que o banco indicou (`billForecast`) ou, sem indicação, pela data até o último fechamento publicado. Uma escolha sua de status vale mais, e os totais não mudam.
 
 ## 3. Quem decide a categoria (da mais forte para a mais fraca)
 
@@ -90,7 +90,7 @@ flowchart TD
   R6 --> R7["Rótulo da fonte, como veio"]
 ```
 
-O papel (pagamento de fatura, entre contas suas, investimento) vem de fatos da fonte e é independente da categoria mostrada. Só uma escolha sua o muda.
+O papel (pagamento de fatura, entre contas suas, investimento) vem de fatos da fonte e é independente da categoria mostrada. Só uma escolha sua o muda. Um Pix ou transferência sem papel que espelha, em outra conta sua, uma transferência entre contas suas marcada pela fonte (mesmo valor, sinal oposto, até 2 dias) ganha o mesmo papel; esse pareamento olha todas as contas, ocultas inclusive, para dar o mesmo resultado em todas as telas.
 
 ## 4. Ciclos de cartão
 
@@ -111,6 +111,7 @@ flowchart TD
   X --> CMP["Conferir: total do banco x soma do ciclo"]
   Y --> CMP
   CMP -->|"1 a 3 compras a até 6 dias do fechamento<br/>somam a diferença"| MV["Sugere mover"]
+  CMP -->|"a soma de registros que você ignorou é a diferença"| IG["Sugere restaurar"]
   CMP -->|"nada explica"| MS["Falta (lançar à mão) ou sobra (pendente suspeita)"]
 ```
 
@@ -123,6 +124,7 @@ flowchart TD
 | Parcela, status, fatura | `installment_overrides`, `transaction_overrides` | Sim |
 | Ignorar, juntar, separar | `ignored_records`, `manual_links` | Sim |
 | Fatura paga ou não | `cycle_overrides` | Sim (por conta canônica) |
+| Fatura dispensada em Conferir | `settings` (`bill_check_dismissed`) | Sim (por conta canônica e mês) |
 | Transação digitada | `manual_transactions` | Sim |
 
 ## 6. Custo e limites

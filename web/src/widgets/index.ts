@@ -40,7 +40,7 @@ export const WIDGETS: Record<WidgetId, { title: string; component: FunctionCompo
   installments: { title: 'Parcelas', component: InstallmentsWidget },
   budget: { title: 'Orçamento', component: BudgetWidget },
   goals: { title: 'Metas', component: GoalsWidget },
-  summary: { title: 'Resumo do mês', component: SummaryWidget },
+  summary: { title: 'Entrou menos saiu', component: SummaryWidget },
   upcoming: { title: 'Próximos 14 dias', component: UpcomingWidget },
   calendar: { title: 'Calendário', component: CalendarWidget },
   trend: { title: 'Maiores altas', component: TrendWidget },

@@ -1,12 +1,15 @@
 import { useState } from 'preact/hooks';
 import { Button } from './ds.tsx';
 import { api } from './api.ts';
-import type { TransactionDetail } from './api.ts';
+import { ApiError } from './api.ts';
+import type { CategoryRow, TransactionDetail } from './api.ts';
 import { brl, dayMonth, foreignMoney, localDay, monthName } from './format.ts';
+import { accountName, cardName } from './names.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { CopyButton } from './copy.tsx';
 import { CategorySelect } from './CategorySelect.tsx';
+import { partyRuleApplies, partyRuleConditions, partyRuleName } from './party-rule.ts';
 import { ManualForm } from './ManualForm.tsx';
 import { Select } from './Select.tsx';
 import { Loading, StatusBadge } from './ui.tsx';
@@ -76,6 +79,9 @@ function InstallmentField({ id, d, act }: { id: string; d: Detail; act: Act }) {
   );
 }
 
+/** Fewer characters than this in a merchant key make "Assinatura ou recorrente" ask before it marks every charge with that key. */
+const MIN_RECURRING_KEY = 4;
+
 /** Everything the owner can fix about this one transaction, as one grid of the same kind of control. */
 function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: boolean; act: Act }) {
   const r = d.recurrence;
@@ -84,12 +90,18 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
   const card = d.account.kind === 'credit_card';
   const rev = d.reversal;
   const credit = d.transaction.amount > 0;
+  // A very short key ("99") also matches charges that have nothing to do with this one.
+  const shortKey = r.name.length < MIN_RECURRING_KEY;
+  const markRecurring = (value: string) => {
+    if (value !== '' && value !== 'none' && shortKey && !window.confirm(`A chave desta cobrança tem só ${r.name.length} ${r.name.length === 1 ? 'caractere' : 'caracteres'} (“${r.name}”) e vale para toda cobrança com esse nome, mesmo de outro estabelecimento. Marcar mesmo assim?`)) return;
+    void act.run(() => api.markRecurring(r.key, value === '' ? null : (value as 'subscription' | 'recurring' | 'none')));
+  };
   return (
     <div class="dsec">
       <h3>Corrigir</h3>
       <div class="correct">
         {!manual && (
-          <Field label={`Status${d.statusByUser ? ' (definido por você)' : ''}`} hint={d.statusByUser ? undefined : `A fonte diz: ${d.transaction.status === 'pending' ? 'pendente' : 'lançada'}.`}>
+          <Field label={`Status${d.statusByUser ? ' (definido por você)' : ''}`} hint={d.statusByUser ? undefined : d.statusByBill ? 'A fonte ainda diz pendente, mas a fatura desta compra já fechou.' : `A fonte diz: ${d.transaction.status === 'pending' ? 'pendente' : 'lançada'}.`}>
             <Select
               ariaLabel="Status da transação"
               value={d.statusByUser ? d.transaction.status : ''}
@@ -110,13 +122,13 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
             />
           </Field>
         )}
-        <Field label="Assinatura ou recorrente" hint={`${detected.charAt(0).toUpperCase()}${detected.slice(1)}. Vale para todas as cobranças de “${r.name}”.`}>
+        <Field label="Assinatura ou recorrente" hint={`${detected.charAt(0).toUpperCase()}${detected.slice(1)}. Vale para todas as cobranças de “${d.transaction.title}” (chave “${r.name}”).${shortKey ? ' A chave é curta e pode pegar cobranças de outros lugares.' : ''}`}>
           <Select
             ariaLabel="Recorrência"
             value={r.label ?? ''}
             emptyLabel="Automático"
             options={[{ value: 'subscription', label: 'Assinatura (streaming, app, plano)' }, { value: 'recurring', label: 'Conta recorrente (aluguel, internet)' }, { value: 'none', label: 'Não é recorrente' }]}
-            onChange={(value) => void act.run(() => api.markRecurring(r.key, value === '' ? null : (value as 'subscription' | 'recurring' | 'none')))}
+            onChange={markRecurring}
           />
         </Field>
         {!manual && (rev || d.reversalCandidates.length > 0) && (
@@ -136,20 +148,51 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
   );
 }
 
+/** Categories already given to this description, most common first, apart from the one it has now. */
+function suggestionsFor(d: Detail): string[] {
+  const seen = new Map<string, number>();
+  for (const r of d.merchant.recent) if (r.category !== null && r.category !== d.transaction.category) seen.set(r.category, (seen.get(r.category) ?? 0) + 1);
+  return [...seen.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+}
+
 /** The category, set in one step: pick or create, and it is saved. */
-function CategorySection({ id, d, act }: { id: string; d: Detail; act: Act }) {
+function CategorySection({ id, d, manual, act }: { id: string; d: Detail; manual: boolean; act: Act }) {
   const categories = useLoad(() => api.categories(), []);
   const [similar, setSimilar] = useState(false);
   const [aiNote, setAiNote] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
-  // "Apply to similar" is turned off after a save, so the next change in the same drawer does not reach many transactions by accident.
-  const save = async (category: string | null) => {
+  // The category just saved for this transaction alone, while others share its description: offered once more as a rule for all of them.
+  const [followUp, setFollowUp] = useState<string | null>(null);
+  const t = d.transaction;
+  // The count includes this transaction unless it is left out of the totals.
+  const others = Math.max(0, d.merchant.count - (t.excluded ? 0 : 1));
+  const save = async (category: string | null, apply = false) => {
     setSaved(null);
-    const applied = similar;
-    if (await act.run(() => api.setCategory(id, category, similar))) {
+    setFollowUp(null);
+    if (await act.run(() => api.setCategory(id, category, apply))) {
       setSimilar(false);
-      setSaved(applied ? 'Categoria salva também nas outras com a mesma descrição.' : 'Categoria salva só nesta transação.');
+      if (category === null) setSaved(d.rule !== null ? 'Voltou à regra desta descrição, que continua valendo para as outras. Para tirar a regra, use “Remover a regra”.' : 'Voltou à categoria da fonte.');
+      else if (apply) setSaved(`Categoria salva também nas ${others} com a mesma descrição e nas próximas.`);
+      else {
+        setSaved('Categoria salva só nesta transação.');
+        if (others > 0) setFollowUp(category);
+      }
     }
+  };
+  const pick = (category: string) => {
+    if (category.trim() === '') return;
+    // Choosing the category it already has would only turn the source's word into the owner's, with nothing changed.
+    if (category === t.category && !similar) {
+      setSaved('Já está nesta categoria.');
+      setFollowUp(others > 0 && d.rule?.category !== category ? category : null);
+      return;
+    }
+    void save(category, similar);
+  };
+  const removeRule = async () => {
+    setSaved(null);
+    setFollowUp(null);
+    if (await act.run(() => api.deleteRule(d.merchant.key))) setSaved('Regra removida. A categoria voltou à da fonte.');
   };
   const ask = async () => {
     setAiNote(null);
@@ -160,31 +203,86 @@ function CategorySection({ id, d, act }: { id: string; d: Detail; act: Act }) {
       else setAiNote(r.skipped ? why[r.skipped] : r.stoppedBy === 'budget' ? 'O orçamento de IA do mês acabou.' : 'A IA não respondeu. Tente de novo.');
     }, 'Não foi possível perguntar à IA.');
   };
+  // A typed-in transaction has no source, so "da fonte" says nothing about it.
+  const origin = manual && t.categoryOrigin === 'source' ? null : ORIGIN[t.categoryOrigin];
   return (
     <div class="dsec">
       <h3>Categoria</h3>
       <div class="row-head">
         <span>
-          <strong>{d.transaction.category ?? 'Sem categoria'}</strong> <span class="muted">· {ORIGIN[d.transaction.categoryOrigin]}</span>
+          <strong>{t.category ?? 'Sem categoria'}</strong> {origin && <span class="muted">· {origin}</span>}
         </span>
         <Button size="sm" disabled={act.busy} onClick={() => void ask()} title="Pergunta de novo à IA sobre a descrição desta transação">
           Perguntar à IA
         </Button>
       </div>
-      {d.transaction.categoryOrigin !== 'source' && d.transaction.sourceCategory !== null && <div class="hint">A fonte diz: {d.transaction.sourceCategory}</div>}
+      {t.categoryOrigin !== 'source' && t.sourceCategory !== null && <div class="hint">A fonte diz: {t.sourceCategory}</div>}
       {aiNote && <div class="hint" role="status">{aiNote}</div>}
       {saved && <div class="hint" role="status">{saved}</div>}
-      <CategorySelect value="" onChange={(value) => value.trim() !== '' && void save(value)} categories={categories.data?.items} placeholder="Trocar a categoria..." />
-      <label class="check">
-        <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />
-        Valer para todas com a descrição “{d.transaction.description}” ({d.merchant.count})
-      </label>
-      {d.transaction.categoryOrigin !== 'source' && (
+      <CategorySelect value="" onChange={pick} categories={categories.data?.items} suggested={suggestionsFor(d)} placeholder="Trocar a categoria..." />
+      {followUp !== null && others > 0 && (
+        <div class="actions">
+          <Button size="sm" disabled={act.busy} onClick={() => void save(followUp, true)} title="Cria uma regra para esta descrição: vale para as que já existem e para as próximas">
+            Aplicar também às {others} com a mesma descrição
+          </Button>
+        </div>
+      )}
+      {/* While the follow-up button is shown the choice is already made, so a box to tick before choosing would do nothing. */}
+      {others > 0 && followUp === null && (
+        <label class="check">
+          <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />
+          Ao escolher, aplicar também às {others} com a descrição “{t.description}”
+        </label>
+      )}
+      {partyRuleApplies(t) && <PartyRule key={t.counterparty!.name} d={d} categories={categories.data?.items} act={act} onSaved={setSaved} />}
+      {t.categoryOrigin === 'rule' && d.rule !== null && (
+        <button class="link" disabled={act.busy} onClick={() => void removeRule()} title="Apaga a regra desta descrição; vale para todas as que a usam">
+          Remover a regra desta descrição (afeta as {d.merchant.count}, com esta)
+        </button>
+      )}
+      {t.categoryOrigin === 'rule' && d.rule === null && (
+        <button
+          class="link"
+          onClick={() => {
+            patchParams({ tx: null });
+            navigate('settings', { tab: 'rules' });
+          }}
+        >
+          Vem de uma regra criada em Ajustes. Abrir a aba Regras
+        </button>
+      )}
+      {t.categoryOrigin === 'override' && (
         <button class="link" disabled={act.busy} onClick={() => void save(null)}>
-          Voltar à categoria da fonte
+          {d.rule !== null ? 'Voltar à regra desta descrição' : 'Voltar à categoria da fonte'}
         </button>
       )}
     </div>
+  );
+}
+
+/** A rule on the person or company of a Pix or TED: the bank text carries the name, so "same description" would catch one transaction only. */
+function PartyRule({ d, categories, act, onSaved }: { d: Detail; categories: readonly CategoryRow[] | undefined; act: Act; onSaved: (message: string) => void }) {
+  const t = d.transaction;
+  const name = t.counterparty!.name!.trim();
+  const direction = t.amount < 0 ? 'out' : 'in';
+  const preview = useLoad(() => api.previewRule(partyRuleConditions(name, direction), ''), [name, direction], undefined, 'party-rule-preview');
+  const count = preview.data?.matched;
+  const create = async (category: string) => {
+    if (category.trim() === '') return;
+    const ok = await act.run(async () => {
+      try {
+        await api.saveRule({ name: partyRuleName(name, direction), active: true, conditions: partyRuleConditions(name, direction), actions: { category } });
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) throw new Error(`Já existe uma regra “${partyRuleName(name, direction)}”. Edite-a em Ajustes, aba Regras.`);
+        throw e;
+      }
+    });
+    if (ok) onSaved(`Regra criada: as transferências ${direction === 'out' ? 'para' : 'de'} ${name} vão para “${category}”, as que já existem e as próximas. Uma escolha sua para uma transação sozinha continua valendo.`);
+  };
+  return (
+    <Field label={`Criar regra para todas as transferências ${direction === 'out' ? 'para' : 'de'} ${name}${count === undefined ? '' : ` (${count})`}`} hint="Vale para o nome, qualquer que seja o texto do banco.">
+      <CategorySelect value="" onChange={(category) => void create(category)} categories={categories} ariaLabel="Categoria da regra" placeholder="Escolher a categoria da regra..." />
+    </Field>
   );
 }
 
@@ -319,6 +417,43 @@ function Chips({ d, manual }: { d: Detail; manual: boolean }) {
   );
 }
 
+/**
+ * Everything else with this description. It asks the same search the "see all" link opens, so the count and the total are those of the list
+ * the link leads to (the installment number is left out of the search, because every installment of a purchase is the same shop).
+ */
+function SameDescription({ d, hidden }: { d: Detail; hidden: boolean }) {
+  const text = d.transaction.description.replace(/\s*\d{1,2}\s*\/\s*\d{1,2}\s*$/, '').trim();
+  const found = useLoad(() => api.explore(new URLSearchParams({ q: text, limit: '6' })), [text]);
+  const r = found.data;
+  return (
+    <details>
+      <summary>Neste estabelecimento ({r ? `${r.total} · ${brl(r.sums.net, hidden)}` : '…'})</summary>
+      {r && r.items.length > 0 && <div class="hint">Última em {dayMonth(localDay(r.items[0]!.occurredAt))}/{localDay(r.items[0]!.occurredAt).slice(0, 4)}</div>}
+      <ul class="rows">
+        {r?.items.map((t) => (
+          <li key={t.id}>
+            <span class="grow">
+              {dayMonth(localDay(t.occurredAt))}/{localDay(t.occurredAt).slice(0, 4)} · {t.category ?? 'Sem categoria'}
+            </span>
+            <button class="link" onClick={() => patchParams({ tx: t.id })}>
+              {brl(t.amount, hidden)}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        class="link"
+        onClick={() => {
+          patchParams({ tx: null });
+          navigate('transactions', { q: text });
+        }}
+      >
+        Ver todas deste estabelecimento
+      </button>
+    </details>
+  );
+}
+
 /** Side panel with what is known about one transaction and the few things the owner may want to change. */
 export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean }) {
   const detail = useLoad(() => api.detail(id), [id]);
@@ -344,7 +479,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
                 {d.transaction.title}
                 <CopyButton value={d.transaction.description} label="Copiar descrição" />
               </h2>
-              {d.transaction.title !== d.transaction.description && <div class="muted clip">Banco: {d.transaction.description}</div>}
+              {!manual && d.transaction.title !== d.transaction.description && <div class="muted clip">Banco: {d.transaction.description}</div>}
             </div>
             <div class={`big ${d.transaction.amount >= 0 ? 'good-text' : ''}${d.reversal?.side === 'charge' && !d.reversal.partial ? ' struck' : ''}`}>
               {brl(d.transaction.amount, hidden)}
@@ -356,7 +491,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
               <dd>{dayMonth(localDay(d.transaction.occurredAt))}/{localDay(d.transaction.occurredAt).slice(0, 4)}</dd>
               <dt>Conta</dt>
               <dd>
-                {d.account.institution} · {d.account.name}
+                {d.account.kind === 'credit_card' ? cardName(d.account.institution, d.account.name) : `${d.account.institution} · ${accountName(d.account.institution, d.account.name, d.account.kind)}`}
                 {d.account.last4 ? ` •••• ${d.account.last4}` : ''}
                 {d.account.last4 && <CopyButton value={d.account.last4} label="Copiar final do cartão" />}
               </dd>
@@ -382,7 +517,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
             </dl>
             {act.error && <div class="error" role="alert">{act.error}</div>}
 
-            <CategorySection id={id} d={d} act={act} />
+            <CategorySection key={id} id={id} d={d} manual={manual} act={act} />
             <Corrections id={id} d={d} manual={manual} act={act} />
 
             {manual && (
@@ -426,33 +561,7 @@ export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean 
               </details>
             )}
 
-            <details>
-              <summary>
-                Neste estabelecimento ({d.merchant.count} · {brl(d.merchant.total, hidden)})
-              </summary>
-              <div class="hint">{d.merchant.firstDay ? `De ${dayMonth(d.merchant.firstDay)}/${d.merchant.firstDay.slice(0, 4)} a ${dayMonth(d.merchant.lastDay!)}/${d.merchant.lastDay!.slice(0, 4)}` : ''}</div>
-              <ul class="rows">
-                {d.merchant.recent.map((r) => (
-                  <li key={r.id}>
-                    <span class="grow">
-                      {dayMonth(r.day)}/{r.day.slice(0, 4)} · {r.category ?? 'Sem categoria'}
-                    </span>
-                    <button class="link" onClick={() => patchParams({ tx: r.id })}>
-                      {brl(r.amount, hidden)}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <button
-                class="link"
-                onClick={() => {
-                  patchParams({ tx: null });
-                  navigate('transactions', { q: d.transaction.description });
-                }}
-              >
-                Ver todas deste estabelecimento
-              </button>
-            </details>
+            <SameDescription d={d} hidden={hidden} />
 
             {!manual && (
               <details>

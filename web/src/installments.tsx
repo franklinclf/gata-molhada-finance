@@ -90,13 +90,14 @@ export function PurchaseRow({ p, hidden, detailed = false }: { p: InstallmentPur
 }
 
 /** What the installments weigh on each bill, month by month. The colour is the least settled status in the month. */
-export function MonthBars({ months, hidden, selected, onSelect, height = 110 }: { months: Array<{ cycle: string; paid: number; billed: number; open: number; future: number; count: number }>; hidden: boolean; selected?: string | null; onSelect?: (cycle: string) => void; height?: number }) {
+export function MonthBars({ months, hidden, selected, onSelect, height = 110, valueOnSelected = false }: { months: Array<{ cycle: string; paid: number; billed: number; open: number; future: number; count: number }>; hidden: boolean; selected?: string | null; onSelect?: (cycle: string) => void; height?: number; /** On narrow screens only the selected bar keeps its value (see `Bars`). */ valueOnSelected?: boolean }) {
   return (
     <Bars
       hidden={hidden}
       height={height}
       selected={selected ?? undefined}
       onSelect={onSelect}
+      valueOnSelected={valueOnSelected}
       data={months.map((m) => {
         const status: InstallmentSlot['status'] = m.billed > 0 ? 'billed' : m.open > 0 ? 'open' : m.future > 0 ? 'future' : 'paid';
         const total = m.paid + m.billed + m.open + m.future;

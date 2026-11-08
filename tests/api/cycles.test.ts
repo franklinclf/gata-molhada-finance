@@ -135,6 +135,16 @@ test('cards view: an unpaid closed bill is outstanding, due first, and not mixed
   assert.equal(v.totals.outstanding, 148000);
 });
 
+test('cards view: the open bill estimate is the same whether the open month or "em aberto" is chosen', () => {
+  const { store } = setup({ payments: false });
+  // The issuer balance holds the two unpaid bills plus 120,00 still open.
+  store.replaceCanonicalAccounts([account('card1', { balance: 160000 })], [], NOW.toISOString());
+  const open = cards(store, NOW).cards[0]!;
+  const month = cards(store, NOW, {}, open.cycle!.key).cards[0]!;
+  assert.equal(open.total, 12000);
+  assert.equal(month.total, open.total);
+});
+
 test('cards view: cards on a shared limit count the open cycle once', () => {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   const a = account('cardA', { balance: 335600, limitGroupId: 'g1', refs: [] });
@@ -292,6 +302,35 @@ test('an excess with no older bill still owed stays as overpaid', () => {
   store.replaceCanonicalTransactions([...store.listCanonicalTransactions(), tx('pay-oct-extra', 'card1', '2026-10-16', 5000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
   const oct = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-10')!;
   assert.deepEqual([oct.overpaid, oct.latePaid], [5000, null]);
+});
+
+test('a credit balance the bank sends back after a bill was paid twice is netted against the payments, so the bill is not overpaid', () => {
+  const { store, card1 } = setup();
+  const octOf = () => cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-10')!;
+  const base = store.listCanonicalTransactions();
+  // The October bill (68000) is paid a second time, and the bank returns that money to the checking account.
+  store.replaceCanonicalTransactions([...base, tx('pay-oct-again', 'card1', '2026-10-16', 68000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  assert.deepEqual([octOf().paid, octOf().overpaid], [136000, 68000]);
+  store.replaceCanonicalTransactions([...base, tx('pay-oct-again', 'card1', '2026-10-16', 68000, 'Pagamento de cartão de crédito'), tx('pay-oct-back', 'card1', '2026-10-20', -68000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const oct = octOf();
+  assert.deepEqual([oct.paid, oct.overpaid, oct.outstanding, oct.status, oct.charges], [68000, 0, 0, 'paid', 68000], 'the return takes from the payments and is not a purchase');
+});
+
+test('a return with no payment in its window never makes a bill paid by less than nothing', () => {
+  const { store, card1 } = setup({ payments: false });
+  store.replaceCanonicalTransactions([...store.listCanonicalTransactions(), tx('back', 'card1', '2026-10-20', -5000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const oct = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-10')!;
+  assert.deepEqual([oct.paid, oct.outstanding, oct.overpaid], [0, 68000, 0]);
+});
+
+test('the due date of a month nobody owes anything in comes from the cards that have a bill, not from an empty one', () => {
+  const { store, card1 } = setup();
+  const card2 = account('card2', { dueDate: '2026-09-14' });
+  store.upsertSourceBills('pierre', [{ externalId: 'b2-sep', accountExternalId: 'ext-card2', dueDate: '2026-09-14', closingDate: '2026-09-07', total: 0, minimumPayment: null }, { externalId: 'b2-oct', accountExternalId: 'ext-card2', dueDate: '2026-10-14', closingDate: '2026-10-07', total: 0, minimumPayment: null }], NOW.toISOString());
+  store.replaceCanonicalAccounts([card1, card2], [], NOW.toISOString());
+  const sep = cards(store, NOW, {}, '2026-09');
+  assert.equal(sep.totals.toPay, 0);
+  assert.equal(sep.totals.nextDueDate, '2026-09-15', 'the empty bill of 14/09 says nothing about when money is due');
 });
 
 test('the open cycle leaves out installments that belong to later bills, which the issuer balance includes', () => {
@@ -507,17 +546,6 @@ test('a charge goes on the bill the issuer put it on, by id or by forecast, not 
   assert.deepEqual(byBank, ['forecast', 'on-closing-day']);
 });
 
-test('a charge from before the data start that the issuer billed after it is kept, so that bill is not short', () => {
-  const store = openSqliteStore(':memory:', MIGRATIONS);
-  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
-  store.upsertSourceBills('pluggy', [{ externalId: 'b-jan', accountExternalId: 'ext-bk', dueDate: '2026-01-15', closingDate: '2026-01-08', total: 5000, minimumPayment: null }], NOW.toISOString());
-  const parties = (billId: string | null) => (billId ? { operation: null, mcc: null, payer: null, receiver: null, billId } : undefined);
-  const row = (externalId: string, occurredAt: string, billId: string | null) => ({ externalId, accountExternalId: 'ext-bk', occurredAt, amount: -1000, description: externalId, descriptionRaw: null, status: 'posted' as const, installment: null, category: null, parties: parties(billId) });
-  store.upsertSourceTransactions('pluggy', [row('old-billed-later', '2025-11-28T15:00:00Z', 'b-jan'), row('old-unbilled', '2025-11-28T15:00:00Z', null), row('new', '2026-01-02T15:00:00Z', null)], NOW.toISOString());
-  assert.equal(store.deleteSourceTransactionsBefore('2026-01-01T03:00:00.000Z'), 1);
-  assert.deepEqual(store.listSourceTransactions('pluggy').map((t) => t.externalId).sort(), ['new', 'old-billed-later']);
-});
-
 test('reconciliation uses a charge older than the data start when its bill is due after it', () => {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   const at = NOW.toISOString();
@@ -531,6 +559,7 @@ test('reconciliation uses a charge older than the data start when its bill is du
   ], at);
   runReconciliation(store, { now: () => NOW });
   assert.deepEqual(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => t.amount), [-27490]);
+  assert.equal(store.listSourceTransactions('pluggy').length, 2, 'the older record that no bill claims is left out of the canonical data, not deleted');
 });
 
 test('cards that close on different days: one bar per due month shows the closed bill and the card still adding to it', () => {
@@ -618,4 +647,19 @@ test('the second installment the bank has not listed yet explains what its bill 
   const sep = cards(store, today, {}, '2026-11').cards[0]!;
   assert.deepEqual([sep.total, sep.posted, sep.plannedInstallments], [11293, 6298, 4995]);
   assert.deepEqual(billCheck(store, today).items.filter((i) => i.cycleKey === '2026-11'), [], 'the gap is the installment, so nothing is reported missing');
+});
+
+test('a credit balance returned after the next closing offsets the bill that was paid twice, not the bill it falls in', () => {
+  const { store, card1 } = setup();
+  // October (68000) is paid twice; the bank returns the second payment on 12/11, in the window of the November bill, which is paid in full.
+  store.upsertSourceBills('pierre', [{ externalId: 'b-nov', accountExternalId: 'ext-card1', dueDate: '2026-11-15', closingDate: '2026-11-08', total: 30000, minimumPayment: null }], NOW.toISOString());
+  const base = store.listCanonicalTransactions();
+  store.replaceCanonicalTransactions([...base, tx('buy-nov', 'card1', '2026-10-20', -30000), tx('pay-oct-again', 'card1', '2026-10-16', 68000, 'Pagamento de cartão de crédito'), tx('pay-oct-back', 'card1', '2026-11-12', -68000, 'Pagamento de cartão de crédito'), tx('pay-nov', 'card1', '2026-11-15', 30000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const [, oct, nov] = cyclesFor(store, card1, effectiveTransactions(store), '2026-11-20');
+  assert.deepEqual([oct!.key, oct!.paid, oct!.overpaid], ['2026-10', 68000, 0], 'the excess of October is given back');
+  assert.deepEqual([nov!.key, nov!.paid, nov!.outstanding, nov!.status], ['2026-11', 30000, 0, 'paid'], 'November is not left looking unpaid');
+  // A return bigger than any excess still takes the rest from its own window.
+  store.replaceCanonicalTransactions([...base, tx('pay-oct-again', 'card1', '2026-10-16', 5000, 'Pagamento de cartão de crédito'), tx('pay-oct-back', 'card1', '2026-11-12', -8000, 'Pagamento de cartão de crédito'), tx('pay-nov', 'card1', '2026-11-15', 30000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const [, oct2, nov2] = cyclesFor(store, card1, effectiveTransactions(store), '2026-11-20');
+  assert.deepEqual([oct2!.paid, oct2!.overpaid, nov2!.paid], [68000, 0, 27000]);
 });

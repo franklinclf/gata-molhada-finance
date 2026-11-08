@@ -1,6 +1,6 @@
 import { createPortal } from 'preact/compat';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { canCreate, filterOptions, step, toRows, type Option } from './select-model.ts';
+import { canCreate, enterChoice, filterOptions, step, toRows, type Option } from './select-model.ts';
 
 export type { Option } from './select-model.ts';
 
@@ -14,6 +14,8 @@ interface Props {
   searchable?: boolean;
   /** Lets the person type a name that is not in the list; `onChange` then gets that text. */
   creatable?: boolean;
+  /** What a created option is, for its row: "Criar categoria “x”". */
+  createNoun?: string;
   /** Adds an option with an empty value at the top, for example "Sem grupo". */
   emptyLabel?: string;
   disabled?: boolean;
@@ -27,7 +29,7 @@ const PANEL_MAX = 340;
  * keyboard use (arrows, Enter, Esc, type to search) and, when asked, a way to create a new option. On a phone it opens
  * as a sheet from the bottom.
  */
-export function Select({ value, onChange, options, placeholder = 'Escolher', ariaLabel, searchable, creatable = false, emptyLabel, disabled = false, class: className }: Props) {
+export function Select({ value, onChange, options, placeholder = 'Escolher', ariaLabel, searchable, creatable = false, createNoun, emptyLabel, disabled = false, class: className }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [at, setAt] = useState(0);
@@ -54,8 +56,9 @@ export function Select({ value, onChange, options, placeholder = 'Escolher', ari
     close();
   };
   const pick = (index: number) => {
-    if (index < shown.length) choose(shown[index]!.value);
-    else if (make) choose(query.trim());
+    // A key can arrive before the list has redrawn for the last letter typed, so the text in the search box counts, not the old highlight.
+    const choice = enterChoice(all, query, search.current?.value ?? query, index, creatable);
+    if (choice !== null) choose(choice);
   };
 
   useLayoutEffect(() => {
@@ -152,7 +155,7 @@ export function Select({ value, onChange, options, placeholder = 'Escolher', ari
                   const index = optionIndex;
                   const selected = row.option.value === value;
                   return (
-                    <li key={`o${row.option.value}`} role="option" aria-selected={selected} data-active={index === at} class={`select-option${index === at ? ' active' : ''}${row.option.group ? ' nested' : ''}`} onMouseEnter={() => setAt(index)} onClick={() => choose(row.option.value)}>
+                    <li key={`o${row.option.group ?? ''}|${row.option.value}`} role="option" aria-selected={selected} data-active={index === at} class={`select-option${index === at ? ' active' : ''}${row.option.group ? ' nested' : ''}`} onMouseEnter={() => setAt(index)} onClick={() => choose(row.option.value)}>
                       <span class="select-check" aria-hidden="true">{selected ? '✓' : ''}</span>
                       <span class="grow clip">{row.option.label}</span>
                       {row.option.hint && <span class="muted">{row.option.hint}</span>}
@@ -162,7 +165,7 @@ export function Select({ value, onChange, options, placeholder = 'Escolher', ari
                 {make && (
                   <li role="option" aria-selected={false} data-active={at === shown.length} class={`select-option create${at === shown.length ? ' active' : ''}`} onMouseEnter={() => setAt(shown.length)} onClick={() => choose(query.trim())}>
                     <span class="select-check" aria-hidden="true">+</span>
-                    <span class="grow clip">Criar “{query.trim()}”</span>
+                    <span class="grow clip">Criar {createNoun ? `${createNoun} ` : ''}“{query.trim()}”</span>
                   </li>
                 )}
                 {count === 0 && <li class="select-empty">Nada encontrado.</li>}

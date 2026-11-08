@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyNavOrder, moveNavItem, shiftNavItem } from '../../web/src/nav.ts';
+import { applyNavOrder, moveNavItem, shiftNavItem, topNavItem } from '../../web/src/nav.ts';
 
 const known = ['a', 'b', 'c', 'd'];
 
@@ -22,4 +22,10 @@ test('dropping on another section puts the dragged one right before it', () => {
   assert.deepEqual(moveNavItem(known, 'd', 'b'), ['a', 'd', 'b', 'c']);
   assert.deepEqual(moveNavItem(known, 'a', 'a'), known);
   assert.deepEqual(moveNavItem(known, 'a', 'zz'), known);
+});
+
+test('sending a section to the top keeps the others in order and ignores unknown or first ids', () => {
+  assert.deepEqual(topNavItem(known, 'd'), ['d', 'a', 'b', 'c']);
+  assert.deepEqual(topNavItem(known, 'a'), known);
+  assert.deepEqual(topNavItem(known, 'zz'), known);
 });

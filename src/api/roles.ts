@@ -27,6 +27,10 @@ const DESCRIPTION: Array<[RegExp, Role]> = [
   // a debit on the card that undoes a payment, not a purchase.
   [/^devolucao (de )?saldo credor/, 'card_payment'],
   [/^(transferencia mesma titularidade)/, 'own_transfer'],
+  // Nubank lends card limit as cash in the checking account and charges it back in card installments. The cash is spent
+  // from the account and counted there, so the installments repay a loan between the owner's own products: they stay in
+  // the bill, but are not spending a second time.
+  [/^saldo adicionado na (sua )?conta/, 'own_transfer'],
   [/^(aplicacao|resgate)\b/, 'investment'],
 ];
 
@@ -83,13 +87,14 @@ export function isOwner(description: string, owners: Set<string>): boolean {
  * The role to use. The user's own choice (a category set on the transaction or a rule) wins in both directions: picking
  * "Pagamento de fatura" makes it a card payment, picking anything else says it is not. An AI category never changes it.
  */
-export function roleOf(input: { sourceCategory: string | null; labels?: string[]; description: string; category: string | null; categoryOrigin: 'source' | 'override' | 'rule' | 'ai'; owners?: Set<string>; ownerDocument?: boolean }): Role | null {
+export function roleOf(input: { sourceCategory: string | null; labels?: string[]; description: string; category: string | null; categoryOrigin: 'source' | 'override' | 'rule' | 'ai'; owners?: Set<string>; ownerDocument?: boolean; card?: boolean }): Role | null {
   if (input.categoryOrigin === 'override' || input.categoryOrigin === 'rule') {
     // The user may pick our name for it or the sources' ("Credit card payment", "Same person transfer"): both mean the role.
     return (input.category ? (CHOSEN_CATEGORY[normalizeName(input.category)] ?? evidenceRole(input.category, '')) : null) ?? null;
   }
   const found = evidenceRole(input.labels ?? input.sourceCategory, input.description);
-  if (found) return found;
+  // A card charge buys something: money cannot go into an investment through the card, whatever the label says.
+  if (found && !(found === 'investment' && input.card)) return found;
   // The other side's document is the owner's own.
   if (input.ownerDocument) return 'own_transfer';
   // A transfer to or from the owner's own name moves money between the owner's accounts.

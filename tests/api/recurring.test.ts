@@ -129,3 +129,90 @@ test('a charge in the subscription category is called a subscription without the
   assert.equal(apiRoute('PUT', '/api/recurring/mark', new URLSearchParams(), store, NOW, JSON.stringify({ key: 'nope', label: 'none' }))?.status, 400);
   assert.equal(apiRoute('PUT', '/api/recurring/mark', new URLSearchParams(), store, NOW, JSON.stringify({ key: 'out|spotify', label: 'none' }))?.status, 200);
 });
+
+const outlookOf = (store: ReturnType<typeof seeded>, now: Date) => apiRoute('GET', '/api/outlook', new URLSearchParams(), store, now)?.body as { expectedIn: { total: number; source: string }; dueOut: { recurring: number }; committed: { subscriptions: number; subscriptionCount: number; fixed: number; fixedCount: number } };
+
+test('an employer that pays twice a month gives two monthly credits, each expected after its last one', () => {
+  const pay: Array<[string, number]> = [['05-06', 410000], ['05-21', 180000], ['06-05', 410000], ['06-20', 175000], ['07-06', 410000], ['07-19', 185000], ['08-05', 410000], ['08-20', 180000], ['09-04', 410000], ['09-21', 182000], ['10-05', 410000]];
+  const store = seeded(pay.map(([day, amount], i) => tx(`p${i}`, 'SALARIO EMPRESA FICTICIA LTDA', `2026-${day}`, amount, 'chk', { category: 'Salary' })));
+  const items = detectRecurring(store, NOW);
+  assert.deepEqual(items.map((i) => [i.key, i.dayOfMonth, i.amount, i.kind, i.nextDay, i.late]), [
+    ['in|salario empresa ficticia', 20, 180000, 'fixed', '2026-10-20', false],
+    ['in|salario empresa ficticia', 5, 410000, 'fixed', '2026-11-05', false],
+  ]);
+  const view = outlookOf(store, NOW);
+  assert.deepEqual([view.expectedIn.source, view.expectedIn.total], ['recurring', 180000], 'the one of the 20th has not come yet this month');
+});
+
+test('a marked item with two unrelated days is not given a day between them, and is not late the next month', () => {
+  const store = seeded([tx('a', 'PETSHOP ALFA', '2026-09-26', -4590, 'card'), tx('b', 'PETSHOP ALFA', '2026-10-12', -4590, 'card')]);
+  markRecurring(store, 'out|petshop alfa', 'recurring', NOW);
+  const [item] = detectRecurring(store, new Date('2026-11-08T15:00:00Z'));
+  assert.deepEqual([item?.dayOfMonth, item?.nextDay, item?.late, item?.regular], [12, '2026-11-12', false, false]);
+  assert.equal(outlookOf(store, NOW).committed.fixedCount, 0, 'no monthly rhythm, so not a monthly weight');
+});
+
+test('a marked item with an irregular history counts a same-day pair once and is not a monthly subscription', () => {
+  const store = seeded([tx('a', 'BARBEARIA GAMA', '2026-05-06', -7000, 'card'), tx('b', 'BARBEARIA GAMA', '2026-07-08', -7000, 'card'), tx('c', 'BARBEARIA GAMA', '2026-07-08', -12500, 'card'), tx('d', 'BARBEARIA GAMA', '2026-10-14', -6500, 'card')]);
+  markRecurring(store, 'out|barbearia gama', 'subscription', NOW);
+  const [item] = detectRecurring(store, NOW);
+  assert.deepEqual([item?.occurrences, item?.amount, item?.regular, item?.late], [3, 7000, false, false]);
+  assert.deepEqual([outlookOf(store, NOW).committed.subscriptions, outlookOf(store, NOW).committed.subscriptionCount], [0, 0]);
+});
+
+test('a marked item that stopped stays listed as stopped instead of vanishing, and is not expected', () => {
+  const store = seeded([tx('a', 'OPERADORA BETA', '2026-02-03', -3815, 'card'), tx('b', 'IMOBILIARIA OMEGA', '2026-03-02', -90000)]);
+  markRecurring(store, 'out|operadora beta', 'recurring', NOW);
+  markRecurring(store, 'out|imobiliaria omega', 'recurring', NOW);
+  const items = detectRecurring(store, NOW);
+  assert.deepEqual(items.map((i) => [i.name, i.stale, i.late, i.manual]), [['Operadora Beta', true, false, true], ['Imobiliaria Omega', true, false, true]]);
+  assert.equal(outlookOf(store, NOW).committed.fixedCount, 0);
+  assert.equal(calendar(store, '2026-11', NOW).days.some((d) => d.projected.length > 0), false, 'nothing is projected for it');
+  markRecurring(store, 'out|operadora beta', 'none', NOW);
+  assert.deepEqual(detectRecurring(store, NOW).map((i) => i.name), ['Imobiliaria Omega'], 'removing the mark hides it');
+});
+
+test('rent paid by Pix in two months in a row is recurring, by the latest month\'s total, and is due in the outlook', () => {
+  const rent = (category: string, october = -118000) => [
+    tx('r1', 'Transferência enviada|Joana Prado Lins', '2026-09-03', -62000, 'chk', { category }),
+    tx('r2', 'Transferência enviada|Joana Prado Lins', '2026-09-12', -62000, 'chk', { category }),
+    tx('r3', 'Transferência enviada pelo Pix|Joana Prado Lins', '2026-10-12', october, 'chk', { category }),
+  ];
+  const store = seeded(rent('Aluguel'));
+  const [item] = detectRecurring(store, NOW);
+  assert.deepEqual([item?.name, item?.account, item?.amount, item?.kind, item?.dayOfMonth, item?.nextDay], ['Joana Prado Lins', 'bank', 118000, 'fixed', 12, '2026-11-12']);
+  assert.equal(outlookOf(store, new Date('2026-11-08T15:00:00Z')).dueOut.recurring, 118000);
+  assert.deepEqual(detectRecurring(seeded(rent('Transferências')), NOW), [], 'a Pix to a person is not rent by itself');
+  assert.deepEqual(detectRecurring(seeded(rent('Aluguel', -50000)), NOW), [], 'nor when the two months differ');
+});
+
+test('a gym membership is a subscription without the owner saying so', () => {
+  const store = seeded(monthly('Academia Delta', [-10490, -10490, -10490, -10490, -10490, -10490]).map((t) => ({ ...t, category: 'Academia' })));
+  assert.equal(detectRecurring(store, NOW)[0]?.label, 'subscription');
+});
+
+test('marking a payer that pays twice a month keeps both expected credits', () => {
+  const pay: Array<[string, number]> = [['05-11', 360000], ['05-25', 250000], ['06-11', 360000], ['06-25', 250000], ['07-10', 360000], ['07-24', 250000], ['08-11', 360000], ['08-25', 250000], ['09-11', 360000], ['09-25', 250000], ['10-12', 360000]];
+  const store = seeded(pay.map(([day, amount], i) => tx(`p${i}`, 'EMPRESA EXEMPLO SA', `2026-${day}`, amount, 'chk', { category: 'Salary' })));
+  const before = detectRecurring(store, NOW).map((i) => [i.amount, i.dayOfMonth, i.regular]);
+  markRecurring(store, 'in|empresa exemplo', 'recurring', NOW);
+  const items = detectRecurring(store, NOW);
+  assert.deepEqual(items.map((i) => [i.amount, i.dayOfMonth, i.regular]).sort(), before.sort());
+  assert.deepEqual(items.map((i) => i.manual), [true, true]);
+  assert.deepEqual([outlookOf(store, NOW).expectedIn.source, outlookOf(store, NOW).expectedIn.total], ['recurring', 250000], 'the credit of the 25th is still expected this month');
+});
+
+test('rent paid in parts keeps its item once the first part of the month is paid, with what is still due as the amount', () => {
+  const rent = (...paid: Array<[string, number]>) => paid.map(([day, amount], i) => tx(`r${i}`, 'Transferência enviada|Joana Prado Lins', `2026-${day}`, amount, 'chk', { category: 'Aluguel' }));
+  // 6,20 + 6,20 in September, 12,40 on 15/10, then the first 6,20 of November on the 4th.
+  const store = seeded(rent(['09-03', -62000], ['09-12', -62000], ['10-15', -124000], ['11-04', -62000]));
+  const now = new Date('2026-11-08T15:00:00Z');
+  const [item] = detectRecurring(store, now);
+  assert.deepEqual([item?.name, item?.amount, item?.rest, item?.dayOfMonth, item?.nextDay, item?.regular], ['Joana Prado Lins', 124000, 62000, 15, '2026-11-15', true]);
+  assert.equal(outlookOf(store, now).dueOut.recurring, 62000, 'only the second part is still to leave');
+  // Paid in full: nothing is left this month and the next whole rent is expected in December.
+  const paid = seeded(rent(['09-03', -62000], ['09-12', -62000], ['10-15', -124000], ['11-04', -62000], ['11-06', -62000]));
+  const [done] = detectRecurring(paid, now);
+  assert.deepEqual([done?.amount, done?.rest, done?.nextDay], [124000, null, '2026-12-06']);
+  assert.equal(outlookOf(paid, now).dueOut.recurring, 0);
+});

@@ -119,7 +119,8 @@ a.go.title { color: inherit; }
 .big-rows { gap: 4px; }
 
 /* ---------- dashboard grid ---------- */
-.grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: var(--row); gap: var(--gap); padding-bottom: 32px; }
+/* Room above the first row: on hover a widget lifts 1px and shows its edge, and in edit mode the outline sits 2px outside the cell. Without it the sticky top bar covers that edge. */
+.grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: var(--row); gap: var(--gap); padding-top: 6px; padding-bottom: 32px; }
 .grid12 .cell { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .grid12 .cell > .widget { flex: 1; min-height: 0; }
 .grid12.editing .cell { outline: 2px dashed var(--track); outline-offset: 2px; border-radius: 24px; }
@@ -307,6 +308,12 @@ span.clip, a.clip, div.clip { min-width: 0; }
 .widget-body > .line-wrap { flex: 1 1 80px; min-height: 70px; }
 .line-wrap { position: relative; height: 90px; cursor: crosshair; }
 .line { width: 100%; height: 100%; display: block; }
+/* Chart with its highest and lowest value on the left; the date row under it (.chart-range.with-axis) skips the same gutter. */
+.line-axis { display: flex; gap: 6px; }
+.line-axis .line-wrap { flex: 1; min-width: 0; }
+.axis-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; width: 56px; flex: none; font-size: 11px; line-height: 1; color: var(--muted); white-space: nowrap; }
+.chart-range.with-axis { margin-left: 62px; }
+.chart-range.with-axis > :last-child { text-align: right; }
 
 .tip { position: fixed; z-index: 100; left: 0; top: 0; pointer-events: none; background: var(--card-2); color: var(--text); border: 1px solid var(--track); border-radius: 10px; padding: 6px 10px; font-size: 12px; line-height: 1.4; white-space: pre-line; max-width: 320px; box-shadow: var(--shadow-1); opacity: 0; transition: opacity 0.08s; }
 .tip.on { opacity: 1; }
@@ -585,16 +592,31 @@ body.wide .main { max-width: none; }
 .big-empty { font-size: 18px; font-weight: 600; color: var(--muted); }
 /* ---------- gastos: o que mudou no mês e tela de Gastos ---------- */
 /* Trend rows: fixed columns so the sparklines line up whatever the text beside them says. */
-.rows li.trend-row { display: grid; grid-template-columns: minmax(0, 1fr) 80px 128px 112px 116px; align-items: center; column-gap: 12px; }
+.rows li.trend-row { display: grid; grid-template-columns: minmax(0, 1fr) 80px 108px 116px 112px 108px; align-items: center; column-gap: 12px; }
 .trend-row .spark { justify-self: center; }
 .trend-row > span, .trend-row > strong { text-align: right; }
 .trend-row > .clip { text-align: left; }
+.rows li.trend-head { font-size: 12px; color: var(--muted); padding-top: 0; padding-bottom: 0; min-height: 0; }
+.trend-head > :first-child { text-align: left; }
+.t-lbl { display: none; }
+.t-now { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
+.t-change { font-size: 12px; white-space: nowrap; }
 .trend-note { white-space: nowrap; font-size: 12px; }
+.trend-note:empty { display: none; }
+.trend-row > span:not(.t-now) { white-space: nowrap; }
+@media (max-width: 1100px) {
+  /* Narrower than a wide laptop: the small line goes, so the figures keep their columns. */
+  .rows li.trend-row { grid-template-columns: minmax(0, 1fr) 96px 108px 104px 108px; }
+  .trend-row .spark, .trend-head > :nth-child(2) { display: none; }
+}
 @media (max-width: 760px) {
-  .trend-row { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: 2px; }
+  /* Same specificity as the desktop rule above. Phone: the name on its own line, then average, last month and this month side by side with their labels above, then the note. */
+  .rows li.trend-row { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 4px; }
+  .rows li.trend-head { display: none; }
   .trend-row > .clip { grid-column: 1 / -1; }
-  .trend-row .spark { display: none; }
-  .trend-row > :nth-child(3) { text-align: left; }
+  .trend-row > span:not(.trend-note) { text-align: left; align-items: flex-start; display: flex; flex-direction: column; font-size: 14px; }
+  .t-lbl { display: block; font-size: 11px; color: var(--muted); }
+  .trend-row > .trend-note { grid-column: 1 / -1; text-align: left; }
 }
 .changes-list li { align-items: flex-start; }
 .changes-list li > span { flex: 1; min-width: 0; white-space: normal; line-height: 1.45; }
@@ -652,11 +674,17 @@ body.wide .main { max-width: none; }
 .tx-meta .tx-acct, .tx-meta .tx-cat { overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .tx-meta .tx-acct::before, .tx-meta .tx-cat::before { content: '· '; }
 .tx-meta .tx-acct { max-width: 55%; }
+.tx-meta .tx-badges { display: inline-flex; gap: 6px; align-items: center; }
+.tx-meta .tx-badges:empty { display: none; }
+.tx-pick { display: flex; align-items: center; justify-content: center; margin: -13px -4px -13px -8px; padding: 13px; cursor: pointer; flex: none; }
 @media (max-width: 760px) {
   .tx-meta { flex-wrap: wrap; white-space: normal; row-gap: 0; }
-  .tx-meta .tx-cat { order: 2; max-width: calc(100% - 3.5em); }
+  .tx-meta .tx-cat { order: 2; max-width: calc(100% - 3.5em); white-space: normal; overflow: visible; text-overflow: clip; }
   .tx-meta .tx-acct { order: 3; flex-basis: 100%; max-width: 100%; font-size: 12px; white-space: nowrap; }
   .tx-meta .tx-acct::before { content: ''; }
+  .tx-meta .tx-badges { order: 4; flex-basis: 100%; flex-wrap: wrap; }
+  /* A long description wraps to two lines instead of one clipped line. */
+  .tx > .grow > .clip:first-child { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 
 /* Drawer corrections: wider columns so the chosen option is not cut. */
@@ -674,4 +702,66 @@ body.wide .main { max-width: none; }
   .rows li.limit-line { flex-wrap: wrap; }
   .rows li.limit-line > .grow { flex-basis: 100%; }
   .rows li.limit-line .limit-use { flex-basis: 100%; text-align: left; }
+}
+
+/* Dashboard review */
+/* The panel controls sit in a row above the grid, so the top menu has the same links on every page. */
+.dash-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; padding-bottom: 6px; }
+.widget-body[hidden] { display: none; }
+/* A widget with nothing to show: its title and one short note on a line (the grid gives it one or two rows). */
+.widget.empty-state { padding-top: 14px; padding-bottom: 14px; justify-content: center; }
+.widget.empty-state header { flex-wrap: nowrap; }
+.widget.empty-state h2 { flex: 0 1 auto; }
+.empty-note { flex: 1; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 220px) {
+  .widget.empty-state header { flex-wrap: wrap; }
+  .empty-note { flex-basis: 100%; text-align: left; white-space: normal; }
+}
+/* A small widget (a cell or two wide) trades the footer and some padding for room: the title wraps and the key figure shrinks to fit instead of being cut. */
+.widget.sm { padding: 12px 14px; gap: 6px; }
+.widget.sm h2 { font-size: 14px; line-height: 1.2; white-space: normal; }
+.widget.sm h2 a.title { white-space: normal; overflow: visible; }
+.widget.sm .big { font-size: clamp(15px, 12cqi, 26px); }
+.widget.sm .muted { font-size: 12px; }
+/* Customizing: send to the top, and the undo bar after a removal. */
+.grip-actions { display: flex; align-items: center; gap: 8px; }
+.grip .top { background: transparent; border: 0; color: var(--muted); font-size: 12px; cursor: pointer; padding: 2px 6px; }
+.grip .top:hover { color: var(--text); }
+.dash-undo { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; background: var(--card-2); border-radius: var(--radius-pill); box-shadow: var(--shadow-2); font-size: 14px; }
+/* Analyst: a long conversation title ends in an ellipsis inside its column instead of running under the chat. */
+.chat-list { min-width: 0; }
+.chat-list .rows li > button.link:first-child { flex: 1; min-width: 0; overflow: hidden; text-align: left; }
+/* Pages review */
+.tile-note { font-size: 12px; margin-top: 2px; }
+.chart-range { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin-top: 2px; }
+.zero-accounts { margin-top: 8px; }
+.zero-accounts > summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.cal-short { display: none; }
+.chat-list .rows li > .chat-title { flex: 1; min-width: 0; }
+@media (max-width: 1100px) {
+  /* The date fields stay beside each other: smaller chips and fields leave room for both on one line. */
+  .period .chip { padding: 4px 10px; }
+  .period input[type='date'] { padding: 4px 8px; font-size: 13px; }
+}
+@media (max-width: 760px) {
+  .cal-long { display: none; }
+  .cal-short { display: inline; }
+  .rows li.recurring-row { flex-wrap: wrap; row-gap: 4px; }
+  .rows li.recurring-row > .grow { flex-basis: 100%; }
+  .recurring-row .clip { white-space: normal; }
+  .rows li.recurring-row > button { margin-left: auto; }
+  .rows li.source-row { flex-wrap: wrap; row-gap: 4px; }
+  .rows li.source-row > .grow { flex-basis: 100%; }
+  .rows li.source-row .source-next { white-space: normal; }
+  /* Names that tell things apart wrap to two lines instead of ending in an ellipsis; amounts keep their line. */
+  .wrap-phone { white-space: normal; overflow-wrap: anywhere; }
+  .budget-head > .wrap-phone { flex-basis: 100%; }
+  .budget-head > button.link:last-child { margin-left: auto; }
+  /* A phone shows two compact tiles per line, so the first row of the list is not pushed down. */
+  .tx-main .summary { gap: 6px; }
+  .tx-main .summary > div { padding: 8px 12px; border-radius: 14px; }
+  .tx-main .summary strong { font-size: 16px; }
+  /* The tab strip wraps, so no tab is cut at the edge; the period chips always overflow, so they fade out at the right edge. */
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
+  .period { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
 }

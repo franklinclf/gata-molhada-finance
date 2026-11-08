@@ -1137,16 +1137,6 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return { removed: gone.length, skipped: false };
     },
 
-    deleteSourceTransactionsBefore(instant: string): number {
-      // A card charge from before the start that the issuer billed on or after it stays: it is part of a bill we judge (an installment
-      // bought last year, for example), and without it that bill looks short.
-      return Number(
-        db
-          .prepare('DELETE FROM source_transactions WHERE occurred_at < ? AND NOT (bill_id IS NOT NULL AND bill_id IN (SELECT external_id FROM source_bills WHERE due_date >= substr(?, 1, 10)))')
-          .run(instant, instant).changes,
-      );
-    },
-
     listCycleOverrides(): Map<string, boolean> {
       const rows = db.prepare('SELECT account_id, cycle_key, settled FROM cycle_overrides').all() as Array<{ account_id: string; cycle_key: string; settled: number }>;
       return new Map(rows.map((r) => [`${r.account_id}|${r.cycle_key}`, r.settled === 1]));

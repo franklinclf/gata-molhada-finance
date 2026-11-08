@@ -20,6 +20,7 @@ export function GoalsWidget({ now, hidden, size, pixels }: WidgetProps) {
       now={now}
       loading={loading && !data}
       error={error}
+      empty={data && active.length === 0 ? 'Nenhuma meta. Clique para criar.' : undefined}
       head={
         data &&
         (active.length === 0 ? (

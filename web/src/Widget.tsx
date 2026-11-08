@@ -2,11 +2,16 @@ import { createContext } from 'preact';
 import type { ComponentChildren } from 'preact';
 import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { ago, isStale } from './format.ts';
+import type { SizeClass } from './grid.ts';
 import { hrefFor, navigate } from './router.ts';
 import { Select } from './Select.tsx';
 
 /** False where a widget is as tall as its content (the phone stack): there a list shows every row. */
 export const FixedHeight = createContext(true);
+/** The look the dashboard gives the widget around it (see `sizeClassPx`). A small widget gives up its footer and tightens its spacing. */
+export const WidgetSize = createContext<SizeClass>('md');
+/** Lets a widget with nothing to show tell the grid, which then gives it a line instead of its whole cell. */
+export const Collapse = createContext<(collapsed: boolean) => void>(() => {});
 /** True when the widget body has a fixed height to fill, so lists may be cut to what fits. */
 const FitRows = createContext(false);
 
@@ -22,6 +27,8 @@ interface Props {
   actions?: ComponentChildren;
   /** The main figure and chart. It stays in view while the rest of the widget scrolls. */
   head?: ComponentChildren;
+  /** Set when there is nothing to show (no goals, nothing waiting): the widget becomes its title with this short text beside it, and gives the space back. */
+  empty?: string;
   /** The partitioned detail (cards, categories, accounts, lists). It scrolls under the head, or opens in full with the expand button. */
   children?: ComponentChildren;
 }
@@ -38,9 +45,16 @@ const CollapseIcon = () => (
   </svg>
 );
 
-export function Widget({ title, to, asOf, now, loading, error, actions, head, children }: Props) {
+export function Widget({ title, to, asOf, now, loading, error, actions, empty, head, children }: Props) {
   const [expanded, setExpanded] = useState(false);
   const fixed = useContext(FixedHeight);
+  const small = useContext(WidgetSize) === 'sm';
+  const report = useContext(Collapse);
+  const collapsed = empty !== undefined && !loading && !error;
+  useEffect(() => {
+    report(collapsed);
+    return () => report(false);
+  }, [collapsed]);
   const body = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState(false);
   useEffect(() => {
@@ -65,6 +79,9 @@ export function Widget({ title, to, asOf, now, loading, error, actions, head, ch
     return () => observer.disconnect();
   }, []);
   const stale = asOf !== undefined && isStale(asOf, now);
+  const age = asOf === undefined || error ? undefined : `Dados ${asOf === null ? 'sem data de sincronização' : ago(asOf, now)}`;
+  // A small widget has no room for the footer line: the age goes to the tooltip, and the footer comes back when the data is stale.
+  const footer = age !== undefined && !(small && !stale);
   // The whole card opens its screen; controls and links inside it keep their own action.
   const open = (event: MouseEvent) => {
     if (!to || (event.target as HTMLElement).closest('a, button, select, input, label, summary, [data-no-nav]')) return;
@@ -74,8 +91,8 @@ export function Widget({ title, to, asOf, now, loading, error, actions, head, ch
   return (
     <>
     {expanded && <div class="widget-backdrop" onClick={() => setExpanded(false)} />}
-    <section class={`${to ? 'widget linked' : 'widget'}${expanded ? ' expanded' : ''}`} onClick={open}>
-      <header>
+    <section class={`${to ? 'widget linked' : 'widget'}${expanded ? ' expanded' : ''}${small && !expanded ? ' sm' : ''}${collapsed ? ' empty-state' : ''}`} onClick={open}>
+      <header data-tip={small && !footer ? age : undefined}>
         <h2>
           {to ? (
             <a class="go title clip" href={hrefFor(to.page, to.params)}>
@@ -85,17 +102,18 @@ export function Widget({ title, to, asOf, now, loading, error, actions, head, ch
             title
           )}
         </h2>
+        {collapsed && <span class="empty-note muted" data-tip={empty}>{empty}</span>}
         <div class="widget-actions" data-no-nav>
           {actions}
-          {children !== undefined && (
+          {children !== undefined && !collapsed && (
             <button class="expand" onClick={() => setExpanded(!expanded)} data-tip={expanded ? 'Recolher (Esc)' : 'Expandir para ver tudo'} aria-label={expanded ? 'Recolher' : 'Expandir'}>
               {expanded ? <CollapseIcon /> : <ExpandIcon />}
             </button>
           )}
         </div>
       </header>
-      <div ref={body} class={fade ? 'widget-body fade' : 'widget-body'} onScroll={checkFade}>
-        {error ? (
+      <div ref={body} class={fade ? 'widget-body fade' : 'widget-body'} onScroll={checkFade} hidden={collapsed}>
+        {collapsed ? null : error ? (
           <div class="error">Não foi possível carregar: {error}</div>
         ) : loading ? (
           <div class="empty">Carregando…</div>
@@ -106,7 +124,7 @@ export function Widget({ title, to, asOf, now, loading, error, actions, head, ch
           </FitRows.Provider>
         )}
       </div>
-      {asOf !== undefined && !error && <footer class={stale ? 'asof stale' : 'asof'}>Dados {asOf === null ? 'sem data de sincronização' : ago(asOf, now)}</footer>}
+      {footer && !collapsed && <footer class={stale ? 'asof stale' : 'asof'}>{age}</footer>}
     </section>
     </>
   );

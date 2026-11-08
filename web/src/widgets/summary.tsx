@@ -6,7 +6,7 @@ import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
 /**
- * The month in a few numbers. The top figure is only what moved through the bank accounts (card purchases are not in it),
+ * The month in a few numbers. The top figure is what came in minus what went out, and only what moved through the bank accounts (card purchases are not in it),
  * so the card side comes from the outlook: bills due by the end of the month and what is left after them.
  */
 export function SummaryWidget({ now, hidden, size }: WidgetProps) {
@@ -18,7 +18,7 @@ export function SummaryWidget({ now, hidden, size }: WidgetProps) {
   const outlook = useLoad(() => api.outlook(), [], 120_000);
   return (
     <Widget
-      title="Resumo do mês"
+      title="Entrou menos saiu"
       to={{ page: 'cashflow' }}
       now={now}
       loading={!flow.data && flow.loading}
@@ -27,8 +27,9 @@ export function SummaryWidget({ now, hidden, size }: WidgetProps) {
         flow.data && (
           <>
             <div class="big">{brl(flow.data.net, hidden)}</div>
-            <div class="muted">
-              entrou menos saiu das contas, sem cartão ({brl(flow.data.inflow, hidden)} − {brl(flow.data.outflow, hidden)})
+            {/* A small widget keeps the short reading; the numbers behind it are in the tooltip. */}
+            <div class="muted" data-tip={`Entrou ${brl(flow.data.inflow, hidden)}, saiu ${brl(flow.data.outflow, hidden)}`}>
+              {size === 'sm' ? 'no mês, só contas, sem cartão' : `no mês, só em contas bancárias, sem compras no cartão (${brl(flow.data.inflow, hidden)} − ${brl(flow.data.outflow, hidden)})`}
             </div>
           </>
         )

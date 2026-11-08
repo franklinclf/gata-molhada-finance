@@ -84,7 +84,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await response.text();
   const body = text ? (JSON.parse(text) as unknown) : null;
   // A change made by the owner (not a login or a chat question) can alter any list on screen.
-  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && path !== '/api/layout';
+  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && path !== '/api/layout' && path !== '/api/rules/preview';
   if (!response.ok) {
     const message = (body as { message?: string; error?: string } | null)?.message ?? (body as { error?: string } | null)?.error ?? response.statusText;
     throw new ApiError(response.status, message);
@@ -122,6 +122,9 @@ export const api = {
   spending: (from: string, to: string, by: 'category' | 'merchant') => request<SpendingView>(`/api/spending${query({ from, to, by })}`),
   bills: () => request<BillsView>('/api/cards/bills'),
   billCheck: () => request<BillCheckView>('/api/bill-check'),
+  /** Takes bills out of the check (or puts them back with `dismissed: false`). */
+  dismissBills: (bills: Array<{ accountId: string; cycleKey: string }>, dismissed: boolean) =>
+    request<{ ok: true }>('/api/bill-check/dismiss', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bills, dismissed }) }),
   installments: () => request<InstallmentsView>('/api/installments'),
   transactions: (from: string, to: string, limit: number) => request<ExplorerResult>(`/api/transactions${query({ from, to, limit })}`),
   /** Explorer with any filters, given as URL parameters. */

@@ -19,6 +19,13 @@ export function maskMoney(text: string, hidden: boolean): string {
   return hidden ? text.replace(/-?R\$\s?-?\d+(?:\.\d{3})*(?:,\d{1,2})?/g, MASK) : text;
 }
 
+const BRL_COMPACT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', minimumFractionDigits: 0, maximumFractionDigits: 1 });
+
+/** "R$ 12,3 mil", "R$ 1,2 mi": a value on a chart axis, where there is room for a few characters. */
+export function brlCompact(cents: number, hidden = false): string {
+  return hidden ? '••••' : BRL_COMPACT.format(cents / 100);
+}
+
 /** Whole reais, for chart labels. */
 export function brlShort(cents: number, hidden = false): string {
   if (hidden) return '••••';

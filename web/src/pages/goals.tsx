@@ -4,6 +4,7 @@ import type { GoalView } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { Select } from '../Select.tsx';
 import { brl, dayMonth, parseBrl, percent } from '../format.ts';
+import { accountLabel } from '../names.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
 
@@ -101,7 +102,7 @@ export function GoalsPage({ now, hidden }: { now: Date; hidden: boolean }) {
     }
   };
   const tomorrow = new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10);
-  const options = track === 'account' ? (accounts.data?.items ?? []).map((a) => [a.id, `${a.institution} · ${a.name}`] as const) : (assets.data?.manual ?? []).filter((m) => m.kind === 'asset').map((m) => [String(m.id), m.name] as const);
+  const options = track === 'account' ? (accounts.data?.items ?? []).map((a) => [a.id, accountLabel(a)] as const) : (assets.data?.manual ?? []).filter((m) => m.kind === 'asset').map((m) => [String(m.id), m.name] as const);
   return (
     <div class="page-body">
       <h1 class="page-title">Metas</h1>

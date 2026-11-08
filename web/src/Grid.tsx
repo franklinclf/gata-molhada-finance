@@ -1,7 +1,8 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { LayoutItem } from './api.ts';
-import { columnsFor, COLUMNS, place, type Box } from './grid.ts';
+import { collapseEmpty, columnsFor, COLUMNS, fitToColumns, place, type Box } from './grid.ts';
+import { Collapse } from './Widget.tsx';
 
 export const ROW_HEIGHT = 72;
 export const GAP = 14;
@@ -53,9 +54,12 @@ export function Grid({ items, editing, canDrag = true, wide = false, onColumns, 
   const columns = wide && width > 0 ? columnsFor(width, GAP) : COLUMNS;
   useEffect(() => onColumns?.(columns), [columns]);
   const cellWidth = width > 0 ? (width + GAP) / columns : 0;
-  // A widget saved on a wider screen is shown inside the columns there are now.
-  const fitted = (list: LayoutItem[]) => list.map((i) => (i.x + i.w > columns ? { ...i, w: Math.min(i.w, columns), x: Math.max(0, Math.min(i.x, columns - Math.min(i.w, columns))) } : i));
-  const shown = fitted(draft ?? items);
+  // A widget saved on a wider screen is shown inside the columns there are now, in a free place and never over another widget.
+  const fitted = (list: LayoutItem[]) => fitToColumns(list, columns);
+  // Widgets with nothing to show (no goals, nothing to review) report it and take a line; while customizing every widget keeps the size it was given.
+  const [empty, setEmpty] = useState<ReadonlySet<string>>(new Set());
+  const reporter = (id: string) => (on: boolean) => setEmpty((was) => (was.has(id) === on ? was : new Set(on ? [...was, id] : [...was].filter((x) => x !== id))));
+  const shown = editing ? fitted(draft ?? items) : collapseEmpty(fitted(draft ?? items), empty);
 
   function start(event: PointerEvent, item: LayoutItem, mode: Drag['mode']) {
     const box = container.current?.getBoundingClientRect();
@@ -101,18 +105,25 @@ export function Grid({ items, editing, canDrag = true, wide = false, onColumns, 
             <div class="grip" onPointerDown={(e) => start(e, item, 'move')} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
               {/* The widget below already shows its title, so the bar only says what it does. */}
               <span aria-label={`Mover ${titleOf(item)}`}>⠿ Arraste para mover</span>
-              <button
-                class="x"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => onRemove(item.id)}
-                aria-label={`Remover ${titleOf(item)}`}
-              >
-                ×
-              </button>
+              <span class="grip-actions">
+                {item.y > 0 && (
+                  <button class="top" onPointerDown={(e) => e.stopPropagation()} onClick={() => onChange(place(fitted(items), item.id, { y: 0 }, columns))} aria-label={`Enviar ${titleOf(item)} para o topo`}>
+                    ↑ Topo
+                  </button>
+                )}
+                <button
+                  class="x"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => onRemove(item.id)}
+                  aria-label={`Remover ${titleOf(item)}`}
+                >
+                  ×
+                </button>
+              </span>
             </div>
           )}
           {!editing && canDrag && <div class="mini-grip" onPointerDown={(e) => start(e, item, 'move')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para mover" aria-label={`Mover ${titleOf(item)}`}>⠿</div>}
-          {renderItem(item, { width: item.w * cellWidth - GAP, height: item.h * (ROW_HEIGHT + GAP) - GAP - (editing ? GRIP_HEIGHT : 0) })}
+          <Collapse.Provider value={reporter(item.id)}>{renderItem(item, { width: item.w * cellWidth - GAP, height: item.h * (ROW_HEIGHT + GAP) - GAP - (editing ? GRIP_HEIGHT : 0) })}</Collapse.Provider>
           {!editing && canDrag && <div class="resize quiet" onPointerDown={(e) => start(e, item, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para redimensionar" />}
           {editing && <div class="resize" onPointerDown={(e) => start(e, item, 'resize')} onPointerMove={move} onPointerUp={end} onPointerCancel={end} title="Arraste para redimensionar" />}
         </div>
