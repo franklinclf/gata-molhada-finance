@@ -141,10 +141,18 @@ test('installments Meu Pluggy lists as pending charges dated in the future are f
 test('an installment purchase refunded later by an "estorno" with another text plans no more installments when the owner linked them', () => {
   // 1 of 12 charged in July and given back a week later as "Estorno de compra".
   const store = seeded([...series('Software Exemplo', 12, 1500, [[1, '2026-07-02']]), tx('estorno', '2026-07-09', 1500, 'Estorno de compra')]);
-  assert.equal(installments(store, NOW).purchases.length, 1, 'the app only guessed the pairing, so the plan stays');
+  // A month later the next installment may still come, so the guessed pairing alone keeps the plan.
+  const soon = new Date('2026-08-20T15:00:00Z');
+  assert.equal(installments(store, soon).purchases.length, 1, 'the app only guessed the pairing, so the plan stays');
   const all = store.listCanonicalTransactions();
   store.replaceCanonicalTransactions(all, all.map((t) => ({ sourceId: 'pierre', externalId: t.id, transactionId: t.id, matchPass: 0 })), NOW.toISOString());
   assert.equal(store.setReversalLink('Software Exemplo-1', 'estorno', true, NOW.toISOString()), true);
+  assert.equal(installments(store, soon).purchases.length, 0);
+});
+
+test('a refunded installment with nothing charged after it for two bills cancels the plan, even when the refund has another text', () => {
+  // 1 of 12 charged in July, "Estorno de compra" a week later, and no 2/12 by the end of October.
+  const store = seeded([...series('Software Exemplo', 12, 1500, [[1, '2026-07-02']]), tx('estorno', '2026-07-09', 1500, 'Estorno de compra')]);
   assert.equal(installments(store, NOW).purchases.length, 0);
 });
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { billPaymentNote, cellMoney, countNote, endpoints, internalNote, localStamp, recurringWhen, splitZero, tileSums, times, trendChange, whenAhead } from '../../web/src/pages/page-logic.ts';
+import { billPaymentNote, cellMoney, choiceOf, countNote, currentLabel, cycleCaption, endpoints, estimatedNote, otherCycles, resolveCycle, internalNote, localStamp, recurringWhen, splitZero, tileSums, times, trendChange, whenAhead } from '../../web/src/pages/page-logic.ts';
 
 const NOW = new Date('2026-11-08T15:00:00Z');
 
@@ -86,4 +86,43 @@ test('the trend row compares the month in progress with the whole month before, 
   assert.equal(down.rising, false);
   assert.equal(trendChange(20000, 20000, false)!.text, 'igual');
   assert.doesNotMatch(trendChange(30000, 20000, true)!.text, /\d,\d\d/);
+});
+
+const BARS = [{ key: '2026-10', current: false }, { key: '2026-11', current: true }, { key: '2026-12', current: false }];
+
+test('the current cycle is the bar flagged current, and nothing is asked for before the bars are known', () => {
+  assert.equal(resolveCycle('current', BARS), '2026-11');
+  assert.equal(resolveCycle('current', undefined), undefined);
+  // No card has an open bill: the current cycle is everything unpaid.
+  assert.equal(resolveCycle('current', [{ key: '2026-10', current: false }]), 'open');
+  assert.equal(resolveCycle('open', undefined), 'open');
+  assert.equal(resolveCycle('2026-10', undefined), '2026-10');
+});
+
+test('the current cycle button carries the short name of its month, and the month of the current bill is the button, not a list entry', () => {
+  assert.equal(currentLabel('2026-11'), 'Ciclo atual (nov)');
+  assert.equal(currentLabel('open'), 'Ciclo atual');
+  assert.equal(currentLabel(undefined), 'Ciclo atual');
+  assert.equal(choiceOf('2026-11', '2026-11'), 'current');
+  assert.equal(choiceOf('2026-10', '2026-11'), '2026-10');
+});
+
+test('the dropdown lists the other cycles, newest first, with no "Em aberto" and not the current one', () => {
+  assert.deepEqual(otherCycles(['2026-09', '2026-10', '2026-11'], '2026-11', 'current'), ['2026-10', '2026-09']);
+  // A month picked on the chart is listed even when no bill of it is closed yet.
+  assert.deepEqual(otherCycles(['2026-10'], '2026-11', '2026-12'), ['2026-12', '2026-10']);
+  assert.deepEqual(otherCycles(['2026-10'], '2026-11', 'open'), ['2026-10']);
+});
+
+test('the caption says what each view counts', () => {
+  assert.equal(cycleCaption('2026-11', '2026-11-08'), 'Faturas que vencem em novembro');
+  assert.equal(cycleCaption('2027-01', '2026-11-08'), 'Faturas que vencem em janeiro de 2027');
+  assert.equal(cycleCaption('open', '2026-11-08'), 'Tudo que falta pagar nos cartões');
+});
+
+test('the list says how many estimated installments are in its totals', () => {
+  assert.equal(estimatedNote({ count: 0, expense: 0 }, false), null);
+  assert.match(estimatedNote({ count: 1, expense: 5500 }, false)!, /^As somas incluem 1 parcela estimada \(R\$\s?55,00\)/);
+  assert.match(estimatedNote({ count: 3, expense: 5500 }, false)!, /3 parcelas estimadas/);
+  assert.doesNotMatch(estimatedNote({ count: 3, expense: 5500 }, true)!, /\d,\d\d/);
 });

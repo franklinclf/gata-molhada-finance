@@ -20,7 +20,9 @@ export interface OutlookEvent {
   direction: 'in' | 'out';
   kind: 'bill' | 'recurring' | 'income';
   origin: string;
-  /** The due day passed and it did not show up (a late bill is still owed; a late income is left out). */
+  /** Why the day is not the plain day of the month, such as "antecipado: dia 10 cai no sábado" for a salary moved to the business day before. */
+  note?: string;
+  /** The due day passed and it did not show up (a late bill is still owed; an income expected yesterday that did not come yet is kept, one older than that is left out). */
   late: boolean;
   /** The amount is a guess: an open bill that can still grow, or a recurring item whose amount moves. */
   estimate: boolean;
@@ -151,9 +153,9 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
 
   // Income: what the owner registered, else the credits that come back every month. A late credit is not counted.
   const registered = store.listIncome();
-  const income = incomeEvents(store, recurring, today, until);
+  const income = incomeEvents(store, recurring, today, until, transactions);
   const incomeSource = income.source;
-  for (const e of income.events) events.push({ ...e, direction: 'in', kind: 'income', late: false });
+  for (const e of income.events) events.push({ ...e, direction: 'in', kind: 'income' });
 
   // Walk the days. On the same day the money that arrives is placed first, then the payments, larger ones first.
   events.sort((a, b) => a.day.localeCompare(b.day) || (a.direction === b.direction ? b.amount - a.amount : a.direction === 'in' ? -1 : 1) || a.name.localeCompare(b.name));
@@ -199,7 +201,7 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
       total: sum(incoming),
       items: incoming,
       source: incomeSource,
-      explain: incomeSource === 'registered' ? 'Renda cadastrada com dia de pagamento depois de hoje.' : incomeSource === 'recurring' ? 'Entradas que se repetem todo mês nas contas e ainda não chegaram neste mês.' : 'Nenhuma renda cadastrada nem entrada recorrente encontrada: nada foi somado.',
+      explain: incomeSource === 'registered' ? 'Renda cadastrada com dia de pagamento de hoje em diante (já ajustado para dia útil) e que ainda não chegou na conta.' : incomeSource === 'recurring' ? 'Entradas que se repetem todo mês nas contas (no dia útil anterior quando o dia cai em fim de semana ou feriado) e ainda não chegaram neste mês.' : 'Nenhuma renda cadastrada nem entrada recorrente encontrada: nada foi somado.',
     },
     dueOut: {
       total: sum(outgoing),

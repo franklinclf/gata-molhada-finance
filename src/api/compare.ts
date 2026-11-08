@@ -93,8 +93,8 @@ export function compareMonths(store: Store, month: string, now: Date, opts: View
   const historyFrom = `${addMonths(month, -BASELINE_MONTHS)}-01`;
   const historyTo = lastDayOf(prevMonth);
 
-  const current = spendingTransactions(store, { from: `${month}-01`, to }, opts);
-  const history = spendingTransactions(store, { from: historyFrom, to: historyTo }, opts);
+  const current = spendingTransactions(store, { from: `${month}-01`, to }, now, opts);
+  const history = spendingTransactions(store, { from: historyFrom, to: historyTo }, now, opts);
   const within = (list: EffectiveTransaction[], range: { from: string; to: string }) => list.filter((t) => {
     const day = localDay(t.occurredAt);
     return day >= range.from && day <= range.to;

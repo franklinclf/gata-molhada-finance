@@ -47,6 +47,8 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   statusByUser: boolean;
   /** The source still says pending, but the issuer already published the bill this card charge is on, so it shows as posted. */
   statusByBill: boolean;
+  /** A synthetic row for an installment the bank bills but never listed (see `estimatedTransactions`): read-only, in no bill total. */
+  estimated?: true;
 }
 
 export interface Counterparty {

@@ -115,6 +115,10 @@ flowchart TD
   CMP -->|"nada explica"| MS["Falta (lançar à mão) ou sobra (pendente suspeita)"]
 ```
 
+### Parcelas que o banco cobra e não listou
+
+O plano de parcelas (`installments`, `src/api/installments.ts`) conta os meses a partir das parcelas vistas e marca como `inferred` as que o banco cobra na fatura mas nunca listou. Os totais de fatura (`cards`, `cyclesFor`, Conferir) somam essas parcelas pelo plano. Para as telas que listam ou somam transações, `estimatedTransactions` transforma cada uma numa linha sintética somente leitura (`est_<compra>_<n>`, marcada `estimated`), que só entra em Transações (`explore`) e nos gastos (`spendingTransactions`: Gastos, Orçamento, Tendência, comparação do mês). Ela não passa por `effectiveTransactions`, e por isso os ciclos, a conferência e o resumo dos cartões não a veem e não há contagem dupla. Se uma cobrança do mesmo texto e valor já está na fatura da parcela, a linha não é criada. O fluxo de caixa, o patrimônio e a previsão também não a usam.
+
 ## 5. O que o dono pode corrigir, e o que sobrevive a uma nova leitura
 
 | Correção | Onde fica | Sobrevive à releitura |
@@ -126,6 +130,9 @@ flowchart TD
 | Fatura paga ou não | `cycle_overrides` | Sim (por conta canônica) |
 | Fatura dispensada em Conferir | `settings` (`bill_check_dismissed`) | Sim (por conta canônica e mês) |
 | Transação digitada | `manual_transactions` | Sim |
+| Renda fixa e a regra do dia que não é útil | `income_items` | Sim |
+
+Renda esperada (`incomeEvents` em `src/api/projection.ts`, a mesma para o Mês em curso e o Calendário): para cada renda cadastrada, ou para cada entrada recorrente detectada quando não há cadastro, calcula o dia do mês, move para o dia útil conforme a regra (`src/core/business-days.ts`) e descarta o pagamento se um crédito de banco de valor parecido já chegou de 6 dias antes a 3 dias depois desse dia. O que o banco lança na manhã seguinte conta como o pagamento do dia anterior.
 
 ## 6. Custo e limites
 
@@ -161,3 +168,5 @@ As respostas brutas (`raw_snapshots`) também são reduzidas ao fim de cada sinc
 - Retenção de respostas brutas: `KEEP_RAW_READS` e `READ_GAP_MS` em `src/sync/sync.ts`; cópias do recomeço: `KEEP_RESET_COPIES` em `src/main.ts`.
 - Ritmo esperado de leitura e avisos de dado velho e de conta parada: `EXPECTED_READ_HOURS`, `LATE_GRACE_HOURS` e `SILENT_DAYS` em `src/api/views.ts`.
 - Janela das análises (desde `DATA_START`, até o fim do período pedido): `liveTransactions` e `spendingTransactions` em `src/api/views.ts`, a mesma regra do explorador.
+- Parcelas estimadas como transação: `estimatedTransactions` e `ESTIMATED_PREFIX` em `src/api/installments.ts`.
+- Janela e tolerância para dar uma renda como já recebida, e a tolerância de um dia para uma entrada que ainda não foi lançada: `ARRIVES_BEFORE_DAYS`, `ARRIVES_AFTER_DAYS`, `ARRIVAL_TOLERANCE` e `POSTING_GRACE_DAYS` em `src/api/projection.ts`. Feriados bancários: `bankHolidays` em `src/core/business-days.ts`.

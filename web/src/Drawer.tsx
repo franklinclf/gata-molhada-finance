@@ -13,6 +13,7 @@ import { partyRuleApplies, partyRuleConditions, partyRuleName } from './party-ru
 import { ManualForm } from './ManualForm.tsx';
 import { Select } from './Select.tsx';
 import { Loading, StatusBadge } from './ui.tsx';
+import { SLOT_LABEL } from './installments.tsx';
 import type { ComponentChildren } from 'preact';
 
 type Detail = TransactionDetail;
@@ -455,7 +456,97 @@ function SameDescription({ d, hidden }: { d: Detail; hidden: boolean }) {
 }
 
 /** Side panel with what is known about one transaction and the few things the owner may want to change. */
+/** An installment the bank bills but never listed: shown as a transaction for analyses, with nothing to edit. */
+function EstimatedDrawer({ id, hidden }: { id: string; hidden: boolean }) {
+  const detail = useLoad(() => api.estimatedDetail(id), [id]);
+  const close = () => patchParams({ tx: null });
+  const d = detail.data;
+  return (
+    <div class="overlay" onClick={close}>
+      <div class="drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Detalhes da parcela estimada">
+        <div class="sheet-handle" aria-hidden="true" />
+        <button class="x close" onClick={close} aria-label="Fechar">
+          ×
+        </button>
+        {!d ? (
+          <Loading error={detail.error} />
+        ) : (
+          <>
+            <div>
+              <h2>{d.transaction.description}</h2>
+              <div class="muted">Parcela estimada</div>
+            </div>
+            <div class="big">{brl(d.transaction.amount, hidden)}</div>
+            <div class="chips">
+              <span class="badge info">estimada</span>
+              {d.transaction.status === 'pending' && <span class="badge">fatura que ainda não chegou</span>}
+            </div>
+            <p>
+              O banco cobra esta parcela na fatura, mas não a listou como transação. O app a calcula contando os meses a partir das parcelas desta compra que ele viu. A parcela já está no total da fatura; aqui ela aparece só para que as análises por transação não a deixem de fora. Se o banco passar a listá-la, esta linha deixa de existir. Por ser uma estimativa, não dá para mudar a categoria nem ignorar.
+            </p>
+            <dl class="facts">
+              <dt>Compra</dt>
+              <dd>{d.purchase.description}</dd>
+              <dt>Parcela</dt>
+              <dd>
+                {d.number} de {d.purchase.total} · {brl(d.purchase.amount, hidden)} cada
+              </dd>
+              <dt>Data estimada</dt>
+              <dd>
+                {dayMonth(localDay(d.transaction.occurredAt))}/{localDay(d.transaction.occurredAt).slice(0, 4)}
+              </dd>
+              <dt>Cartão</dt>
+              <dd>
+                {cardName(d.account.institution, d.account.name)}
+                {d.account.last4 ? ` •••• ${d.account.last4}` : ''}
+              </dd>
+              <dt>Categoria</dt>
+              <dd>{d.transaction.category ?? 'Sem categoria'} (a das parcelas listadas da compra)</dd>
+              {d.cycle && (
+                <>
+                  <dt>Fatura</dt>
+                  <dd>
+                    vence em {dayMonth(d.cycle.dueDate)}/{d.cycle.dueDate.slice(0, 4)}
+                  </dd>
+                </>
+              )}
+            </dl>
+            <details open>
+              <summary>Parcelas desta compra ({d.purchase.slots.length})</summary>
+              <ul class="rows">
+                {d.purchase.slots.map((s) => (
+                  <li key={s.number} class={s.number === d.number ? 'on' : ''}>
+                    <span class="grow">
+                      {s.number} de {d.purchase.total} · fatura de {monthName(s.cycle)}
+                    </span>
+                    <span class="muted">{s.inferred ? 'estimada' : 'listada'} · {SLOT_LABEL[s.status]}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+            {d.cycle && (
+              <button
+                class="link"
+                onClick={() => {
+                  patchParams({ tx: null });
+                  navigate('transactions', { accountId: d.account.id, cycle: d.cycle!.key });
+                }}
+              >
+                Ver a fatura de {monthName(d.cycle.key)} deste cartão
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function TransactionDrawer({ id, hidden }: { id: string; hidden: boolean }) {
+  return id.startsWith('est_') ? <EstimatedDrawer id={id} hidden={hidden} /> : <RecordDrawer id={id} hidden={hidden} />;
+}
+
+function RecordDrawer({ id, hidden }: { id: string; hidden: boolean }) {
   const detail = useLoad(() => api.detail(id), [id]);
   const act = useAction();
   const [editing, setEditing] = useState(false);

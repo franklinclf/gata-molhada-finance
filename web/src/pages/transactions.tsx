@@ -9,7 +9,7 @@ import { PeriodPicker } from '../period.tsx';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { CheckList, Go, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
-import { billPaymentNote, countNote, internalNote, tileSums } from './page-logic.ts';
+import { billPaymentNote, countNote, estimatedNote, internalNote, tileSums } from './page-logic.ts';
 
 const STATES = ['confirmed', 'single_source', 'billed', 'stale_pending', 'ignored'].map((value) => ({ value, label: STATE_LABEL[value] ?? value }));
 
@@ -83,6 +83,8 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
     setPicked((current) => (current.every((id) => shown.has(id)) ? current : current.filter((id) => shown.has(id))));
   }, [data]);
 
+  // Estimated installments are not real records: they have no category, status or bill of their own to change.
+  const pickable = (data?.items ?? []).filter((t) => !t.estimated);
   const bulk = async (change: Parameters<typeof api.bulkEdit>[1]) => {
     setNote(null);
     try {
@@ -223,7 +225,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
       {picking && (
         <div class="bulk-bar">
           <strong>{picked.length} selecionada{picked.length === 1 ? '' : 's'}</strong>
-          <button class="link" onClick={() => setPicked(data?.items.map((t) => t.id) ?? [])}>Selecionar as {data?.items.length ?? 0} exibidas</button>
+          <button class="link" onClick={() => setPicked(pickable.map((t) => t.id))}>Selecionar as {pickable.length} exibidas</button>
           {data && data.total > data.items.length && <span class="muted">{data.items.length} de {data.total} no filtro. Use “Mostrar mais” para incluir outras.</span>}
           {picked.length > 0 && <button class="link" onClick={() => setPicked([])}>Limpar</button>}
           <CategorySelect ariaLabel="Categoria das selecionadas" placeholder="Mudar categoria para..." value="" onChange={(category) => category !== '' && picked.length > 0 && void bulk({ category })} />
@@ -304,6 +306,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
                       {internalNote(data.internal, hidden)} <button class="link" onClick={() => set({ spendingOnly: 'true' })}>Ver só gastos reais</button>
                     </div>
                   )}
+              {estimatedNote(data.estimated, hidden) && <div class="note">{estimatedNote(data.estimated, hidden)}</div>}
               {data.items.length === 0 ? (
                 <div class="empty">
                   Nenhuma transação com esses filtros. <button class="link" onClick={() => navigate('transactions')}>Limpar filtros</button>

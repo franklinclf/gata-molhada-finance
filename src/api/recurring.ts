@@ -1,3 +1,4 @@
+import { previousBusinessDay } from '../core/business-days.ts';
 import { merchantOf } from '../core/merchant.ts';
 import { dayNumber, nextMonth } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
@@ -17,7 +18,7 @@ export interface RecurringItem {
   dayOfMonth: number;
   occurrences: number;
   lastDay: string;
-  /** The day the next one is expected. */
+  /** The day the next one is expected. For a credit it is the business day before when the typical day is a weekend or holiday. */
   nextDay: string;
   /** True when the expected day has passed by more than a few days and nothing came. */
   late: boolean;
@@ -203,11 +204,14 @@ function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscr
   const recent = basis.slice(-3).map(dayOfMonthOf);
   const dayOfMonth = Math.max(...recent) - Math.min(...recent) > SAME_DAY_SPREAD ? recent.at(-1)! : median(recent);
   // The next one is the typical day in the month of the last one, moved a month ahead until it is a real interval after the last one.
+  // A credit (a salary, say) on a weekend or holiday comes on the business day before; a payment keeps its day.
+  const incoming = key.startsWith('in|');
+  const dayOf = (m: string): string => (incoming ? previousBusinessDay(dayInMonth(m, dayOfMonth)) : dayInMonth(m, dayOfMonth));
   let month = dayString(anchor.day).slice(0, 7);
-  let next = dayInMonth(month, dayOfMonth);
+  let next = dayOf(month);
   while (dayNumber(next) - anchor.day < INTERVAL.low) {
     month = nextMonth(month);
-    next = dayInMonth(month, dayOfMonth);
+    next = dayOf(month);
   }
   const category = [...sorted].reverse().find((o) => o.category !== null)?.category ?? null;
   const label = mark ?? (category !== null && SUBSCRIPTION_CATEGORIES.has(category) ? 'subscription' : null);

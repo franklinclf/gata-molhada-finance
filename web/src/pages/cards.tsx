@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks';
 import { api, type BillCheckView, type CardsView } from '../api.ts';
 import { gapShort, gapText, monthSpan } from '../bill-check.ts';
 import { Bars, Meter, StackedBars } from '../charts.tsx';
-import { brl, dayMonth, localDay, monthName } from '../format.ts';
+import { brl, dayMonth, localDay, monthLong, monthName } from '../format.ts';
 import { cardName } from '../names.ts';
 import { useLoad, useStoredFlag } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
@@ -13,6 +13,7 @@ import { Go, Loading, StatusBadge } from '../ui.tsx';
 import { Select } from '../Select.tsx';
 import { BillEditor } from '../BillEditor.tsx';
 import { IncomePanel } from '../IncomePanel.tsx';
+import { choiceOf, CURRENT_CYCLE, currentLabel, cycleCaption, otherCycles, resolveCycle } from './page-logic.ts';
 import { patchParams as openParams } from '../router.ts';
 
 const brlText = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
@@ -790,16 +791,20 @@ function LimitsPanel({ data, hidden }: { data: CardsView; hidden: boolean }) {
 }
 
 export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hidden: boolean }) {
-  const cycle = route.params.get('cycle') ?? 'open';
+  // No cycle in the address is the current one; `open` is everything still unpaid; a month is one due month.
+  const choice = route.params.get('cycle') ?? CURRENT_CYCLE;
   // One card of the list, so its bill is one click away instead of a scroll.
   const wanted = route.params.get('only') ?? '';
   // Old links: installments now live under Futuras and limits under Faturas.
   const rawTab = route.params.get('tab') ?? 'cards';
   const tab = rawTab === 'installments' ? 'forecast' : rawTab === 'limits' ? 'cards' : rawTab;
-  const { data, error, loading } = useLoad(() => api.cards(cycle), [cycle]);
-  const installments = useLoad(() => api.installments(), []);
   const bills = useLoad(() => api.bills(), []);
-  const currentBill = bills.data?.bars.find((b) => b.current)?.key;
+  const currentBill = bills.data ? (bills.data.bars.find((b) => b.current)?.key ?? 'open') : undefined;
+  // Nothing is asked for before the bars say which bill is the current one.
+  const resolved = resolveCycle(choice, bills.data?.bars);
+  const cycle = resolved ?? 'open';
+  const { data, error, loading } = useLoad(() => (resolved === undefined ? Promise.resolve(null) : api.cards(resolved)), [resolved]);
+  const installments = useLoad(() => api.installments(), []);
   const today = localDay(now.toISOString());
   // The date shown is the oldest bill still owing; once it has passed, "next" would be a lie.
   const overdue = !!data?.totals.nextDueDate && data.totals.nextDueDate < today && data.totals.outstanding > 0;
@@ -832,8 +837,8 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
             hidden={hidden}
             height={150}
             valueOnSelected
-            selected={cycle === 'open' ? (currentBill ?? 'open') : cycle}
-            onSelect={(key) => patchParams({ cycle: key === cycle ? null : key })}
+            selected={cycle}
+            onSelect={(key) => patchParams({ cycle: key === cycle || key === currentBill ? null : key })}
             data={bills.data.bars.map((b) => ({
               key: b.key,
               label: monthName(b.key).slice(0, 3),
@@ -852,11 +857,25 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
         </div>
       )}
       {tab === 'cards' && (
-        <label class="inline-field">
-          Ciclo
-          <Select ariaLabel="Fatura" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...[...new Set([...(data?.cycles ?? []), ...(cycle === 'open' ? [] : [cycle])])].sort().reverse().map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
-        </label>
+        <div class="filters">
+          <div class="seg" role="group" aria-label="Faturas em exibição">
+            <button class={choice === CURRENT_CYCLE ? 'tab on' : 'tab'} aria-pressed={choice === CURRENT_CYCLE} onClick={() => patchParams({ cycle: null })}>
+              {currentLabel(currentBill)}
+            </button>
+            <button class={choice === 'open' ? 'tab on' : 'tab'} aria-pressed={choice === 'open'} onClick={() => patchParams({ cycle: 'open' })}>
+              Em aberto
+            </button>
+          </div>
+          <Select
+            ariaLabel="Outros ciclos"
+            value={/^\d{4}-\d{2}$/.test(choice) ? choice : ''}
+            placeholder="Outros ciclos"
+            options={otherCycles(data?.cycles ?? [], currentBill, choice).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))}
+            onChange={(value) => value !== '' && patchParams({ cycle: choiceOf(value, currentBill) === CURRENT_CYCLE ? null : value })}
+          />
+        </div>
       )}
+      {tab === 'cards' && resolved !== undefined && <div class="muted">{cycleCaption(cycle, today)}</div>}
       {tab === 'cards' && listed.length > 2 && (
         <div class="filters">
           <Chip on={only === ''} onClick={() => patchParams({ only: null })}>
@@ -870,7 +889,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
         </div>
       )}
       {tab === 'check' && <CheckTab hidden={hidden} now={now} />}
-      {tab === 'check' ? null : error || (loading && !data) ? (
+      {tab === 'check' ? null : error || ((loading || resolved === undefined) && !data) ? (
         <Loading error={error} />
       ) : data ? (
         <>
@@ -921,7 +940,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
                   O saldo devedor é o limite usado que cada banco informa: a fatura aberta, as faturas fechadas não pagas e todas as parcelas que ainda vão vencer. Por isso é maior que a fatura aberta. Cartões que dividem o mesmo limite entram uma vez. A fatura aberta de cada cartão é a soma das compras do ciclo; quando o banco ainda não publicou a fatura, o app estima o valor pelo saldo menos as parcelas futuras e marca como estimado. Cada cartão fecha num dia, então cada um aparece no seu ciclo atual.
                 </details>
               ) : (
-                <div class="note">Esta tela mostra só as faturas com vencimento em {monthName(cycle)}: o total, o que falta pagar e o vencimento são destas faturas. Limite, saldo do emissor e outras faturas ficam de fora.</div>
+                <div class="note">Esta tela mostra só as faturas que vencem em {monthLong(cycle, today)}: o total, o que falta pagar e o vencimento são destas faturas. Limite, saldo do emissor e outras faturas ficam de fora.</div>
               )}
               <div class="cards-grid">
                 {listed.filter((card) => only === '' || card.id === only).map((card) => (

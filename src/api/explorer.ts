@@ -4,6 +4,7 @@ import type { Cents } from '../core/money.ts';
 import { DATA_START, localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
+import { estimatedTransactions } from './installments.ts';
 import { detectRecurring, recurringKeyOf } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type EffectiveTransaction, type ViewOptions } from './scope.ts';
 import { isNonSpending } from './views.ts';
@@ -71,6 +72,8 @@ export interface ExplorerResult extends Stamped {
   sums: { count: number; income: Cents; expense: Cents; net: Cents };
   /** The part of `sums` that is not income or spending: card payments, moves between own accounts and investments. The screen says so beside the totals. */
   internal: { count: number; income: Cents; expense: Cents };
+  /** The part of `sums` that is made of estimated installments (billed by the bank, never listed): their number and amount. */
+  estimated: { count: number; expense: Cents };
   /** Counts for each filter option. A facet ignores its own filter, so the other options stay visible. */
   facets: { categories: Facet[]; accounts: Array<Facet & { id: string; institution: string; kind: string; last4: string | null }>; institutions: Facet[] };
   /** Date range of each card cycle chosen, for the screen to show. */
@@ -82,13 +85,15 @@ type Dimension = 'category' | 'account' | 'institution';
 export function explore(store: Store, query: ExplorerQuery, now: Date, opts: ViewOptions = {}): ExplorerResult {
   const accounts = visibleAccounts(store, opts);
   const byId = new Map(accounts.map((a) => [a.id, a]));
-  const all = effectiveTransactions(store, { ...opts, includeExcluded: query.includeExcluded }, accounts);
+  // `real` feeds the bill cycles; the estimated installments (billed by the bank, never listed) join only the list and its sums, because the bill totals already add them.
+  const real = effectiveTransactions(store, { ...opts, includeExcluded: query.includeExcluded }, accounts);
+  const all = [...real, ...estimatedTransactions(store, now, opts, query.includeExcluded ? undefined : real)];
   const today = localDay(now.toISOString());
 
   const cycleRanges: ExplorerResult['cycleRanges'] = {};
   if (query.cycle !== undefined) {
     for (const account of accounts.filter((a) => a.kind === 'credit_card')) {
-      const cycles = cyclesFor(store, account, all, today);
+      const cycles = cyclesFor(store, account, real, today);
       const chosen = query.cycle === 'open' ? cycles.find((c) => c.status === 'open') : cycles.find((c) => c.key === query.cycle);
       if (chosen) cycleRanges[account.id] = { from: chosen.from, to: chosen.to, dueDate: chosen.dueDate };
     }
@@ -107,6 +112,8 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     // Data from before the start stays in the database for installments and bills, but is not browsable, except as part of a chosen bill.
     if (day < DATA_START && query.cycle === undefined) return false;
     if (query.future !== true && query.cycle === undefined && query.to === undefined && day > today) return false;
+    // An installment of a bill that has not come yet is a plan, not a charge: it shows only when the future option is on.
+    if (t.estimated && t.status === 'pending' && query.future !== true) return false;
     if (query.from !== undefined && day < query.from) return false;
     if (query.to !== undefined && day > query.to) return false;
     if (skip !== 'account' && query.accountIds?.length && !query.accountIds.includes(t.accountId)) return false;
@@ -155,7 +162,12 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
   let income = 0;
   let expense = 0;
   const internal = { count: 0, income: 0, expense: 0 };
+  const estimated = { count: 0, expense: 0 };
   for (const t of matching) {
+    if (t.estimated) {
+      estimated.count += 1;
+      estimated.expense += -t.amount;
+    }
     if (t.amount >= 0) income += t.amount;
     else expense += -t.amount;
     if (isNonSpending(t)) {
@@ -193,6 +205,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     items,
     sums: { count: matching.length, income, expense, net: income - expense },
     internal,
+    estimated,
     facets: {
       categories: sortFacets(facet('category', (t) => t.category ?? '')),
       accounts: [...accountFacets.values()].map((f) => { const a = byId.get(f.name); return { ...f, id: f.name, name: a?.name ?? '', institution: a?.institution ?? '', kind: a?.kind ?? '', last4: a?.last4 ?? null }; }).sort((a, b) => b.count - a.count),

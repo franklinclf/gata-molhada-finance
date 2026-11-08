@@ -7,7 +7,7 @@ import { addDays } from '../core/dates.ts';
 import { DATA_START, localDay } from '../core/time.ts';
 import { summarizeAccounts } from '../reconcile/accounts.ts';
 import { addMonthsToDay, cyclesFor, type Cycle } from './cycles.ts';
-import { installments } from './installments.ts';
+import { estimatedTransactions, installments } from './installments.ts';
 import { quotaReport } from '../scheduler/quota.ts';
 import type { Store } from '../store/store.ts';
 import { readAlerts } from '../http/pluggy-hook.ts';
@@ -384,9 +384,13 @@ export interface SpendingView extends Stamped, DateRange {
 }
 
 /** The transactions the spending view counts: no card payments or own moves, and no bank money in except a refund paired with its purchase. */
-export function spendingTransactions(store: Store, range: DateRange, opts: ViewOptions = {}): EffectiveTransaction[] {
+export function spendingTransactions(store: Store, range: DateRange, now: Date, opts: ViewOptions = {}): EffectiveTransaction[] {
   const bankIds = new Set(visibleAccounts(store, opts).filter(isBank).map((a) => a.id));
-  return liveTransactions(store, range, opts).filter((t) => {
+  const all = effectiveTransactions(store, opts);
+  // The installments the bank bills but never listed count as spending too (the bill totals add them from the plan, so they are not in `all`).
+  // The ones of bills that have not come (pending) are a plan: like the planned installments, they are left to the list's future option.
+  const counted = [...all, ...estimatedTransactions(store, now, opts, all).filter((t) => t.status !== 'pending')];
+  return counted.filter((t) => !t.excluded && inWindow(localDay(t.occurredAt), range)).filter((t) => {
     if (isNonSpending(t)) return false;
     // Money coming into a bank account is income. Only card credits (refunds) reduce spending.
     // A refund paired with its purchase is not income: it returns what the purchase spent.
@@ -400,7 +404,7 @@ export function spending(store: Store, range: DateRange, groupBy: SpendingGroup,
   const parents = categoryParents(store);
   const rows = new Map<string, { amount: Cents; count: number }>();
   const perDay = new Map<string, Cents>();
-  for (const t of spendingTransactions(store, range, opts)) {
+  for (const t of spendingTransactions(store, range, now, opts)) {
     const day = localDay(t.occurredAt);
     perDay.set(day, (perDay.get(day) ?? 0) - t.amount);
     const name = groupBy === 'category' ? (t.category ?? 'Sem categoria') : merchantOf(t);

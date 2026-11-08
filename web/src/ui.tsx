@@ -109,7 +109,9 @@ export const STATE_LABEL: Record<string, string> = {
   ignored: 'Ignorada por você (fora dos totais)',
 };
 
-export function TxRow({ t, hidden, onOpen, pick }: { t: { id: string; sourceIds?: string[]; title?: string; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void; /** When given, the row shows a checkbox and a click toggles it instead of opening the drawer. */ pick?: { on: boolean; toggle: () => void } }) {
+export function TxRow({ t, hidden, onOpen, pick: wanted }: { t: { id: string; estimated?: true; sourceIds?: string[]; title?: string; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void; /** When given, the row shows a checkbox and a click toggles it instead of opening the drawer. */ pick?: { on: boolean; toggle: () => void } }) {
+  // An estimated installment is read-only (no category, status or bill to change), so it is never picked: a click opens its explanation.
+  const pick = t.estimated ? undefined : wanted;
   return (
     <li class={pick?.on ? 'tx picked' : 'tx'} data-no-nav onClick={() => (pick ? pick.toggle() : onOpen(t.id))} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && (pick ? pick.toggle() : onOpen(t.id))}>
       {pick && (
@@ -143,6 +145,7 @@ export function TxRow({ t, hidden, onOpen, pick }: { t: { id: string; sourceIds?
               </span>
             )}
             {t.reversal?.side === 'refund' && <span class="badge good" data-tip={`Devolve a compra de ${dayMonth(t.reversal.otherDay)}`}>estorno</span>}
+            {t.estimated && <span class="badge info" data-tip="parcela de um parcelamento que o banco cobra na fatura, mas não listou">estimada</span>}
           </span>
         </div>
       </div>

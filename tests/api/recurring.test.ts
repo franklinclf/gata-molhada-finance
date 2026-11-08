@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { calendar } from '../../src/api/calendar.ts';
+import { scheduledDays } from '../../src/api/projection.ts';
 import { dayInMonth, detectRecurring, ignoreRecurring, markRecurring } from '../../src/api/recurring.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -59,7 +60,7 @@ test('a cancelled subscription, installments, pending and ignored items are left
 test('income that repeats is found too, and a recurring item whose day passed is late', () => {
   const store = seeded([...monthly('SALARIO ACME', [500000, 500000, 500000, 500000, 500000, 500000], '14')]);
   const [salary] = detectRecurring(store, NOW);
-  assert.deepEqual([salary?.direction, salary?.nextDay, salary?.late], ['in', '2026-11-14', false]);
+  assert.deepEqual([salary?.direction, salary?.nextDay, salary?.late], ['in', '2026-11-13', false]);
   const lateStore = seeded(monthly('Aluguel', [-120000, -120000, -120000, -120000], '03').slice(0, 4));
   const [rent] = detectRecurring(lateStore, new Date('2026-09-20T15:00:00Z'));
   assert.equal(rent?.nextDay, '2026-09-03');
@@ -192,7 +193,7 @@ test('a gym membership is a subscription without the owner saying so', () => {
 });
 
 test('marking a payer that pays twice a month keeps both expected credits', () => {
-  const pay: Array<[string, number]> = [['05-11', 360000], ['05-25', 250000], ['06-11', 360000], ['06-25', 250000], ['07-10', 360000], ['07-24', 250000], ['08-11', 360000], ['08-25', 250000], ['09-11', 360000], ['09-25', 250000], ['10-12', 360000]];
+  const pay: Array<[string, number]> = [['05-11', 410000], ['05-25', 250000], ['06-11', 410000], ['06-25', 250000], ['07-10', 410000], ['07-24', 250000], ['08-11', 410000], ['08-25', 250000], ['09-11', 410000], ['09-25', 250000], ['10-12', 410000]];
   const store = seeded(pay.map(([day, amount], i) => tx(`p${i}`, 'EMPRESA EXEMPLO SA', `2026-${day}`, amount, 'chk', { category: 'Salary' })));
   const before = detectRecurring(store, NOW).map((i) => [i.amount, i.dayOfMonth, i.regular]);
   markRecurring(store, 'in|empresa exemplo', 'recurring', NOW);
@@ -215,4 +216,13 @@ test('rent paid in parts keeps its item once the first part of the month is paid
   const [done] = detectRecurring(paid, now);
   assert.deepEqual([done?.amount, done?.rest, done?.nextDay], [124000, null, '2026-12-06']);
   assert.equal(outlookOf(paid, now).dueOut.recurring, 0);
+});
+
+test('scheduled days follow the rule, also when a moved day leaves its month', () => {
+  // Day 1: 1/11/2026 is a Sunday, so the November one comes on Friday 30/10; 1/12/2026 is a Tuesday.
+  assert.deepEqual(scheduledDays('2026-10-30', 1, '2026-10-01', '2026-12-30', 'previous').map((d) => [d.day, d.natural]), [['2026-10-30', '2026-11-01'], ['2026-12-01', '2026-12-01']]);
+  // Without a rule the days are the plain days of the month.
+  assert.deepEqual(scheduledDays('2026-11-01', 1, '2026-10-01', '2026-12-31').map((d) => d.day), ['2026-11-01', '2026-12-01']);
+  // The next business day: 31/10/2026 is a Saturday and 2/11 a holiday, so it goes to 3/11.
+  assert.deepEqual(scheduledDays('2026-11-03', 31, '2026-11-01', '2026-11-29', 'next').map((d) => [d.day, d.natural]), [['2026-11-03', '2026-10-31']]);
 });
