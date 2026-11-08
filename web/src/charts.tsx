@@ -197,11 +197,11 @@ export interface StackDatum {
 }
 
 /** Bars made of stacked parts, for a total whose makeup matters (installments, repeating charges, the usual spending). */
-export function StackedBars({ data, hidden, height = 150, selected, onSelect }: { data: StackDatum[]; hidden: boolean; height?: number; selected?: string | null; onSelect?: (key: string) => void }) {
+export function StackedBars({ data, hidden, height = 150, selected, onSelect, valueOnSelected = false }: { data: StackDatum[]; hidden: boolean; height?: number; selected?: string | null; onSelect?: (key: string) => void; /** On narrow screens only the selected bar keeps its value (see `Bars`). */ valueOnSelected?: boolean }) {
   const max = Math.max(1, ...data.map((d) => d.parts.reduce((s, p) => s + p.value, 0)));
   const Tag = onSelect ? 'button' : 'div';
   return (
-    <div class="bars" style={{ height: `${height}px` }} role="group">
+    <div class={valueOnSelected ? 'bars sel-values' : 'bars'} style={{ height: `${height}px` }} role="group">
       {data.map((d) => {
         const total = d.parts.reduce((s, p) => s + p.value, 0);
         const on = selected === undefined || selected === null || selected === d.key;

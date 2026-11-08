@@ -234,8 +234,10 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
   }
   const summary = summarizeAccounts(accounts);
   // The next due date is that of a card with something to pay: a card with nothing owed (an unused one) says nothing about it.
+  // With nothing to pay anywhere, the cards that have a bill of this amount speak; an empty bill (a card never used) does not.
   const owing = rows.filter((r) => r.toPay > 0);
-  const dues = (owing.length > 0 ? owing : rows).map((r) => r.nextDueDate).filter((d): d is string => d !== null).sort();
+  const billed = rows.filter((r) => r.total > 0);
+  const dues = (owing.length > 0 ? owing : billed.length > 0 ? billed : rows).map((r) => r.nextDueDate).filter((d): d is string => d !== null).sort();
   const months = new Set<string>();
   for (const list of allCycles.values()) for (const c of list) if (c.status !== 'open') months.add(c.key);
 

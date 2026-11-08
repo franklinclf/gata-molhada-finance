@@ -111,6 +111,7 @@ flowchart TD
   X --> CMP["Conferir: total do banco x soma do ciclo"]
   Y --> CMP
   CMP -->|"1 a 3 compras a até 6 dias do fechamento<br/>somam a diferença"| MV["Sugere mover"]
+  CMP -->|"a soma de registros que você ignorou é a diferença"| IG["Sugere restaurar"]
   CMP -->|"nada explica"| MS["Falta (lançar à mão) ou sobra (pendente suspeita)"]
 ```
 
@@ -123,6 +124,7 @@ flowchart TD
 | Parcela, status, fatura | `installment_overrides`, `transaction_overrides` | Sim |
 | Ignorar, juntar, separar | `ignored_records`, `manual_links` | Sim |
 | Fatura paga ou não | `cycle_overrides` | Sim (por conta canônica) |
+| Fatura dispensada em Conferir | `settings` (`bill_check_dismissed`) | Sim (por conta canônica e mês) |
 | Transação digitada | `manual_transactions` | Sim |
 
 ## 6. Custo e limites

@@ -15,6 +15,8 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
   const cycle = config.cycle ?? 'open';
   const { data, error, loading } = useLoad(() => api.cards(cycle), [cycle], 120_000);
   const bills = useLoad(() => api.bills(), [], 300_000);
+  // A month picked once stays saved with the layout, so the widget also says what is owed overall and offers the way back.
+  const all = useLoad(() => (cycle === 'open' ? Promise.resolve(null) : api.cards('open')), [cycle], 120_000);
   const today = localDay(now.toISOString());
   // The month picked on the chart is listed too, even when it is the current one and no bill of it is closed yet.
   const months = [...new Set([...(data?.cycles ?? []), ...(cycle === 'open' ? [] : [cycle])])].sort().reverse();
@@ -26,7 +28,7 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
   const shown = (data?.cards.filter((c) => (byMonth ? c.cycle !== null && c.total > 0 : c.toPay > 0)) ?? []).sort((a, b) => amountOf(b) - amountOf(a));
   const closedUnpaid = data?.cards.reduce((s, c) => s + c.outstanding, 0) ?? 0;
   // The part of the shared limit no listed purchase explains is in the header total, so it gets its own line to make the rows add up.
-  const unexplained = cycle === 'open' ? (data?.totals.unexplained ?? 0) : 0;
+  const unexplained = data?.totals.unexplained ?? 0;
   const due = data?.totals.nextDueDate ?? null;
   const late = (day: string | null) => day !== null && day < today;
   const barCount = Math.max(4, Math.min(12, Math.floor((pixels?.width ?? 380) / 52)));
@@ -46,6 +48,15 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
           <>
             <div class="big">{brl(byMonth ? data.totals.cycleTotal : data.totals.toPay, hidden)}</div>
             <div class="muted" data-tip={closedUnpaid > 0 || data.totals.futureInstallments > 0 ? `${brl(data.totals.toPay - closedUnpaid, hidden)} em fatura aberta + ${brl(closedUnpaid, hidden)} em faturas fechadas não pagas${cycle === 'open' && data.totals.futureInstallments > 0 ? `\nFora do total: ${brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras` : ''}` : undefined}>{byMonth ? `Faturas com vencimento em ${monthName(cycle)} · ${data.totals.toPay > 0 ? `a pagar ${brl(data.totals.toPay, hidden)}` : 'tudo pago'}` : due ? `Todas as faturas não pagas · ${late(due) ? 'venceu em' : 'próximo vencimento'} ${dayMonth(due)}` : 'Todas as faturas não pagas'}</div>
+            {byMonth && all.data && (
+              <div class="muted">
+                Todas as não pagas: {brl(all.data.totals.toPay, hidden)}
+                {all.data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(all.data.totals.nextDueDate)}` : ''}{' '}
+                <button class="link" onClick={() => setConfig({ cycle: 'open' })}>
+                  Ver em aberto
+                </button>
+              </div>
+            )}
             {size !== 'sm' && bills.data && (pixels === undefined || pixels.height >= 430) && (
               <>
                 <Bars
