@@ -294,6 +294,35 @@ test('an excess with no older bill still owed stays as overpaid', () => {
   assert.deepEqual([oct.overpaid, oct.latePaid], [5000, null]);
 });
 
+test('a credit balance the bank sends back after a bill was paid twice is netted against the payments, so the bill is not overpaid', () => {
+  const { store, card1 } = setup();
+  const octOf = () => cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-10')!;
+  const base = store.listCanonicalTransactions();
+  // The October bill (68000) is paid a second time, and the bank returns that money to the checking account.
+  store.replaceCanonicalTransactions([...base, tx('pay-oct-again', 'card1', '2026-10-16', 68000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  assert.deepEqual([octOf().paid, octOf().overpaid], [136000, 68000]);
+  store.replaceCanonicalTransactions([...base, tx('pay-oct-again', 'card1', '2026-10-16', 68000, 'Pagamento de cartão de crédito'), tx('pay-oct-back', 'card1', '2026-10-20', -68000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const oct = octOf();
+  assert.deepEqual([oct.paid, oct.overpaid, oct.outstanding, oct.status, oct.charges], [68000, 0, 0, 'paid', 68000], 'the return takes from the payments and is not a purchase');
+});
+
+test('a return with no payment in its window never makes a bill paid by less than nothing', () => {
+  const { store, card1 } = setup({ payments: false });
+  store.replaceCanonicalTransactions([...store.listCanonicalTransactions(), tx('back', 'card1', '2026-10-20', -5000, 'Pagamento de cartão de crédito')], [], NOW.toISOString());
+  const oct = cyclesFor(store, card1, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-10')!;
+  assert.deepEqual([oct.paid, oct.outstanding, oct.overpaid], [0, 68000, 0]);
+});
+
+test('the due date of a month nobody owes anything in comes from the cards that have a bill, not from an empty one', () => {
+  const { store, card1 } = setup();
+  const card2 = account('card2', { dueDate: '2026-09-14' });
+  store.upsertSourceBills('pierre', [{ externalId: 'b2-sep', accountExternalId: 'ext-card2', dueDate: '2026-09-14', closingDate: '2026-09-07', total: 0, minimumPayment: null }, { externalId: 'b2-oct', accountExternalId: 'ext-card2', dueDate: '2026-10-14', closingDate: '2026-10-07', total: 0, minimumPayment: null }], NOW.toISOString());
+  store.replaceCanonicalAccounts([card1, card2], [], NOW.toISOString());
+  const sep = cards(store, NOW, {}, '2026-09');
+  assert.equal(sep.totals.toPay, 0);
+  assert.equal(sep.totals.nextDueDate, '2026-09-15', 'the empty bill of 14/09 says nothing about when money is due');
+});
+
 test('the open cycle leaves out installments that belong to later bills, which the issuer balance includes', () => {
   const { store, card1 } = setup();
   // Installment 4 of 6 was charged in October (bill due in November); 5 and 6 are still to come.

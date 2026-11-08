@@ -19,7 +19,7 @@ import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type
 import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rule-suggestions.ts';
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
-import { billCheck } from './bill-check.ts';
+import { billCheck, setBillCheckDismissed } from './bill-check.ts';
 import { bulkEdit, addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, removeGroup, renameCategory, saveGroup, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
@@ -330,6 +330,12 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       return { status: 200, body: views.cards(store, now, opts, cycle) };
     }
     case 'bill-check':
+      if (parts.length === 3 && id === 'dismiss') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { bills: [{ accountId, cycleKey }], dismissed }');
+        return fromMutation(setBillCheckDismissed(store, input.bills, input.dismissed, now));
+      }
       if (parts.length !== 2) return null;
       return method === 'GET' ? { status: 200, body: billCheck(store, now) } : methodNotAllowed();
     case 'cycles': {
