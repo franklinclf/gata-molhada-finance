@@ -23,6 +23,9 @@ const DESCRIPTION: Array<[RegExp, Role]> = [
   [/^(pagamento recebido|pagto por deb|pagamento de fatura|credit card payment|pagamento fatura|gastos cartao de credito|pagamento com saldo)/, 'card_payment'],
   // A card bill paid from the bank account: the bank names the issuer (Bradescard's bills go to "BANCO IBI").
   [/^(pagto eletron cobranca banco (bradescard|ibi)|pagamento efetuado banco ibi)/, 'card_payment'],
+  // A bill paid twice leaves a credit balance that the bank sends back to the account ("DEVOLUCAO SALDO CREDOR" on Itaú):
+  // a debit on the card that undoes a payment, not a purchase.
+  [/^devolucao (de )?saldo credor/, 'card_payment'],
   [/^(transferencia mesma titularidade)/, 'own_transfer'],
   [/^(aplicacao|resgate)\b/, 'investment'],
 ];
