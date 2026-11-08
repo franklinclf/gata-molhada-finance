@@ -89,7 +89,7 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
       <h3>Corrigir</h3>
       <div class="correct">
         {!manual && (
-          <Field label={`Status${d.statusByUser ? ' (definido por você)' : ''}`} hint={d.statusByUser ? undefined : `A fonte diz: ${d.transaction.status === 'pending' ? 'pendente' : 'lançada'}.`}>
+          <Field label={`Status${d.statusByUser ? ' (definido por você)' : ''}`} hint={d.statusByUser ? undefined : d.statusByBill ? 'A fonte ainda diz pendente, mas a fatura desta compra já fechou.' : `A fonte diz: ${d.transaction.status === 'pending' ? 'pendente' : 'lançada'}.`}>
             <Select
               ariaLabel="Status da transação"
               value={d.statusByUser ? d.transaction.status : ''}

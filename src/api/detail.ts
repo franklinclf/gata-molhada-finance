@@ -46,6 +46,8 @@ export interface TransactionDetail {
   reversal: { side: 'charge' | 'refund'; byUser: boolean; partial: boolean; amount: Cents; other: { id: string; day: string; title: string; amount: Cents } | null } | null;
   reversalCandidates: Array<{ id: string; day: string; title: string; amount: Cents }>;
   statusByUser: boolean;
+  /** The source says pending, but the bill that holds this card charge is published, so it shows as posted. */
+  statusByBill: boolean;
   findings: StoredFinding[];
   /** The category rule that applies to this description, if there is one. */
   rule: { category: string } | null;
@@ -140,6 +142,7 @@ export function transactionDetail(store: Store, id: string, now: Date): Transact
       .slice(0, 25)
       .map((t) => brief(t)!),
     statusByUser: transaction.statusByUser,
+    statusByBill: transaction.statusByBill,
     findings: store.listFindings({ includeResolved: false }).filter((f) => f.transactionId === id),
     rule: rule !== undefined ? { category: rule } : null,
     joinedByHand,

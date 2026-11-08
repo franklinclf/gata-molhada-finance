@@ -45,6 +45,8 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   billByBank: boolean;
   /** The owner set the status by hand. */
   statusByUser: boolean;
+  /** The source still says pending, but the issuer already published the bill this card charge is on, so it shows as posted. */
+  statusByBill: boolean;
 }
 
 export interface Counterparty {
@@ -114,6 +116,24 @@ export function visibleLimitGroups(store: Store, accounts: CanonicalAccount[]): 
     .filter((g) => g.memberIds.length > 0);
 }
 
+/** Per card, the due months of the bills the issuers published and the latest closing day among them. A published bill has closed. */
+function publishedBills(store: Store): Map<string, { months: Set<string>; lastClosing: string }> {
+  const accountOf = new Map<string, string>();
+  for (const a of store.listCanonicalAccounts()) if (a.kind === 'credit_card') for (const r of a.refs) if (r.role === 'member') accountOf.set(`${r.sourceId}|${r.externalId}`, a.id);
+  const result = new Map<string, { months: Set<string>; lastClosing: string }>();
+  for (const sourceId of store.listSourceIds()) {
+    for (const b of store.listSourceBills(sourceId)) {
+      const accountId = accountOf.get(`${sourceId}|${b.accountExternalId}`);
+      if (accountId === undefined || b.closingDate === null) continue;
+      const entry = result.get(accountId) ?? { months: new Set<string>(), lastClosing: b.closingDate };
+      entry.months.add(b.dueDate.slice(0, 7));
+      if (b.closingDate > entry.lastClosing) entry.lastClosing = b.closingDate;
+      result.set(accountId, entry);
+    }
+  }
+  return result;
+}
+
 /** The bill (due month) the issuer put a charge on: its bill when it has one, otherwise the month it expects. Null when it said nothing. */
 function bankBillOf(parties: Parties | undefined, billMonth: Map<string, string>): string | null {
   return (parties?.billId ? billMonth.get(parties.billId) : undefined) ?? parties?.billForecast ?? null;
@@ -133,13 +153,14 @@ export function effectiveTransactions(
   const aliases = store.listCategoryAliases();
   const billMonth = new Map<string, string>();
   for (const sourceId of store.listSourceIds()) for (const b of store.listSourceBills(sourceId)) billMonth.set(b.externalId, b.dueDate.slice(0, 7));
+  const institutionOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a.institution]));
+  const published = publishedBills(store);
   // A set-aside pending entry the owner called posted is brought back, so it must be loaded even when excluded ones are not wanted.
   const loaded = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: true });
   const all = options.includeExcluded ? loaded : loaded.filter((t) => !t.excluded || (t.state === 'stale_pending' && txOverrides.get(t.id)?.status === 'posted'));
   const { labels: labelsOf, parties: partiesOf } = sourceFacts(store);
   const engineRules = sortRules(store.listRules());
   const regexes = new Map<string, RegExp | null>();
-  const institutionOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a.institution]));
   const people = peopleIn(store.listCanonicalTransactions({ includeExcluded: true }), partiesOf);
   const owners = ownerNames(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => ({ sourceCategory: t.category, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })));
   // A card bill paid by boleto or Pix QR code looks like any transfer; its amount gives it away.
@@ -189,9 +210,14 @@ export function effectiveTransactions(
       const word = txOverrides.get(t.id);
       // A payment of the bill carries the id of the bill it pays; it stays with its date.
       const bankBill = role === 'card_payment' ? null : bankBillOf(parties, billMonth);
-      const status = word?.status ?? t.status;
+      // Meu Pluggy keeps a card purchase pending until the issuer posts it, which can be long after the bill that holds it closed.
+      // Once that bill is published the purchase is part of it, whatever the source still says.
+      const billCycle = word?.cycleKey ?? bankBill;
+      const bill = published.get(t.accountId);
+      const byBill = word?.status == null && t.status === 'pending' && role === null && bill !== undefined && (billCycle !== null ? bill.months.has(billCycle) : localDay(t.occurredAt) <= bill.lastClosing);
+      const status = word?.status ?? (byBill ? 'posted' : t.status);
       const revived = word?.status === 'posted' && t.state === 'stale_pending';
-      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, reversal: null, billCycle: word?.cycleKey ?? bankBill, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
+      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, reversal: null, billCycle, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, statusByBill: byBill, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
     });
   const mirrored = ownMirrors(built, cardIds);
   const rows = built

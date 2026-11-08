@@ -1,6 +1,6 @@
 export const BRAZIL_OFFSET_MS = 3 * 3_600_000;
 
-/** Day the app starts caring about. Older source records are deleted, because they only add noise. */
+/** Day the app starts caring about. Older source records stay stored, but reconciliation and the views leave them out. */
 export const DATA_START = '2026-01-01';
 export const DATA_START_MONTH = DATA_START.slice(0, 7);
 
