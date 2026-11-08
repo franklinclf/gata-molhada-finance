@@ -1,14 +1,38 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { ButtonLink } from '../ds.tsx';
-import { api } from '../api.ts';
+import { api, type FreshnessView } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { ago, localDay, maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
+import { invalidateData } from '../invalidate.ts';
 import { patchParams } from '../router.ts';
 import { Loading } from '../ui.tsx';
 import { whenAhead } from './page-logic.ts';
 
-function alertText(event: string, code: string | null): string {
+type Source = FreshnessView['sources'][number];
+
+/** How long the page follows Meu Pluggy after the owner opens it to refresh. */
+const WATCH_MS = 10 * 60_000;
+
+/** A refresh the owner started at Meu Pluggy: which banks, and when each was last read before it. */
+type Watch = { institutions: string[]; before: Record<string, string>; until: number; popup: Window | null };
+
+/**
+ * Opens Meu Pluggy in a small window. It must happen in the click itself, or the browser blocks it. The window gets no
+ * handle back to the app, but the app keeps one to close it when the data arrives. Null when the browser refused.
+ */
+function openMeuPluggy(link: string): Window | null {
+  const popup = window.open('about:blank', 'meupluggy', 'popup,width=520,height=820');
+  if (!popup) return null;
+  popup.opener = null;
+  popup.location.href = link;
+  return popup;
+}
+
+function alertText(event: string, code: string | null, message: string | null): string {
+  // The message of this alert is the id of the new item.
+  if (event === 'item/created') return `há uma conexão nova, que o app não lê porque não está em PLUGGY_ITEMS. Inclua o id ${message ?? ''} lá.`;
+  if (event === 'item/deleted') return 'a conexão foi apagada no Meu Pluggy e os dados dela pararam de chegar. Conecte de novo e troque o id em PLUGGY_ITEMS.';
   if (event === 'item/waiting_user_input') return 'o banco pede um código ou uma confirmação.';
   if (event === 'item/waiting_user_action') return 'autorize o acesso no app do banco.';
   if (code === 'USER_AUTHORIZATION_PENDING' || code === 'USER_AUTHORIZATION_NOT_GRANTED') return 'a autorização no banco está pendente ou foi negada.';
@@ -17,7 +41,10 @@ function alertText(event: string, code: string | null): string {
 }
 
 export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidden: boolean; embedded?: boolean }) {
-  const fresh = useLoad(() => api.freshness(), [], 60_000);
+  const [watch, setWatch] = useState<Watch | null>(null);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  // While a refresh is followed, the read is checked every few seconds instead of every minute.
+  const fresh = useLoad(() => api.freshness(), [], watch ? 4_000 : 60_000);
   const findings = useLoad(() => api.findings(), []);
   const ai = useLoad(() => api.ai(), []);
   const [busy, setBusy] = useState<string | null>(null);
@@ -35,6 +62,32 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
       setBusy(null);
     }
   };
+  const refreshed = (src: Source): boolean => watch !== null && Date.parse(src.lastUpdatedAt) > Date.parse(watch.before[src.institution] ?? '') && !src.syncing;
+  /** Opens the connection at Meu Pluggy, where the owner taps Atualizar, and follows it until the new data is in. */
+  const startRefresh = (event: MouseEvent, link: string, institutions: string[]) => {
+    const popup = openMeuPluggy(link);
+    // Without a window of its own, the link opens as a normal tab and the page still follows.
+    if (popup) event.preventDefault();
+    setWatch({ institutions, before: Object.fromEntries((fresh.data?.sources ?? []).map((src) => [src.institution, src.lastUpdatedAt])), until: Date.now() + WATCH_MS, popup });
+    setRefreshNote(null);
+    api.watchSources().catch(() => setRefreshNote('O app não conseguiu conferir com mais frequência agora. Os dados novos entram pelo aviso do Meu Pluggy ou na conferência seguinte.'));
+  };
+  useEffect(() => {
+    if (!watch || !fresh.data) return;
+    const watched = fresh.data.sources.filter((src) => watch.institutions.includes(src.institution));
+    const done = watched.filter(refreshed).map((src) => src.institution);
+    const finished = watched.length > 0 && done.length === watched.length;
+    if (!finished && Date.now() < watch.until) return;
+    if (finished) watch.popup?.close();
+    setWatch(null);
+    if (done.length > 0) invalidateData();
+    setRefreshNote(
+      finished
+        ? `Pronto: ${done.join(', ')} ${done.length === 1 ? 'foi lido' : 'foram lidos'} agora, e os números já estão atualizados.`
+        : `${done.length > 0 ? `Lido agora: ${done.join(', ')}. ` : ''}O Meu Pluggy não terminou ${done.length > 0 ? 'os outros ' : ''}em 10 minutos. Quando terminar, o aviso dele traz os dados, e o app confere de novo a cada 30 minutos.`,
+    );
+  }, [fresh.data, watch]);
+  const rowState = (src: Source): string | null => (!watch?.institutions.includes(src.institution) ? null : src.syncing ? 'lendo os dados' : refreshed(src) ? 'lido agora' : 'esperando o Meu Pluggy');
   return (
     <div class="page-body">
       {embedded ? <h2>Fontes e conferência</h2> : <h1 class="page-title">Fontes e conferência</h1>}
@@ -53,9 +106,9 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
           <h2>Uma conexão precisa de você</h2>
           <ul class="rows">
             {fresh.data.connectionAlerts.map((a) => (
-              <li key={a.institution}>
+              <li key={`${a.institution}${a.at}`}>
                 <span class="grow">
-                  {a.institution}: {alertText(a.event, a.code)} <span class="muted">({ago(a.at, now)})</span>
+                  {a.institution}: {alertText(a.event, a.code, a.message)} <span class="muted">({ago(a.at, now)})</span>
                 </span>
                 <ButtonLink size="sm" href="https://meu.pluggy.ai" target="_blank" rel="noreferrer noopener">
                   Abrir o Meu Pluggy
@@ -68,9 +121,9 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
       <section class="panel">
         <div class="panel-head">
           <h2>Última leitura de cada banco</h2>
-          <a class="primary small" href="https://meu.pluggy.ai/connections" target="_blank" rel="noreferrer noopener">
-            Abrir o Meu Pluggy
-          </a>
+          <ButtonLink variant="primary" size="sm" href="https://meu.pluggy.ai/connections" target="_blank" rel="noreferrer noopener" onClick={(e) => startRefresh(e, 'https://meu.pluggy.ai/connections', (fresh.data?.sources ?? []).map((src) => src.institution))}>
+            Atualizar todos
+          </ButtonLink>
         </div>
         {!fresh.data ? (
           <Loading error={fresh.error} />
@@ -83,15 +136,17 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
                   {s.nextSyncAt && <div class="muted small source-next">Próxima leitura automática: {whenAhead(s.nextSyncAt, now)}{s.consentExpiresAt ? ` · consentimento até ${localDay(s.consentExpiresAt).split('-').reverse().join('/')}` : ''}</div>}
                 </span>
                 {s.quotaExhausted && <span class="badge bad">limite do banco atingido</span>}
+                {rowState(s) && <span class={rowState(s) === 'lido agora' ? 'badge good' : 'badge'}>{rowState(s)}</span>}
                 <span class={s.late ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>
-                <ButtonLink size="sm" href={s.link} target="_blank" rel="noreferrer noopener" title="Abre a conexão no Meu Pluggy, onde dá para atualizar agora">
+                <ButtonLink size="sm" href={s.link} target="_blank" rel="noreferrer noopener" title="Abre a conexão no Meu Pluggy numa janela pequena; toque em Atualizar lá e o app acompanha" onClick={(e) => startRefresh(e, s.link, [s.institution])}>
                   Atualizar
                 </ButtonLink>
               </li>
             ))}
           </ul>
         )}
-        <div class="note">As horas são de quando o Meu Pluggy leu cada banco, o que ele faz sozinho uma vez por dia; o app não consegue pedir uma leitura nova, então "Atualizar" abre a conexão no Meu Pluggy. Com o aviso do Meu Pluggy (webhook) ligado, os dados novos entram em segundos e o app confere por garantia a cada 30 minutos. Sem ele, a conferência é a cada 2 minutos. Nos dois casos nada é pedido aos bancos.</div>
+        {refreshNote && <div class="note" role="status">{refreshNote}</div>}
+        <div class="note">As horas são de quando o Meu Pluggy leu cada banco, o que ele faz sozinho uma vez por dia. O Pluggy não deixa outro app pedir essa leitura, só o próprio Meu Pluggy. Por isso "Atualizar" abre a conexão no Meu Pluggy numa janela pequena: toque em Atualizar lá, e o app acompanha, lê os dados assim que o banco responder e fecha a janela. Fora disso, o aviso do Meu Pluggy (webhook) traz os dados novos em segundos, e o app confere por garantia a cada 30 minutos.</div>
       </section>
       <section class="panel">
         <h2>Leituras do mês por banco</h2>

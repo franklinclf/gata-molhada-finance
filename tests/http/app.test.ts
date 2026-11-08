@@ -204,6 +204,17 @@ function signedIn() {
   return { deps, cookie: cookieOf(login.headers['Set-Cookie']) };
 }
 
+test('asking to follow a refresh at Meu Pluggy needs a session and an observer', () => {
+  const { deps, cookie } = signedIn();
+  assert.equal(handle(post('/api/sources/watch', {}), deps).status, 401);
+  assert.equal(handle(post('/api/sources/watch', {}, { cookie }), deps).status, 503, 'nothing watches the source');
+  const watching = { ...deps, watchSources: () => ({ until: '2026-10-29T16:34:00.000Z' }) };
+  const reply = handle(post('/api/sources/watch', {}, { cookie }), watching);
+  assert.equal(reply.status, 202);
+  assert.deepEqual(JSON.parse(reply.body as string), { until: '2026-10-29T16:34:00.000Z' });
+  assert.equal(handle(get('/api/sources/watch', { cookie }), watching).status, 405);
+});
+
 test('the chat conversation list, the card bills and the bill check are served to a session', () => {
   const { deps, cookie } = signedIn();
   assert.equal(handle(get('/api/chat/conversations'), deps).status, 401);

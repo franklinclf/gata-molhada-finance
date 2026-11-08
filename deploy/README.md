@@ -21,7 +21,7 @@ Para ligar (uma vez):
 
 ## Aviso do Meu Pluggy (webhook)
 
-O Meu Pluggy sincroniza cada banco sozinho uma vez por dia. Com um webhook, ele avisa o app quando termina e o app lê os dados na hora; sem o webhook, o app confere a cada 2 minutos. O dashboard da Pluggy (Applications > editar > Webhooks) só pede a URL e o evento, não deixa definir cabeçalhos, então o segredo vai no último trecho da URL.
+O Meu Pluggy sincroniza cada banco sozinho uma vez por dia, ou quando o dono toca em Atualizar lá. Com um webhook, ele avisa o app quando termina e o app lê os dados na hora; sem o webhook, o app confere a cada 2 minutos. O dashboard da Pluggy (Applications > editar > Webhooks) só pede a URL e o evento, não deixa definir cabeçalhos (só a API `POST /webhooks` deixa), então o segredo vai no último trecho da URL.
 
 - Gere o segredo e grave no cofre: `printf '%s\n' "$(openssl rand -hex 32)" | GMF_KEYVAULT=<cofre> bash infra/azure/set-secret.sh PLUGGY-WEBHOOK-SECRET`. Leia-o de volta para montar a URL: `az keyvault secret show --vault-name <cofre> --name PLUGGY-WEBHOOK-SECRET --query value -o tsv`.
 - Leia o segredo na VM: `bash infra/azure/deploy-now.sh --refresh-secrets`. Os logs mostram `observer on: pluggy every 30 min (Pluggy webhook on)`.

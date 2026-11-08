@@ -55,9 +55,17 @@ test('only POST is accepted, and a body that is not JSON is a 400', () => {
 
 test('an item error carries its code through', () => {
   const event = parsePluggyEvent({ event: 'item/error', itemId: 'i', error: { code: 'INVALID_CREDENTIALS', message: 'bad login' } });
-  assert.deepEqual(event, { event: 'item/error', itemId: 'i', errorCode: 'INVALID_CREDENTIALS', errorMessage: 'bad login' });
+  assert.deepEqual(event, { event: 'item/error', itemId: 'i', errorCode: 'INVALID_CREDENTIALS', errorMessage: 'bad login', transactionsMinDate: null, transactionIds: [] });
   assert.equal(parsePluggyEvent({ event: 'item/error' }), null);
   assert.equal(parsePluggyEvent('x'), null);
+});
+
+test('a transactions event carries how far back it reaches', () => {
+  const created = parsePluggyEvent({ event: 'transactions/created', itemId: 'i', accountId: 'a', transactionsCount: 3, transactionsMinDate: '2026-03-02T00:00:00.000Z', createdTransactionsLink: 'https://api.pluggy.ai/transactions?x' });
+  assert.equal(created?.transactionsMinDate, '2026-03-02T00:00:00.000Z');
+  const deleted = parsePluggyEvent({ event: 'transactions/deleted', itemId: 'i', accountId: 'a', transactionIds: ['t1', 2, '', 't2'] });
+  assert.deepEqual(deleted?.transactionIds, ['t1', 't2']);
+  assert.equal(parsePluggyEvent({ event: 'transactions/created', itemId: 'i', transactionsMinDate: 'not a date' })?.transactionsMinDate, null);
 });
 
 test('what each event asks of the app', () => {
@@ -66,6 +74,7 @@ test('what each event asks of the app', () => {
   assert.deepEqual(effectOf('transactions/deleted'), { wake: 'sync', alert: null });
   assert.deepEqual(effectOf('item/error'), { wake: false, alert: 'raise' });
   assert.deepEqual(effectOf('item/waiting_user_action'), { wake: false, alert: 'raise' });
+  assert.deepEqual(effectOf('item/deleted'), { wake: false, alert: 'raise' });
   assert.deepEqual(effectOf('connector/status_updated'), { wake: false, alert: null });
 });
 

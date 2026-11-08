@@ -253,6 +253,8 @@ export const api = {
     request<{ ok: true }>('/api/cycles/edit', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId, cycleKey, ...edit }) }),
   cycles: (accountId: string) => request<{ accountId: string; cycles: Cycle[] }>(`/api/cycles${query({ accountId })}`),
   freshness: () => request<FreshnessView>('/api/freshness'),
+  /** The owner opened Meu Pluggy to refresh: the server checks it every few seconds for a while. */
+  watchSources: () => request<{ until: string }>('/api/sources/watch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
   resetState: () => request<{ available: boolean; running?: boolean; mode?: 'soft' | 'hard' | null; step?: string | null; startedAt?: string | null; finishedAt?: string | null; result?: 'completed' | 'failed' | null; summary?: string | null; error?: string | null }>('/api/reset'),
   startReset: (mode: 'soft' | 'hard') => request<{ started: true }>('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) }),
   findings: () => request<{ items: FindingItem[] }>('/api/findings'),

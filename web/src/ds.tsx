@@ -26,9 +26,9 @@ export function Button({ variant = 'secondary', size = 'md', class: extra, type 
 }
 
 /** A link that looks like a button, for things that open another page or tab. */
-export function ButtonLink({ variant = 'secondary', size = 'md', class: extra, href, target, rel, title, children }: { variant?: ButtonVariant; size?: ButtonSize; class?: string; href: string; target?: string; rel?: string; title?: string; children: ComponentChildren }) {
+export function ButtonLink({ variant = 'secondary', size = 'md', class: extra, href, target, rel, title, onClick, children }: { variant?: ButtonVariant; size?: ButtonSize; class?: string; href: string; target?: string; rel?: string; title?: string; onClick?: (event: MouseEvent) => void; children: ComponentChildren }) {
   return (
-    <a class={buttonClass(variant, size, extra)} href={href} target={target} rel={rel} title={title}>
+    <a class={buttonClass(variant, size, extra)} href={href} target={target} rel={rel} title={title} onClick={onClick}>
       {children}
     </a>
   );

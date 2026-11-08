@@ -386,6 +386,8 @@ export interface Store {
    * never touched, and one that lost most of its window is left alone unless `force` is set.
    */
   pruneUnseenSourceTransactions(sourceId: SourceId, accountIds: string[], from: string, to: string, seenAt: string, force?: boolean): AccountPruneResult;
+  /** The oldest date among these source records, or null when none is saved. Tells how far back a read must go to see them again. */
+  earliestSourceTransactionAt(sourceId: SourceId, externalIds: string[]): string | null;
   /**
    * Drops source accounts the latest complete read of the accounts did not return, with their transactions and bills (a
    * reconnected item gets new account ids and leaves the old ones behind). Refuses when it would remove most accounts.

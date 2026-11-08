@@ -9,6 +9,7 @@ import { summarizeAccounts } from '../reconcile/accounts.ts';
 import { addMonthsToDay, cyclesFor, type Cycle } from './cycles.ts';
 import { estimatedTransactions, installments } from './installments.ts';
 import { quotaReport } from '../scheduler/quota.ts';
+import { pendingSyncKey } from '../scheduler/defaults.ts';
 import type { Store } from '../store/store.ts';
 import { readAlerts } from '../http/pluggy-hook.ts';
 import { stamp, type Stamped } from './stamp.ts';
@@ -583,7 +584,7 @@ const CONSENT_WARNING_DAYS = 30;
 export interface FreshnessView {
   generatedAt: string;
   health: HealthIssue[];
-  sources: Array<{ sourceId: string; institution: string; lastUpdatedAt: string; observedAt: string; quotaExhausted: boolean; consentExpiresAt: string | null; nextSyncAt: string | null; /** Hours between reads the source is expected to keep. */ expectedEveryHours: number; /** The last read is older than the expected rhythm allows: the sync is stuck, not just a day old. */ late: boolean; /** The page of this connection at Meu Pluggy, where the owner can update it. */ link: string }>;
+  sources: Array<{ sourceId: string; institution: string; lastUpdatedAt: string; observedAt: string; quotaExhausted: boolean; consentExpiresAt: string | null; nextSyncAt: string | null; /** Hours between reads the source is expected to keep. */ expectedEveryHours: number; /** The last read is older than the expected rhythm allows: the sync is stuck, not just a day old. */ late: boolean; /** A change was seen and the app is still reading it. */ syncing: boolean; /** The page of this connection at Meu Pluggy, where the owner can update it. */ link: string }>;
   /** Connections the provider said need the owner (login expired, consent to renew). */
   connectionAlerts: Array<{ institution: string; event: string; code: string | null; message: string | null; at: string }>;
   quota: ReturnType<typeof quotaReport>;
@@ -607,7 +608,7 @@ export function freshness(store: Store, now: Date): FreshnessView {
   return {
     generatedAt: now.toISOString(),
     health: dataHealth(store, now),
-    sources: store.listFreshness().map((f) => ({ sourceId: f.sourceId, institution: f.institution, lastUpdatedAt: f.lastUpdatedAt, observedAt: f.observedAt, quotaExhausted: f.quotaExhausted === true, consentExpiresAt: f.consentExpiresAt ?? null, nextSyncAt: f.nextSyncAt ?? null, expectedEveryHours: EXPECTED_READ_HOURS, late: isLate(f.lastUpdatedAt, now), link: meuPluggyLinks(store)[f.institution] ?? MEU_PLUGGY_CONNECTIONS })),
+    sources: store.listFreshness().map((f) => ({ sourceId: f.sourceId, institution: f.institution, lastUpdatedAt: f.lastUpdatedAt, observedAt: f.observedAt, quotaExhausted: f.quotaExhausted === true, consentExpiresAt: f.consentExpiresAt ?? null, nextSyncAt: f.nextSyncAt ?? null, expectedEveryHours: EXPECTED_READ_HOURS, late: isLate(f.lastUpdatedAt, now), syncing: store.getSetting(pendingSyncKey(f.sourceId)) === '1', link: meuPluggyLinks(store)[f.institution] ?? MEU_PLUGGY_CONNECTIONS })),
     connectionAlerts: Object.values(readAlerts(store)).sort((a, b) => a.institution.localeCompare(b.institution)),
     quota: quotaReport(store, now),
   };
