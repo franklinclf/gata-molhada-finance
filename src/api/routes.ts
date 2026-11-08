@@ -186,7 +186,7 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         if (method === 'GET') return { status: 200, body: { items: store.listIncome() } };
         if (method !== 'POST') return methodNotAllowed();
         const input = parseBody(body);
-        return input ? asResult(saveIncome(store, null, input, now)) : badRequest('body must be { name, amount, dayOfMonth, fromMonth?, untilMonth? }');
+        return input ? asResult(saveIncome(store, null, input, now)) : badRequest('body must be { name, amount, dayOfMonth, nonBusinessRule?, fromMonth?, untilMonth? }');
       }
       const incomeId = numericId(id);
       if (parts.length !== 3 || !Number.isInteger(incomeId)) return null;

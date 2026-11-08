@@ -119,7 +119,7 @@ test('without registered income the recurring credits are the income, and what a
 
 test('registered income wins over the estimate, and with neither the income is unknown instead of invented', () => {
   const store = seeded({ bills: BILLS, list: [...base(), ...monthly('SALARIO ACME', 500000, '20', ['05', '06', '07', '08', '09'])] });
-  store.saveIncome({ name: 'Salario', amount: 420000, dayOfMonth: 22, fromMonth: null, untilMonth: null }, T);
+  store.saveIncome({ name: 'Salario', amount: 420000, dayOfMonth: 22, nonBusinessRule: 'previous', fromMonth: null, untilMonth: null }, T);
   const v = outlook(store, NOW);
   assert.equal(v.expectedIn.source, 'registered');
   assert.deepEqual(v.expectedIn.items.map((e) => [e.name, e.day, e.amount]), [['Salario', '2026-10-22', 420000]]);
@@ -184,10 +184,88 @@ test('the calendar and the outlook project the same income and the same balance 
   const { calendar } = await import('../../src/api/calendar.ts');
   // A recurring salary of 5.000,00 on the 20th and a registered income of 4.200,00 on the 22nd: both views use the registered one.
   const store = seeded({ bills: BILLS, list: [...base(), ...monthly('SALARIO ACME', 500000, '20', ['05', '06', '07', '08', '09'])] });
-  store.saveIncome({ name: 'Salario', amount: 420000, dayOfMonth: 22, fromMonth: null, untilMonth: null }, T);
+  store.saveIncome({ name: 'Salario', amount: 420000, dayOfMonth: 22, nonBusinessRule: 'previous', fromMonth: null, untilMonth: null }, T);
   const v = outlook(store, NOW);
   const days = calendar(store, '2026-10', NOW).days;
   const incomes = days.flatMap((d) => d.projected.filter((p) => p.direction === 'in').map((p) => [d.day, p.name, p.amount]));
   assert.deepEqual(incomes, [['2026-10-22', 'Salario', 420000]]);
   assert.equal(days[days.length - 1]!.balance, v.free.value);
+});
+
+const incomes = (store: ReturnType<typeof seeded>, now: Date) => outlook(store, now).expectedIn.items.map((e) => [e.day, e.name, e.amount, e.note, e.late]);
+const register = (store: ReturnType<typeof seeded>, name: string, amount: number, dayOfMonth: number, nonBusinessRule: 'previous' | 'next' | 'keep' = 'previous') => store.saveIncome({ name, amount, dayOfMonth, nonBusinessRule, fromMonth: null, untilMonth: null }, T);
+
+test('registered income on a weekend or holiday moves by its rule, in the outlook and in the calendar', async () => {
+  const { calendar } = await import('../../src/api/calendar.ts');
+  // 10/10/2026 is a Saturday and 25/10/2026 a Sunday.
+  const monday = new Date('2026-10-05T15:00:00Z');
+  const store = seeded();
+  register(store, 'Salario A', 410000, 10);
+  register(store, 'Salario B', 198750, 25);
+  assert.deepEqual(incomes(store, monday), [['2026-10-09', 'Salario A', 410000, 'antecipado: dia 10 cai no sábado', false], ['2026-10-23', 'Salario B', 198750, 'antecipado: dia 25 cai no domingo', false]]);
+  const projected = calendar(store, '2026-10', monday).days.flatMap((d) => d.projected.map((p) => [d.day, p.name, p.note]));
+  assert.deepEqual(projected, [['2026-10-09', 'Salario A', 'antecipado: dia 10 cai no sábado'], ['2026-10-23', 'Salario B', 'antecipado: dia 25 cai no domingo']]);
+
+  const next = seeded();
+  register(next, 'Salario A', 410000, 10, 'next');
+  // The Monday after (12/10) is a holiday, so the payment goes to the 13th.
+  assert.deepEqual(incomes(next, monday), [['2026-10-13', 'Salario A', 410000, 'adiado: dia 10 cai no sábado', false]]);
+  const keep = seeded();
+  register(keep, 'Salario A', 410000, 10, 'keep');
+  assert.deepEqual(incomes(keep, monday), [['2026-10-10', 'Salario A', 410000, undefined, false]]);
+
+  // Christmas 2026 is a Friday holiday.
+  const december = seeded();
+  register(december, 'Salario A', 410000, 25);
+  assert.deepEqual(incomes(december, new Date('2026-12-01T15:00:00Z')), [['2026-12-24', 'Salario A', 410000, 'antecipado: dia 25 cai no feriado (Natal)', false]]);
+});
+
+test('a credit posted the day after the payment day, or a few days before it, is the payment and is not expected again', () => {
+  const tenth = new Date('2026-11-11T15:00:00Z');
+  const pay = (id: string, day: string, amount: number, extra: Partial<CanonicalTransaction> = {}) => tx(id, 'Salario ACME', day, amount, 'chk', { category: 'Salario', ...extra });
+  const setup = (list: CanonicalTransaction[]) => {
+    const store = seeded({ list });
+    register(store, 'Salario A', 410000, 10);
+    register(store, 'Salario B', 198750, 25);
+    return store;
+  };
+  // Nothing posted yet on the 11th: the 10th payment can still come this morning, so it stays expected and is marked late.
+  assert.deepEqual(incomes(setup([]), tenth).map((e) => [e[0], e[4]]), [['2026-11-10', true], ['2026-11-25', false]]);
+  // Posted on the 11th, a day after the payment day: it is in the balance.
+  assert.deepEqual(incomes(setup([pay('s1', '2026-11-11', 410000)]), tenth).map((e) => e[0]), ['2026-11-25']);
+  // Within 10% of the registered amount counts; far from it does not; a card payment or an own transfer is not income.
+  assert.deepEqual(incomes(setup([pay('s2', '2026-11-11', 380000)]), tenth).map((e) => e[0]), ['2026-11-25']);
+  assert.deepEqual(incomes(setup([pay('s3', '2026-11-11', 250000)]), tenth).map((e) => e[0]), ['2026-11-10', '2026-11-25']);
+  assert.deepEqual(incomes(setup([pay('s4', '2026-11-11', 410000, { category: 'Credit card payment' })]), tenth).map((e) => e[0]), ['2026-11-10', '2026-11-25']);
+  // A credit from before the window, last month's salary, does not settle this month's.
+  assert.deepEqual(incomes(setup([pay('s5', '2026-10-09', 410000)]), tenth).map((e) => e[0]), ['2026-11-10', '2026-11-25']);
+});
+
+test('a salary that arrived days before its day is not expected again, and one credit settles one payment', () => {
+  const early = new Date('2026-10-08T15:00:00Z');
+  const store = seeded({ list: [tx('s1', 'Salario ACME', '2026-10-07', 410000, 'chk', { category: 'Salario' })] });
+  register(store, 'Salario A', 410000, 10);
+  register(store, 'Salario B', 198750, 25);
+  assert.deepEqual(incomes(store, early).map((e) => e[0]), ['2026-10-23']);
+  // Two registered incomes of the same amount on the same day need two credits.
+  const twin = seeded({ list: [tx('r1', 'Aluguel recebido', '2026-10-05', 150000, 'chk', { category: 'Renda' })] });
+  register(twin, 'Aluguel A', 150000, 5);
+  register(twin, 'Aluguel B', 150000, 6);
+  assert.deepEqual(incomes(twin, new Date('2026-10-05T15:00:00Z')).map((e) => [e[0], e[1]]), [['2026-10-06', 'Aluguel B']]);
+});
+
+test('a detected monthly credit lands on the business day before a weekend, and a credit that already came under another name settles it', () => {
+  // Salary on the 14th; 14/11/2026 is a Saturday.
+  const salary = monthly('SALARIO ACME', 500000, '14');
+  const monday = new Date('2026-11-02T15:00:00Z');
+  const detected = seeded({ list: salary });
+  assert.deepEqual(incomes(detected, monday), [['2026-11-13', 'Salario Acme', 500000, 'antecipado: dia 14 cai no sábado', false]]);
+  const view = outlook(detected, monday);
+  assert.equal(view.expectedIn.source, 'recurring');
+  // The same amount posted on the 9th by a payer with another name: it is this month's salary. Off by a cent, it is not (a fixed amount has to match).
+  const later = new Date('2026-11-10T15:00:00Z');
+  const paid = seeded({ list: [...salary, tx('folha', 'FOLHA ACME', '2026-11-09', 500000)] });
+  assert.deepEqual(incomes(paid, later), []);
+  const other = seeded({ list: [...salary, tx('folha', 'FOLHA ACME', '2026-11-09', 500001)] });
+  assert.deepEqual(incomes(other, later).map((e) => e[0]), ['2026-11-13']);
 });

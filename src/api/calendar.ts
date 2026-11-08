@@ -4,7 +4,7 @@ import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { groupBill, incomeEvents, monthlyDays } from './projection.ts';
 import { detectRecurring, isExpected, type RecurringItem } from './recurring.ts';
-import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
+import { effectiveTransactions, visibleAccounts, type EffectiveTransaction, type ViewOptions } from './scope.ts';
 import { cards, cashFlow } from './views.ts';
 
 export interface ProjectedItem {
@@ -15,6 +15,8 @@ export interface ProjectedItem {
   kind: 'recurring' | 'bill';
   /** The item was due before today and has not shown up. */
   late: boolean;
+  /** Why an income day was moved off a weekend or holiday, when it was. */
+  note?: string;
 }
 
 export interface CalendarDay {
@@ -39,7 +41,7 @@ export interface CalendarView {
 const MAX_AHEAD_DAYS = 100;
 
 /** Everything expected to happen from tomorrow on, by day: recurring items paid from the bank, and the card bills. */
-function projectedByDay(store: Store, recurring: RecurringItem[], now: Date, opts: ViewOptions, until: string): Map<string, ProjectedItem[]> {
+function projectedByDay(store: Store, recurring: RecurringItem[], now: Date, opts: ViewOptions, until: string, transactions: EffectiveTransaction[]): Map<string, ProjectedItem[]> {
   const today = localDay(now.toISOString());
   const out = new Map<string, ProjectedItem[]>();
   const add = (day: string, item: ProjectedItem) => {
@@ -63,9 +65,8 @@ function projectedByDay(store: Store, recurring: RecurringItem[], now: Date, opt
     }
   }
   // Money in: the same rule as the outlook (the income the owner registered, else the credits that repeat every month).
-  for (const e of incomeEvents(store, recurring, today, until).events) add(e.day, { name: e.name, amount: e.amount, direction: 'in', kind: 'recurring', late: false });
+  for (const e of incomeEvents(store, recurring, today, until, transactions).events) add(e.day, { name: e.name, amount: e.amount, direction: 'in', kind: 'recurring', late: e.late, ...(e.note ? { note: e.note } : {}) });
   const accounts = visibleAccounts(store, opts).filter((a) => a.kind === 'credit_card');
-  const transactions = effectiveTransactions(store, opts);
   const view = cards(store, now, opts, 'open');
   const openTotal = new Map(view.cards.map((c) => [c.id, c.total]));
   // Cards on a shared limit have one open total, the same estimate the cards screen uses. It is one bill for the group, named by its cards and dated by the earliest due date.
@@ -99,7 +100,7 @@ export function calendar(store: Store, month: string, now: Date, opts: ViewOptio
   const monthEnd = lastDayOf(month);
   const recurring = detectRecurring(store, now, opts);
   const horizon = addDays(today, MAX_AHEAD_DAYS);
-  const projected = projectedByDay(store, recurring, now, opts, monthEnd < horizon ? monthEnd : horizon);
+  const projected = projectedByDay(store, recurring, now, opts, monthEnd < horizon ? monthEnd : horizon, effectiveTransactions(store, opts));
   const actual = new Map(cashFlow(store, { from: monthStart, to: monthEnd < today ? monthEnd : today }, now, opts).days.map((d) => [d.day, d]));
 
   // The projected balance starts from today's balance and walks forward, through the days before the month if it is ahead.

@@ -162,16 +162,16 @@ test('a gap equal to what the owner ignored is said so, with the records to put 
   const bills: Array<[string, string, string, number]> = [['b-jan', '2026-01-15', '2026-01-08', 60000], ['b-feb', '2026-02-15', '2026-02-08', 70000]];
   const store = setup(bills, [
     tx('start', '2025-11-01', -100),
-    // A charge of 1754 that the owner ignored, and its refund, which is still counted: the bank bills both.
-    tx('gone', '2025-12-30', -1754, { state: 'ignored', excluded: true }),
-    tx('refund', '2026-01-05', 1754),
+    // A charge of 1890 that the owner ignored, and its refund, which is still counted: the bank bills both.
+    tx('gone', '2025-12-30', -1890, { state: 'ignored', excluded: true }),
+    tx('refund', '2026-01-05', 1890),
     tx('jan', '2025-12-20', -60000),
     tx('feb', '2026-01-20', -70000),
   ]);
   const [item, ...rest] = billCheck(store, NOW).items;
   assert.equal(rest.length, 0);
-  assert.deepEqual([item!.cycleKey, item!.gap], ['2026-01', -1754]);
-  assert.deepEqual(item!.suggestion, { kind: 'ignored', amount: 1754, records: [{ transactionId: 'gone', day: '2025-12-30', amount: -1754, description: 'gone' }] });
+  assert.deepEqual([item!.cycleKey, item!.gap], ['2026-01', -1890]);
+  assert.deepEqual(item!.suggestion, { kind: 'ignored', amount: 1890, records: [{ transactionId: 'gone', day: '2025-12-30', amount: -1890, description: 'gone' }] });
   assert.equal(item!.old, false, 'a record to put back is shown whatever the age');
 });
 

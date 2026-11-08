@@ -207,6 +207,7 @@ function Selection({ from, to, days, hidden, onClear }: { from: string; to: stri
                 <span class="muted">{dayMonth(p.day)}</span>
                 <span class="grow clip">
                   {p.name} {p.late && <span class="badge bad">atrasado</span>}
+                  {p.note && <small class="muted"> · {p.note}</small>}
                 </span>
                 <span class="muted">{p.kind === 'bill' ? 'fatura' : 'esperado'}</span>
                 <strong class={p.direction === 'in' ? 'good-text' : ''}>

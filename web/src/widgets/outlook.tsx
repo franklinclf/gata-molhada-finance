@@ -64,6 +64,7 @@ export function OutlookTimeline({ data, hidden, limit, detail = false, linkMore 
               {!e.covered && <span class="badge bad">não cobre</span>}
               {e.estimate && <span class="badge">estimado</span>}
               {e.afterMonth && <span class="badge">próximo mês</span>}
+              {e.note && <small class="muted outlook-origin outlook-note">{e.note}</small>}
               {detail && <small class="muted outlook-origin">{e.origin}</small>}
             </span>
             <span class="outlook-amount">
