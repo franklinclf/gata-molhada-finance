@@ -3,6 +3,7 @@ import { LineChart, StackBar } from '../charts.tsx';
 import { brl } from '../format.ts';
 import { chartHeight, shareLabel } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
+import { netWorthLabel } from '../names.ts';
 import { Go } from '../ui.tsx';
 import { FitList, Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
@@ -10,6 +11,10 @@ import type { WidgetProps } from './index.ts';
 export function NetWorthWidget({ now, hidden, size, pixels }: WidgetProps) {
   const { data, error, loading } = useLoad(() => api.netWorth(), [], 300_000);
   const total = data ? data.assets + data.liabilities : 0;
+  // Accounts with nothing in them are one line at the end of the list.
+  const items = [...(data?.items ?? [])].sort((a, b) => b.value - a.value);
+  const filled = items.filter((i) => i.value !== 0);
+  const zero = items.length - filled.length;
   return (
     <Widget
       title="Patrimônio"
@@ -37,22 +42,31 @@ export function NetWorthWidget({ now, hidden, size, pixels }: WidgetProps) {
         )
       }
     >
-      {data && size !== 'sm' && data.items.length > 0 && (
+      {data && size !== 'sm' && items.length > 0 && (
         <FitList
           noun={['item', 'itens']}
-          rows={[...data.items]
-            .sort((a, b) => b.value - a.value)
-            .map((i) => (
-              <li key={`${i.kind}${i.name}${i.assetId ?? ''}`}>
+          rows={[
+            ...filled.map((i, n) => (
+              <li key={`${i.kind}${i.name}${i.assetId ?? ''}${n}`}>
                 <Go class="grow clip" page="networth">
-                  {i.name}
+                  {netWorthLabel(i.name, i.kind)}
                 </Go>
                 <strong class={i.liability ? 'bad-text' : ''}>
                   {i.liability ? '−' : ''}
                   {brl(i.value, hidden)}
                 </strong>
               </li>
-            ))}
+            )),
+            ...(zero > 0
+              ? [
+                  <li key="zero" class="muted">
+                    <Go class="grow clip" page="networth">
+                      {zero} {zero === 1 ? 'item sem saldo' : 'itens sem saldo'}
+                    </Go>
+                  </li>,
+                ]
+              : []),
+          ]}
         />
       )}
     </Widget>

@@ -91,7 +91,7 @@ export function ChatPage({ route, hidden }: { route: Route; hidden: boolean }) {
           <ul class="rows">
             {(conversations.data?.items ?? []).map((c: ChatConversation) => (
               <li key={c.id}>
-                <button class={c.id === current ? 'link on' : 'link'} onClick={() => patchParams({ c: String(c.id) })}>
+                <button class={c.id === current ? 'link on chat-title' : 'link chat-title'} title={c.title} onClick={() => patchParams({ c: String(c.id) })}>
                   <span class="clip">{c.title}</span>
                 </button>
                 <button class="link" aria-label="Excluir conversa" onClick={() => window.confirm('Excluir esta conversa?') && void api.deleteChat(c.id).then(() => { if (c.id === current) patchParams({ c: null }); conversations.reload(); })}>

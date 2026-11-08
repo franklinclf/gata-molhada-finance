@@ -5,7 +5,7 @@ import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { installments } from './installments.ts';
 import { groupBill, incomeEvents, monthlyDays } from './projection.ts';
-import { detectRecurring, type RecurringItem } from './recurring.ts';
+import { detectRecurring, isExpected, type RecurringItem } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
 import { stamp, type Stamped } from './stamp.ts';
 import { cards } from './views.ts';
@@ -96,7 +96,8 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
   const bankAccounts = accounts.filter((a) => a.kind !== 'credit_card');
   const cardAccounts = accounts.filter((a) => a.kind === 'credit_card');
   const balance = bankAccounts.reduce((s, a) => s + a.balance, 0);
-  const recurring = detectRecurring(store, now, opts);
+  // A marked item with no monthly rhythm, or one that stopped, is listed on its screen but not expected here.
+  const recurring = detectRecurring(store, now, opts).filter(isExpected);
 
   // Card bills: closed ones still owed, and the open one. A bill already overdue is due today.
   const raw: Raw[] = [];
@@ -142,7 +143,9 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
     if (r.nextDay < today) days.unshift(today);
     for (const day of days) {
       const isLate = r.nextDay < today && day === today;
-      events.push({ day, name: r.name, amount: r.amount, direction: 'out', kind: 'recurring', origin: r.kind === 'fixed' ? `repete todo mês, dia ${r.dayOfMonth}` : `repete todo mês, dia ${r.dayOfMonth}, valor varia (usado o valor típico)`, late: isLate && r.late, estimate: r.kind === 'variable' });
+      // Rent paid in parts: this month's event is what is still due, the ones after it are the whole.
+      const first = day === days[0];
+      events.push({ day, name: r.name, amount: first && r.rest !== null ? r.rest : r.amount, direction: 'out', kind: 'recurring', origin: r.kind === 'fixed' ? `repete todo mês, dia ${r.dayOfMonth}` : `repete todo mês, dia ${r.dayOfMonth}, valor varia (usado o valor típico)`, late: isLate && r.late, estimate: r.kind === 'variable' });
     }
   }
 

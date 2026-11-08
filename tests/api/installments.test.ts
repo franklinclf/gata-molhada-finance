@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
-import { installments } from '../../src/api/installments.ts';
+import { installments, refundedCharges } from '../../src/api/installments.ts';
+import type { EffectiveTransaction } from '../../src/api/scope.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
 const MIGRATIONS = fileURLToPath(new URL('../../migrations', import.meta.url));
@@ -53,6 +54,25 @@ test('a number that was not seen between two charges is placed by counting month
   const p = installments(store, NOW).purchases[0]!;
   const second = p.slots[1]!;
   assert.deepEqual([second.number, second.cycle, second.status, second.inferred], [2, '2026-08', 'paid', true]);
+});
+
+test('a bank that changes the text of a purchase halfway still gives one purchase, with nothing to plan', () => {
+  const first = series('Parcelamento de Compra', 4, 2500, [[1, '2026-07-02'], [2, '2026-08-02']]);
+  const rest = series('Parcelamento de Compra "Loja Exemplo"', 4, 2500, [[3, '2026-09-02'], [4, '2026-10-02']]);
+  const v = installments(seeded([...first, ...rest]), NOW);
+  assert.equal(v.purchases.length, 1);
+  assert.deepEqual(v.purchases[0]!.slots.map((s) => [s.number, s.cycle, s.inferred]), [[1, '2026-07', false], [2, '2026-08', false], [3, '2026-09', false], [4, '2026-10', false]]);
+});
+
+test('an installment purchase refunded right away plans no more installments', () => {
+  const store = seeded([...series('Farmacia Exemplo', 3, 3000, [[1, '2026-07-02']]), tx('refund', '2026-07-02', 3000, 'Farmacia Exemplo')]);
+  assert.equal(installments(store, NOW).purchases.length, 0);
+});
+
+test('a first installment that came as a plain charge is that installment, not one more to plan', () => {
+  const store = seeded([tx('plain', '2026-08-02', -2001, 'Farmacia Exemplo'), ...series('Farmacia Exemplo 2/2', 2, 2000, [[2, '2026-09-02']])]);
+  const p = installments(store, NOW).purchases[0]!;
+  assert.deepEqual(p.slots.map((s) => [s.number, s.cycle, s.inferred, s.day]), [[1, '2026-08', false, '2026-08-02'], [2, '2026-09', false, '2026-09-02']]);
 });
 
 test('an installment before the first one we hold counts as paid', () => {
@@ -116,4 +136,31 @@ test('installments Meu Pluggy lists as pending charges dated in the future are f
   const p = installments(seeded(list), NOW).purchases[0]!;
   assert.deepEqual(p.slots.map((s) => [s.number, s.status, s.inferred]), [[1, 'open', false], [2, 'future', false], [3, 'future', false], [4, 'future', false]]);
   assert.deepEqual([p.open, p.future, p.remaining], [1, 3, 20000]);
+});
+
+test('an installment purchase refunded later by an "estorno" with another text plans no more installments when the owner linked them', () => {
+  // 1 of 12 charged in July and given back a week later as "Estorno de compra".
+  const store = seeded([...series('Software Exemplo', 12, 1500, [[1, '2026-07-02']]), tx('estorno', '2026-07-09', 1500, 'Estorno de compra')]);
+  assert.equal(installments(store, NOW).purchases.length, 1, 'the app only guessed the pairing, so the plan stays');
+  const all = store.listCanonicalTransactions();
+  store.replaceCanonicalTransactions(all, all.map((t) => ({ sourceId: 'pierre', externalId: t.id, transactionId: t.id, matchPass: 0 })), NOW.toISOString());
+  assert.equal(store.setReversalLink('Software Exemplo-1', 'estorno', true, NOW.toISOString()), true);
+  assert.equal(installments(store, NOW).purchases.length, 0);
+});
+
+test('an "estorno" of the same amount as one installment does not cancel an installment purchase it does not name', () => {
+  // The refund is for the shoes (August), but the TV installment of the same amount is the nearest earlier debit.
+  const store = seeded([tx('shoes', '2026-08-01', -10000, 'Loja Sapato'), ...series('Loja Televisao', 10, 10000, [[1, '2026-09-02']]), tx('estorno', '2026-10-15', 10000, 'ESTORNO LOJA SAPATO')]);
+  const [tv] = installments(store, NOW).purchases;
+  assert.deepEqual([tv?.description, tv?.total, tv?.slots.length], ['Loja Televisao', 10, 10], 'the installments to come are still planned');
+});
+
+test('a refund that names the purchase, or returns all of it, cancels the plan', () => {
+  const named = seeded([...series('Loja Televisao', 10, 10000, [[1, '2026-09-02']]), tx('estorno', '2026-10-15', 10000, 'ESTORNO LOJA TELEVISAO')]);
+  assert.equal(installments(named, NOW).purchases.length, 0);
+  // The app pairs a refund with a purchase of the same amount only, so a refund of the whole purchase reaches the plan through the owner's link.
+  const row = (id: string, amount: number, description: string, extra: Partial<EffectiveTransaction> = {}) => ({ id, amount, description, excluded: false, role: null, accountId: 'c1', occurredAt: '2026-09-02T15:00:00Z', installment: null, reversal: null, ...extra }) as unknown as EffectiveTransaction;
+  const charge = row('c', -10000, 'Loja Televisao', { installment: { number: 1, total: 3 }, reversal: { side: 'charge', otherId: 'r', otherDay: '2026-10-15', amount: 10000, partial: false, byUser: false } });
+  assert.equal(refundedCharges([charge, row('r', 30000, 'Estorno de compra')]).has('c'), true, 'the refund is 3 x 100,00');
+  assert.equal(refundedCharges([charge, row('r', 10000, 'Estorno de compra')]).has('c'), false, 'one installment back says nothing about the others');
 });

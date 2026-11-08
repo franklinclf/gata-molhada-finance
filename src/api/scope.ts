@@ -2,6 +2,7 @@ import type { CanonicalAccount, CanonicalTransaction, LimitGroup } from '../core
 import { normalizeName } from '../core/names.ts';
 import { mapSourceCategory } from '../ai/source-map.ts';
 import { localDay } from '../core/time.ts';
+import { dayNumber } from '../core/dates.ts';
 import type { ForeignAmount, Parties } from '../core/parties.ts';
 import { categoryForMcc } from './mcc.ts';
 import { pairReversals, type Reversal } from './reversals.ts';
@@ -44,6 +45,8 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   billByBank: boolean;
   /** The owner set the status by hand. */
   statusByUser: boolean;
+  /** The source still says pending, but the issuer already published the bill this card charge is on, so it shows as posted. */
+  statusByBill: boolean;
 }
 
 export interface Counterparty {
@@ -113,6 +116,24 @@ export function visibleLimitGroups(store: Store, accounts: CanonicalAccount[]): 
     .filter((g) => g.memberIds.length > 0);
 }
 
+/** Per card, the due months of the bills the issuers published and the latest closing day among them. A published bill has closed. */
+function publishedBills(store: Store): Map<string, { months: Set<string>; lastClosing: string }> {
+  const accountOf = new Map<string, string>();
+  for (const a of store.listCanonicalAccounts()) if (a.kind === 'credit_card') for (const r of a.refs) if (r.role === 'member') accountOf.set(`${r.sourceId}|${r.externalId}`, a.id);
+  const result = new Map<string, { months: Set<string>; lastClosing: string }>();
+  for (const sourceId of store.listSourceIds()) {
+    for (const b of store.listSourceBills(sourceId)) {
+      const accountId = accountOf.get(`${sourceId}|${b.accountExternalId}`);
+      if (accountId === undefined || b.closingDate === null) continue;
+      const entry = result.get(accountId) ?? { months: new Set<string>(), lastClosing: b.closingDate };
+      entry.months.add(b.dueDate.slice(0, 7));
+      if (b.closingDate > entry.lastClosing) entry.lastClosing = b.closingDate;
+      result.set(accountId, entry);
+    }
+  }
+  return result;
+}
+
 /** The bill (due month) the issuer put a charge on: its bill when it has one, otherwise the month it expects. Null when it said nothing. */
 function bankBillOf(parties: Parties | undefined, billMonth: Map<string, string>): string | null {
   return (parties?.billId ? billMonth.get(parties.billId) : undefined) ?? parties?.billForecast ?? null;
@@ -132,13 +153,15 @@ export function effectiveTransactions(
   const aliases = store.listCategoryAliases();
   const billMonth = new Map<string, string>();
   for (const sourceId of store.listSourceIds()) for (const b of store.listSourceBills(sourceId)) billMonth.set(b.externalId, b.dueDate.slice(0, 7));
+  const institutionOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a.institution]));
+  const published = publishedBills(store);
   // A set-aside pending entry the owner called posted is brought back, so it must be loaded even when excluded ones are not wanted.
-  const loaded = store.listCanonicalTransactions({ accountId: options.accountId, includeExcluded: true });
+  // Every account is loaded, also when one is asked for, so the other side of a move between accounts is found the same way on every screen.
+  const loaded = store.listCanonicalTransactions({ includeExcluded: true });
   const all = options.includeExcluded ? loaded : loaded.filter((t) => !t.excluded || (t.state === 'stale_pending' && txOverrides.get(t.id)?.status === 'posted'));
   const { labels: labelsOf, parties: partiesOf } = sourceFacts(store);
   const engineRules = sortRules(store.listRules());
   const regexes = new Map<string, RegExp | null>();
-  const institutionOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a.institution]));
   const people = peopleIn(store.listCanonicalTransactions({ includeExcluded: true }), partiesOf);
   const owners = ownerNames(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => ({ sourceCategory: t.category, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })));
   // A card bill paid by boleto or Pix QR code looks like any transfer; its amount gives it away.
@@ -148,8 +171,8 @@ export function effectiveTransactions(
     store.listCanonicalTransactions({ includeExcluded: false }).filter((t) => !cardIds.has(t.accountId)).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })),
     store.listSourceIds().flatMap((sourceId) => store.listSourceBills(sourceId)),
   );
-  const rows: EffectiveTransaction[] = all
-    .filter((t) => ids.has(t.accountId))
+  // Rows are built for every account, so the other side of a move to a hidden account is found the same way on every screen.
+  const built: EffectiveTransaction[] = all
     .map((t) => {
       const labels = mergeLabels(t.category, labelsOf.get(t.id));
       const parties = partiesOf.get(t.id);
@@ -163,6 +186,8 @@ export function effectiveTransactions(
       if (override !== undefined) [category, origin] = [override, 'override'];
       else if (rule !== undefined) [category, origin] = [rule, 'rule'];
       else if (engineRules.length > 0 && (engineHit = categoryFromRules(ruleSubjectOf({ ...t, counterparty, sourceLabels: labels, operation: parties?.operation ?? null, mcc: parties?.mcc ?? null, role: evidenceRole(labels, t.description) }, institutionOf.get(t.accountId) ?? ''), engineRules, regexes))) [category, origin] = [engineHit.category, 'rule'];
+      // A tax slip is a tax whatever the source called it (one source labels federal tax slips as fixed income).
+      else if (TAX_SLIP.test(normalizeName(t.description))) category = 'Impostos e taxas';
       else if (labels.some((l) => mapSourceCategory(l) !== null)) category = labels.map((l) => mapSourceCategory(l)).find((c) => c !== null) ?? category;
       // Money sent by Pix or TED to a person (a CPF) is a transfer, whatever the text says. A company could be a shop, so that is left to the label, the merchant code and the AI.
       else if (/^(pix|ted)$/i.test(parties?.operation ?? '') && counterparty?.kind === 'person' && !counterparty.isOwner) category = 'Transferências';
@@ -172,19 +197,33 @@ export function effectiveTransactions(
       const installment = installmentOverrides.get(t.id) ?? t.installment;
       // A condition rule matches on text and amounts, so on its own it must not turn a card payment into spending. Only a rule that names a role category sets the role.
       const roleOrigin: CategoryOrigin = engineHit && !ROLE_CATEGORY_NAMES.has(category ?? '') ? 'ai' : origin;
-      const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: roleOrigin, owners, ownerDocument: counterparty?.isOwner === true && /^(pix|ted|transferencia)/i.test(parties?.operation ?? '') }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
+      // The other side's document is the owner's on a Pix, a TED or anything the source calls a transfer (some come as "OUTROS"). A yield is income even when the source names the owner as payer.
+      const operation = parties?.operation ?? '';
+      const ownerDocument = counterparty?.isOwner === true && (/^(pix|ted|transferencia)/i.test(operation) || (!/^rendimento/i.test(operation) && /transfer/i.test(`${labels.join(' ')} ${t.description}`)));
+      const role = roleOf({ sourceCategory: t.category, labels, description: t.description, category, categoryOrigin: roleOrigin, owners, ownerDocument, card: cardIds.has(t.accountId) }) ?? (slipPayments.has(t.id) && (origin === 'source' || origin === 'ai') ? 'card_payment' : null);
       // What the source or the AI called it must agree with what it is for the arithmetic.
       if (role && (origin === 'source' || origin === 'ai' || engineHit)) category = ROLE_CATEGORY[role];
+      // A source label that names a role ("Fixed income" on a tax slip, "Investments" on a card purchase) without being one says nothing true: the owner picks.
+      else if (!role && origin === 'source' && category !== null && ROLE_CATEGORY_NAMES.has(category)) category = null;
       // The owner renamed or merged this category: the new name shows everywhere. A card payment, a move between your accounts and an investment keep their fixed names.
       if (category !== null && !ROLE_CATEGORY_NAMES.has(category)) category = resolveAlias(aliases, category);
       // The owner's word about the status wins over the source's. Calling a set-aside pending entry posted brings it back into the totals.
       const word = txOverrides.get(t.id);
       // A payment of the bill carries the id of the bill it pays; it stays with its date.
       const bankBill = role === 'card_payment' ? null : bankBillOf(parties, billMonth);
-      const status = word?.status ?? t.status;
+      // Meu Pluggy keeps a card purchase pending until the issuer posts it, which can be long after the bill that holds it closed.
+      // Once that bill is published the purchase is part of it, whatever the source still says.
+      const billCycle = word?.cycleKey ?? bankBill;
+      const bill = published.get(t.accountId);
+      const byBill = word?.status == null && t.status === 'pending' && role === null && bill !== undefined && (billCycle !== null ? bill.months.has(billCycle) : localDay(t.occurredAt) <= bill.lastClosing);
+      const status = word?.status ?? (byBill ? 'posted' : t.status);
       const revived = word?.status === 'posted' && t.state === 'stale_pending';
-      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, reversal: null, billCycle: word?.cycleKey ?? bankBill, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
+      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, reversal: null, billCycle, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, statusByBill: byBill, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
     });
+  const mirrored = ownMirrors(built, cardIds);
+  const rows = built
+    .filter((t) => ids.has(t.accountId) && (options.accountId === undefined || t.accountId === options.accountId))
+    .map((t) => (mirrored.has(t.id) ? { ...t, role: 'own_transfer' as const, category: ROLE_CATEGORY.own_transfer, title: titleOf({ description: t.description, amount: t.amount, role: 'own_transfer', operation: t.operation, counterparty: t.counterparty }) } : t));
   // A refund and the purchase it returned are one entry. The refund takes the category of the purchase (unless the owner chose its own),
   // so the category's total is net of it instead of the credit landing in "Estorno" or in income.
   const pairs = pairReversals(rows, store.listReversalLinks());
@@ -196,6 +235,54 @@ export function effectiveTransactions(
     const charge = reversal.side === 'refund' ? byId.get(reversal.otherId) : undefined;
     return charge && t.categoryOrigin !== 'override' && charge.category !== null ? { ...t, reversal, category: charge.category } : { ...t, reversal };
   });
+}
+
+/** Federal tax slips (DARF, the Simples Nacional DAS). */
+const TAX_SLIP = /\bdarf\b|\bdas simples\b|receita fed/;
+
+/** The two sides of a move between own accounts can be dated this many days apart. */
+const MIRROR_DAYS = 2;
+
+/**
+ * Bank Pix and transfers with no role that are the other side of a move the source did mark as between the owner's
+ * accounts. Some banks write the owner's name cut short ("REM <name> dd/mm") or no name at all, and a cut name can also be
+ * the start of a relative's name, so the name proves nothing: the mirror does. A mirror is a marked move on another bank
+ * account with the opposite sign and the same amount, at most two days apart. The closest pairs are matched first, over all
+ * accounts at once (by days apart, then by time), and each side is used once, so a payment to someone else of the same amount
+ * does not take a mirror from its real other side. Marked moves pair with each other before they pair with anything else, and a
+ * marked move whose opposite sits on its own account (a pair of one account) has its other side there and takes no mirror.
+ * A category the owner chose (by hand or by a rule) is never changed.
+ */
+export function ownMirrors(rows: EffectiveTransaction[], cardIds: Set<string>): Set<string> {
+  const dayOf = (t: EffectiveTransaction) => dayNumber(localDay(t.occurredAt));
+  const bank = rows.filter((t) => !t.excluded && t.amount !== 0 && !cardIds.has(t.accountId));
+  const marked = bank.filter((t) => t.role === 'own_transfer');
+  const candidates = bank.filter((t) => t.role === null && (t.categoryOrigin === 'source' || t.categoryOrigin === 'ai') && (/^(pix|ted)$/i.test(t.operation ?? '') || /transfer/i.test(`${t.sourceLabels.join(' ')} ${t.description}`)));
+  const markedBy = new Map<number, EffectiveTransaction[]>();
+  for (const t of marked) markedBy.set(Math.abs(t.amount), [...(markedBy.get(Math.abs(t.amount)) ?? []), t]);
+  const used = new Set<string>();
+  // Every pair of a row from `side` and a marked move with the opposite sign and amount, closest first: days apart, then time apart.
+  const match = (side: EffectiveTransaction[], sameAccount: boolean): EffectiveTransaction[] => {
+    const pairs: Array<{ a: EffectiveTransaction; b: EffectiveTransaction; days: number; ms: number }> = [];
+    for (const a of side) {
+      for (const b of markedBy.get(Math.abs(a.amount)) ?? []) {
+        const days = Math.abs(dayOf(a) - dayOf(b));
+        if (a.id !== b.id && b.amount === -a.amount && (a.accountId === b.accountId) === sameAccount && days <= MIRROR_DAYS) pairs.push({ a, b, days, ms: Math.abs(Date.parse(a.occurredAt) - Date.parse(b.occurredAt)) });
+      }
+    }
+    pairs.sort((x, y) => x.days - y.days || x.ms - y.ms || x.a.id.localeCompare(y.a.id) || x.b.id.localeCompare(y.b.id));
+    const taken: EffectiveTransaction[] = [];
+    for (const { a, b } of pairs) {
+      if (used.has(a.id) || used.has(b.id)) continue;
+      used.add(a.id);
+      used.add(b.id);
+      taken.push(a);
+    }
+    return taken;
+  };
+  match(marked, false);
+  match(marked, true);
+  return new Set(match(candidates, false).map((t) => t.id));
 }
 
 /** Hash of the other side's document per transaction, for comparing two records without exposing it on screen. */

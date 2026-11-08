@@ -1,19 +1,27 @@
 import { useState } from 'preact/hooks';
-import { api, type CardsView } from '../api.ts';
+import { api, type BillCheckView, type CardsView } from '../api.ts';
+import { gapShort, gapText, monthSpan } from '../bill-check.ts';
 import { Bars, Meter, StackedBars } from '../charts.tsx';
-import { brl, dayMonth, localDay, monthName, parseBrl } from '../format.ts';
+import { brl, dayMonth, localDay, monthName } from '../format.ts';
+import { cardName } from '../names.ts';
 import { useLoad, useStoredFlag } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
-import { Button } from '../ds.tsx';
+import { Button, Chip } from '../ds.tsx';
 import { ManualForm } from '../ManualForm.tsx';
 import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
 import { Select } from '../Select.tsx';
 import { BillEditor } from '../BillEditor.tsx';
+import { IncomePanel } from '../IncomePanel.tsx';
 import { patchParams as openParams } from '../router.ts';
 
 const brlText = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 const fullDay = (day: string) => `${dayMonth(day)}/${day.slice(0, 4)}`;
+
+/** Ignores or restores several records, one call each. */
+async function setIgnoredAll(records: Array<{ transactionId: string }>, ignored: boolean) {
+  for (const r of records) await api.setIgnored(r.transactionId, ignored);
+}
 
 /** Moves the charges to their new bills, one call per destination bill so a bill never ends up half moved. */
 async function moveAll(moves: Array<{ transactionId: string; toCycleKey: string }>) {
@@ -22,17 +30,39 @@ async function moveAll(moves: Array<{ transactionId: string; toCycleKey: string 
   for (const [cycleKey, ids] of byBill) await api.bulkEdit(ids, { cycleKey });
 }
 
+type CheckItem = BillCheckView['items'][number];
+
+/** Bank, app and difference of one bill as a small table: the amounts stay whole on a narrow screen, and the difference is written out. */
+function BillFacts({ item, hidden }: { item: CheckItem; hidden: boolean }) {
+  return (
+    <dl class="facts inline">
+      <dt>Banco</dt>
+      <dd>{brl(item.billTotal, hidden)}</dd>
+      <dt>App</dt>
+      <dd>{brl(item.ours, hidden)}</dd>
+      <dt>Diferença</dt>
+      <dd class={item.gap > 0 ? 'bad-text' : ''}>{gapShort(item.gap, hidden)}</dd>
+    </dl>
+  );
+}
+
+const cardLabel = (x: { institution: string; last4: string | null }) => `${x.institution}${x.last4 ? ` •••• ${x.last4}` : ''}`;
+
 /** Closed bills whose published total differs from what the app adds up, each with the likeliest cause and a way to fix it. */
 function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
   const [manual, setManual] = useState<string | null>(null);
   const check = useLoad(() => api.billCheck(), []);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const apply = async (key: string, work: () => Promise<unknown>) => {
+  // What the owner just did, with a way back: the row leaves the list, so without this nothing says it worked.
+  const [notice, setNotice] = useState<{ text: string; undo: () => Promise<unknown>; open?: string } | null>(null);
+  const apply = async (key: string, work: () => Promise<unknown>, done?: { text: string; undo: () => Promise<unknown> }) => {
     setBusy(key);
     setMessage(null);
+    setNotice(null);
     try {
       await work();
+      if (done) setNotice(done);
       check.reload();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Não foi possível aplicar.');
@@ -41,85 +71,202 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
     }
   };
   if (!check.data) return <Loading error={check.error} />;
-  const { items, setAside, duplicatePayments } = check.data;
+  const { items, runs, dismissed, setAside, duplicatePayments } = check.data;
+  const ref = (i: CheckItem) => ({ accountId: i.accountId, cycleKey: i.cycleKey });
+  const dismiss = (key: string, list: CheckItem[], text: string) => void apply(key, () => api.dismissBills(list.map(ref), true), { text, undo: () => api.dismissBills(list.map(ref), false) });
+  // An old paid bill is history; one with an ignored record to put back is worth seeing at any age.
+  const recent = items.filter((i) => !i.old);
+  const old = items.filter((i) => i.old);
+  const row = (item: CheckItem) => {
+    const key = `${item.accountId}|${item.cycleKey}`;
+    const s = item.suggestion;
+    return (
+      <li key={key} class="suggestion">
+        <div class="grow">
+          <div>
+            {cardLabel(item)} · vence {fullDay(item.dueDate)} <span class="muted">({dayMonth(item.from)} a {dayMonth(item.to)})</span>
+          </div>
+          <BillFacts item={item} hidden={hidden} />
+          {s.kind === 'move' && (
+            <ul class="rows">
+              {s.moves.map((m) => (
+                <li key={m.transactionId}>
+                  <button class="link grow clip" onClick={() => patchParams({ tx: m.transactionId })}>
+                    {fullDay(m.day)} · {m.description}
+                  </button>
+                  <span>{brl(m.amount, hidden)}</span>
+                  <span class="muted">vai para a fatura de {monthName(m.toCycleKey)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {s.kind === 'ignored' && (
+            <>
+              <div class="muted">O banco conta {s.records.length === 1 ? 'um lançamento' : `${s.records.length} lançamentos`} que você ignorou, e a soma ({brl(s.amount, hidden)}) é a diferença desta fatura. Restaure para ela fechar:</div>
+              <ul class="rows">
+                {s.records.map((r) => (
+                  <li key={r.transactionId}>
+                    <button class="link grow clip" onClick={() => patchParams({ tx: r.transactionId })}>
+                      {fullDay(r.day)} · {r.description}
+                    </button>
+                    <span>{brl(r.amount, hidden)}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {s.kind === 'missing' && s.unlisted && (
+            <div class="muted">
+              O banco cobra {brl(s.amount, hidden)} a mais, e o valor bate com {s.unlisted.length === 1 ? 'uma parcela que o banco não listou' : 'duas parcelas que o banco não listou'}:{' '}
+              {s.unlisted.map((u) => `${u.number}/${u.total} de ${u.description}, que o app contou na fatura de ${monthName(u.cycleKey)}`).join(' e ')}. Confira se {s.unlisted.length === 1 ? 'ela foi cobrada' : 'elas foram cobradas'} nesta fatura antes de lançar a diferença.
+            </div>
+          )}
+          {s.kind === 'missing' && !s.unlisted && <div class="muted">O banco cobra {brl(s.amount, hidden)} que nenhuma compra perto do fechamento explica. Provavelmente uma compra, juros ou IOF que não chegaram: use “Lançar a diferença”.</div>}
+          {s.kind === 'extra' && <div class="muted">O app soma {brl(s.amount, hidden)} a mais do que o banco cobrou e nenhuma compra perto do fechamento explica. Pode ser uma pendente que o banco nunca lançou: abra a compra suspeita e ignore ou mude o status.</div>}
+        </div>
+        <div class="actions">
+          <Button size="sm" onClick={() => navigate('chat', { q: `A fatura do ${item.institution}${item.last4 ? ` final ${item.last4}` : ''} com vencimento em ${item.dueDate} veio ${brlText(item.billTotal)} no banco e o app soma ${brlText(item.ours)} (período ${item.from} a ${item.to}). O que pode explicar a diferença de ${brlText(item.gap)}? Consulte as transações do período e as parcelas.` })}>
+            Perguntar à IA
+          </Button>
+          {/* Only a bill larger than the app's sum is fixed by adding a charge; with a smaller bill it would double the gap. */}
+          {s.kind === 'missing' && (
+            <Button size="sm" onClick={() => (item.old && !window.confirm('Esta fatura é antiga e já foi paga. Lançar a diferença cria uma compra de ajuste nela. Continuar?') ? undefined : setManual(manual === key ? null : key))}>
+              Lançar a diferença
+            </Button>
+          )}
+          {s.kind === 'ignored' && (
+            <Button size="sm" variant="primary" disabled={busy === key} onClick={() => void apply(key, () => setIgnoredAll(s.records, false), { text: 'Lançamentos restaurados. A fatura volta a ser conferida.', undo: () => setIgnoredAll(s.records, true) })}>
+              {busy === key ? 'Restaurando...' : s.records.length === 1 ? 'Restaurar o lançamento' : `Restaurar os ${s.records.length} lançamentos`}
+            </Button>
+          )}
+          <Button size="sm" onClick={() => navigate('transactions', { accountId: item.accountId, cycle: item.cycleKey })}>
+            Ver compras
+          </Button>
+          <Button size="sm" variant="ghost" disabled={busy === key} title="Tira esta fatura da conferência. Dá para voltar atrás em “Dispensadas”." onClick={() => dismiss(key, [item], 'Fatura dispensada.')}>
+            Dispensar
+          </Button>
+        </div>
+        {manual === key && (
+          <div class="grow" style={{ flexBasis: '100%', minWidth: 0 }}>
+            <ManualForm
+              now={now}
+              initial={{ accountId: item.accountId, day: item.to, amount: -Math.abs(item.gap), description: 'Ajuste de fatura', category: '' }}
+              onCancel={() => setManual(null)}
+              onSaved={(id) => {
+                setManual(null);
+                setMessage(null);
+                setNotice({ text: `Ajuste de ${brl(Math.abs(item.gap), hidden)} lançado na fatura de ${monthName(item.cycleKey)}.`, open: id, undo: () => api.deleteManual(id) });
+                check.reload();
+              }}
+            />
+          </div>
+        )}
+        {s.kind === 'move' && (
+          <button class="primary small" disabled={busy === key} onClick={() => void apply(key, () => moveAll(s.moves))}>
+            {busy === key ? 'Movendo...' : s.moves.length === 1 ? 'Mover a compra' : `Mover ${s.moves.length} compras`}
+          </button>
+        )}
+      </li>
+    );
+  };
   return (
     <>
       <p class="muted">
-        Compara o total de cada fatura fechada que o banco publicou com a soma das compras da fatura. Quando uma compra perto do fechamento explica a diferença dos dois lados, a sugestão é movê-la para a fatura vizinha. O que nenhuma compra explica é algo que o banco não mandou (use “Lançar a diferença”) ou que ele não cobra (ignore a transação).
+        Compara o total de cada fatura fechada que o banco publicou com a soma das compras da fatura. Quando uma compra perto do fechamento explica a diferença dos dois lados, a sugestão é movê-la para a fatura vizinha. O que nenhuma compra explica é algo que o banco não mandou (use “Lançar a diferença”) ou que ele não cobra (ignore a transação). Uma fatura que você sabe que está fora do lugar pode ser dispensada.
       </p>
       {message && <div class="error">{message}</div>}
+      {notice && (
+        <div class="note">
+          {notice.text}{' '}
+          {notice.open && (
+            <button class="link" onClick={() => patchParams({ tx: notice.open })}>
+              Ver lançamento
+            </button>
+          )}{' '}
+          <button class="link" onClick={() => { const undo = notice.undo; setNotice(null); void apply('undo', undo); }}>
+            Desfazer
+          </button>
+        </div>
+      )}
       <section class="panel">
-        <h2>Faturas que não fecham ({items.length})</h2>
-        {items.length === 0 ? (
-          <div class="empty">Todas as faturas fechadas batem com as compras.</div>
+        <h2>Faturas que não fecham ({recent.length + runs.length})</h2>
+        {recent.length + runs.length === 0 ? (
+          <div class="empty">{old.length > 0 ? 'Nenhuma fatura recente fora do lugar.' : 'Todas as faturas fechadas batem com as compras.'}</div>
         ) : (
           <ul class="rows tall">
-            {items.map((item) => {
-              const key = `${item.accountId}|${item.cycleKey}`;
-              const s = item.suggestion;
+            {recent.map((item) => row(item))}
+            {runs.map((run) => {
+              const key = `${run.accountId}|run|${run.toKey}`;
+              const span = monthSpan(run.fromKey, run.toKey);
               return (
                 <li key={key} class="suggestion">
                   <div class="grow">
                     <div>
-                      {item.institution}
-                      {item.last4 ? ` •••• ${item.last4}` : ''} · vence {fullDay(item.dueDate)} <span class="muted">({dayMonth(item.from)} a {dayMonth(item.to)})</span>
+                      {cardLabel(run)} · {run.bills.length} faturas, {span}
                     </div>
                     <div class="muted">
-                      Banco {brl(item.billTotal, hidden)} · app {brl(item.ours, hidden)} · diferença <span class={item.gap > 0 ? 'bad-text' : ''}>{brl(item.gap, hidden)}</span>
+                      O banco não enviou as compras de {span}: publicou o total de cada fatura ({brl(run.billTotal, hidden)}), mas o app só soma {brl(run.ours, hidden)} nelas, {gapText(run.gap, hidden)}. Lançar a diferença mês a mês não resolve. Se esse histórico não importa, dispense; as faturas novas continuam sendo conferidas.
                     </div>
-                    {s.kind === 'move' && (
-                      <ul class="rows">
-                        {s.moves.map((m) => (
-                          <li key={m.transactionId}>
-                            <button class="link grow clip" onClick={() => patchParams({ tx: m.transactionId })}>
-                              {fullDay(m.day)} · {m.description}
-                            </button>
-                            <span>{brl(m.amount, hidden)}</span>
-                            <span class="muted">vai para a fatura de {monthName(m.toCycleKey)}</span>
+                    <details>
+                      <summary class="muted">Ver as {run.bills.length} faturas</summary>
+                      <ul class="rows tall">
+                        {run.bills.map((b) => (
+                          <li key={b.cycleKey}>
+                            <div class="grow">
+                              <div>vence {fullDay(b.dueDate)}</div>
+                              <BillFacts item={b} hidden={hidden} />
+                            </div>
                           </li>
                         ))}
                       </ul>
-                    )}
-                    {s.kind === 'missing' && s.unlisted && (
-                      <div class="muted">
-                        O banco cobra {brl(s.amount, hidden)} a mais, e o valor bate com {s.unlisted.length === 1 ? 'uma parcela que o banco não listou' : 'duas parcelas que o banco não listou'}:{' '}
-                        {s.unlisted.map((u) => `${u.number}/${u.total} de ${u.description}, que o app contou na fatura de ${monthName(u.cycleKey)}`).join(' e ')}. Confira se {s.unlisted.length === 1 ? 'ela foi cobrada' : 'elas foram cobradas'} nesta fatura antes de lançar a diferença.
-                      </div>
-                    )}
-                    {s.kind === 'missing' && !s.unlisted && <div class="muted">O banco cobra {brl(s.amount, hidden)} que nenhuma compra perto do fechamento explica. Provavelmente uma compra, juros ou IOF que não chegaram: use “Lançar a diferença”.</div>}
-                    {s.kind === 'extra' && <div class="muted">O app soma {brl(s.amount, hidden)} a mais do que o banco cobrou e nenhuma compra perto do fechamento explica. Pode ser uma pendente que o banco nunca lançou: abra a compra suspeita e ignore ou mude o status.</div>}
+                    </details>
                   </div>
                   <div class="actions">
-                    <Button size="sm" onClick={() => navigate('chat', { q: `A fatura do ${item.institution}${item.last4 ? ` final ${item.last4}` : ''} com vencimento em ${item.dueDate} veio ${brlText(item.billTotal)} no banco e o app soma ${brlText(item.ours)} (período ${item.from} a ${item.to}). O que pode explicar a diferença de ${brlText(item.gap)}? Consulte as transações do período e as parcelas.` })}>
-                      Perguntar à IA
-                    </Button>
-                    {/* Only a bill larger than the app's sum is fixed by adding a charge; with a smaller bill it would double the gap. */}
-                    {s.kind === 'missing' && (
-                      <Button size="sm" onClick={() => setManual(manual === key ? null : key)}>
-                        Lançar a diferença
-                      </Button>
-                    )}
-                    <Button size="sm" onClick={() => navigate('transactions', { accountId: item.accountId, cycle: item.cycleKey })}>
+                    <Button size="sm" onClick={() => navigate('transactions', { accountId: run.accountId, cycle: run.toKey })}>
                       Ver compras
                     </Button>
+                    <Button size="sm" disabled={busy === key} title="Tira estas faturas da conferência. Dá para voltar atrás em “Dispensadas”." onClick={() => dismiss(key, run.bills, `${run.bills.length} faturas dispensadas.`)}>
+                      Dispensar as {run.bills.length}
+                    </Button>
                   </div>
-                  {manual === key && (
-                    <ManualForm
-                      now={now}
-                      initial={{ accountId: item.accountId, day: item.to, amount: -Math.abs(item.gap), description: 'Ajuste de fatura', category: '' }}
-                      onCancel={() => setManual(null)}
-                      onSaved={() => { setManual(null); check.reload(); }}
-                    />
-                  )}
-                  {s.kind === 'move' && (
-                    <button class="primary small" disabled={busy === key} onClick={() => void apply(key, () => moveAll(s.moves))}>
-                      {busy === key ? 'Movendo...' : s.moves.length === 1 ? 'Mover a compra' : `Mover ${s.moves.length} compras`}
-                    </button>
-                  )}
                 </li>
               );
             })}
           </ul>
+        )}
+        {old.length > 0 && (
+          <details>
+            <summary class="muted">Faturas antigas já pagas ({old.length})</summary>
+            <div class="actions">
+              <Button size="sm" disabled={busy === 'old'} onClick={() => dismiss('old', old, `${old.length} faturas antigas dispensadas.`)}>
+                Dispensar as antigas
+              </Button>
+            </div>
+            <ul class="rows tall">{old.map((item) => row(item))}</ul>
+          </details>
+        )}
+        {dismissed.length > 0 && (
+          <details>
+            <summary class="muted">Dispensadas ({dismissed.length})</summary>
+            <ul class="rows tall">
+              {dismissed.map((item) => {
+                const key = `${item.accountId}|${item.cycleKey}`;
+                return (
+                  <li key={key}>
+                    <div class="grow">
+                      <div>
+                        {cardLabel(item)} · vence {fullDay(item.dueDate)}
+                      </div>
+                      <div class="muted">{gapText(item.gap, hidden)}</div>
+                    </div>
+                    <button class="link" disabled={busy === key} onClick={() => void apply(key, () => api.dismissBills([ref(item)], false))}>
+                      Voltar a conferir
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
         )}
       </section>
       <section class="panel">
@@ -156,7 +303,7 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
       </section>
       <section class="panel">
         <h2>Pendentes postas de lado ({setAside.length})</h2>
-        <div class="muted">Pendentes antigas em conta que só uma fonte vê ficam fora dos totais. Se alguma for real, abra e mude o status para lançada.</div>
+        <div class="muted">Pendentes antigas em conta que só uma fonte vê ficam fora dos totais. Se alguma for real, marque como lançada aqui (ela volta para os totais) ou abra para ver os detalhes.</div>
         {setAside.length === 0 ? (
           <div class="empty">Nenhuma.</div>
         ) : (
@@ -167,6 +314,9 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
                   {fullDay(t.day)} · {t.description} <span class="muted">({t.institution}{t.last4 ? ` ${t.last4}` : ''})</span>
                 </button>
                 <span>{brl(t.amount, hidden)}</span>
+                <Button size="sm" disabled={busy === t.id} onClick={() => void apply(t.id, () => api.setStatus(t.id, 'posted'))}>
+                  {busy === t.id ? 'Marcando...' : 'Marcar como lançada'}
+                </Button>
               </li>
             ))}
           </ul>
@@ -190,9 +340,13 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
     }
   };
   if (!data) return <Loading error={error} />;
+  // A bill of zero with nothing in it (a card that was never used) is noise: the count says how many are left out.
+  const cycles = data.cycles.filter((c) => !(c.status === 'empty' && c.charges === 0 && c.credits === 0));
+  const hiddenCount = data.cycles.length - cycles.length;
   return (
     <div class="scroll-x">
     {message && <div class="error">{message}</div>}
+    {hiddenCount > 0 && <div class="muted">{hiddenCount} {hiddenCount === 1 ? 'fatura vazia' : 'faturas vazias'} (sem compras e de valor zero) não {hiddenCount === 1 ? 'aparece' : 'aparecem'} aqui.</div>}
     <table class="table">
       <thead>
         <tr>
@@ -205,7 +359,7 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
         </tr>
       </thead>
       <tbody>
-        {data.cycles.flatMap((c) => [
+        {cycles.flatMap((c) => [
           <tr key={c.key}>
             <td>
               <Go page="transactions" params={{ accountId, cycle: c.key }}>
@@ -289,7 +443,7 @@ function owedAboveIssuer(c: OwedInput): number | null {
 }
 
 function limitRows(data: CardsView): Array<{ key: string; name: string; shared: boolean; limit: number; used: number }> {
-  const label = (id: string) => { const c = data.cards.find((x) => x.id === id); return c ? `${c.institution} ${c.name}${c.last4 ? ` •••• ${c.last4}` : ''}` : id; };
+  const label = (id: string) => { const c = data.cards.find((x) => x.id === id); return c ? `${cardName(c.institution, c.name)}${c.last4 ? ` •••• ${c.last4}` : ''}` : id; };
   const groups = data.limitGroups.map((g) => ({ key: g.id, name: g.cardIds.map(label).join(' + '), shared: g.cardIds.length > 1, limit: g.creditLimit, used: g.used }));
   const singles = data.cards.filter((c) => c.creditLimit !== null && !data.limitGroups.some((g) => g.cardIds.includes(c.id))).map((c) => ({ key: c.id, name: label(c.id), shared: false, limit: c.creditLimit ?? 0, used: (c.creditLimit ?? 0) - availableOf(c) }));
   return [...groups, ...singles];
@@ -307,7 +461,7 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
     <section class="panel">
       <div class="row-head">
         <h2>
-          {card.institution} {card.name}
+          {cardName(card.institution, card.name)}
           {card.last4 ? ` •••• ${card.last4}` : ''}
         </h2>
         {c && <StatusBadge status={c.status} />}
@@ -348,7 +502,8 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
                 <dd class={c.outstanding > 0 ? 'bad-text' : ''}>{brl(c.outstanding, hidden)}</dd>
               </>
             )}
-            {card.minimumPayment !== null && card.minimumPayment > 0 && c.billTotal !== null && (
+            {/* The card holds one minimum payment, the one of the bill due next: it says nothing about a paid bill or a later one. */}
+            {card.minimumPayment !== null && card.minimumPayment > 0 && c.billTotal !== null && c.outstanding > 0 && card.nextDueDate === c.dueDate && (
               <>
                 <dt>Pagamento mínimo</dt>
                 <dd>{brl(card.minimumPayment, hidden)}</dd>
@@ -365,7 +520,7 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
       {card.outstanding > 0 && (
         <div class={late ? 'badge bad' : 'badge warn'}>
           {/* A closed month already shows "Falta pagar" above, so the badge only adds the due date. */}
-          {isOpen ? `Fatura fechada em aberto: ${brl(card.outstanding, hidden)} · ` : ''}
+          {isOpen ? `Fatura fechada, a pagar: ${brl(card.outstanding, hidden)} · ` : ''}
           {late ? 'venceu em' : 'vence'} {card.nextDueDate ? fullDay(card.nextDueDate) : ''}
         </div>
       )}
@@ -385,9 +540,14 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
         </>
       )}
       <div class="links">
-        <Go page="transactions" params={{ accountId: card.id, cycle: c ? (cycle === 'open' ? 'open' : c.key) : undefined }}>
-          Ver transações da fatura
-        </Go>
+        {/* A bill with no listed purchase would open an empty list, so the link says why there is nothing to see. */}
+        {c && c.charges === 0 && c.credits === 0 ? (
+          <span class="muted">Sem compras listadas nesta fatura{card.plannedInstallments > 0 ? `; ${brl(card.plannedInstallments, hidden)} são parcelas que o banco ainda não listou` : ''}</span>
+        ) : (
+          <Go page="transactions" params={{ accountId: card.id, cycle: c ? (cycle === 'open' ? 'open' : c.key) : undefined }}>
+            Ver transações da fatura
+          </Go>
+        )}
         {c && c.status !== 'open' && (
           <button class="link" onClick={() => setEditing(!editing)}>
             {editing ? 'Fechar edição' : 'Editar esta fatura'}
@@ -400,80 +560,6 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
       {editing && c && <BillEditor accountId={card.id} cycle={c} onDone={() => setEditing(false)} />}
       {history && <History accountId={card.id} hidden={hidden} />}
     </section>
-  );
-}
-
-/** The fixed income the owner registers, and what is left of it each month after the card bills already known. */
-function IncomePanel({ months, hidden }: { months: Array<{ key: string; income: number; bills: number }>; hidden: boolean }) {
-  const list = useLoad(() => api.income(), []);
-  const [form, setForm] = useState<{ id: number | null; name: string; amount: string; day: string } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const run = async (work: () => Promise<unknown>) => {
-    setMessage(null);
-    try {
-      await work();
-      setForm(null);
-      list.reload();
-    } catch (e) {
-      setMessage(e instanceof Error ? e.message : 'Não foi possível salvar.');
-    }
-  };
-  const items = list.data?.items ?? [];
-  return (
-    <div class="panel">
-      <div class="panel-head">
-        <h3>Renda fixa e o que sobra</h3>
-        <button class="chip" onClick={() => setForm({ id: null, name: '', amount: '', day: '5' })}>+ Nova renda</button>
-      </div>
-      <div class="muted">Cadastre o que entra todo mês (salário, aluguel recebido). A previsão desconta as faturas já conhecidas e mostra quanto sobra para gastar fora do cartão.</div>
-      {items.length > 0 && (
-        <ul class="rows">
-          {items.map((i) => (
-            <li key={i.id}>
-              <span class="grow clip">{i.name} <span class="muted">dia {i.dayOfMonth}</span></span>
-              <strong>{brl(i.amount, hidden)}</strong>
-              <button class="link" onClick={() => setForm({ id: i.id, name: i.name, amount: String(i.amount / 100).replace('.', ','), day: String(i.dayOfMonth) })}>Editar</button>
-              <button class="link" onClick={() => window.confirm(`Remover a renda “${i.name}”? A previsão deixa de contar esse valor.`) && void run(() => api.deleteIncome(i.id))}>Remover</button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {form && (
-        <form
-          class="recat"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const amount = parseBrl(form.amount);
-            if (amount === null) return setMessage('Digite um valor maior que zero.');
-            void run(() => api.saveIncome(form.id, { name: form.name.trim(), amount, dayOfMonth: Number(form.day), fromMonth: null, untilMonth: null }));
-          }}
-        >
-          <input aria-label="Nome da renda" placeholder="Nome (ex.: Salário)" value={form.name} maxLength={60} onInput={(e) => setForm({ ...form, name: (e.currentTarget as HTMLInputElement).value })} />
-          <input aria-label="Valor" inputMode="decimal" placeholder="Valor" value={form.amount} onInput={(e) => setForm({ ...form, amount: (e.currentTarget as HTMLInputElement).value })} />
-          <input aria-label="Dia do mês" type="number" min="1" max="31" value={form.day} onInput={(e) => setForm({ ...form, day: (e.currentTarget as HTMLInputElement).value })} />
-          <button class="primary" disabled={form.name.trim() === ''}>Salvar</button>
-          <button type="button" class="link" onClick={() => setForm(null)}>Cancelar</button>
-        </form>
-      )}
-      {message && <div class="error">{message}</div>}
-      {items.length > 0 && (
-        <table class="table">
-          <thead>
-            <tr><th>Mês</th><th>Renda</th><th>Faturas previstas</th><th>Sobra</th></tr>
-          </thead>
-          <tbody>
-            {months.map((m) => (
-              <tr key={m.key}>
-                <td>{monthName(m.key)}</td>
-                <td>{brl(m.income, hidden)}</td>
-                <td>{brl(m.bills, hidden)}</td>
-                <td><strong class={m.income - m.bills < 0 ? 'bad-text' : 'good-text'}>{brl(m.income - m.bills, hidden)}</strong></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
   );
 }
 
@@ -497,11 +583,13 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
         <StackedBars
           hidden={hidden}
           height={170}
+          valueOnSelected
           selected={open}
           onSelect={(k) => setOpen(open === k ? null : k)}
           data={data.months.map((m) => ({
             key: m.key,
-            label: m.open ? 'Aberta' : monthName(m.key).slice(0, 3),
+            // Every bar carries its month; a dot marks a month some card has not closed yet.
+            label: `${monthName(m.key).slice(0, 3)}${m.open ? '•' : ''}`,
             parts: [
               { value: m.installments, color: 'var(--good)', label: 'parcelas já compradas' },
               { value: m.recurring, color: 'var(--accent)', label: 'cobranças que se repetem' },
@@ -515,6 +603,7 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
           <span><i style={{ background: 'var(--accent)' }} /> cobranças que se repetem (provável)</span>
           <span><i style={{ background: 'var(--muted)' }} /> já na fatura (compras lançadas ou fatura publicada)</span>
           {guess && <span><i style={{ background: 'var(--track)' }} /> gasto de costume (chute pela média)</span>}
+          <span>• mês em que algum cartão ainda não fechou</span>
         </div>
       </div>
       <div class="panel">
@@ -630,7 +719,7 @@ function InstallmentsTab({ installments, hidden, route }: { installments: Return
       </div>
       <div class="panel">
         <h3>Parcelas por fatura (clique em um mês para ver só as compras dele)</h3>
-        <MonthBars months={months} hidden={hidden} height={150} selected={month} onSelect={(m) => patchParams({ month: month === m ? null : m })} />
+        <MonthBars months={months} hidden={hidden} height={150} valueOnSelected selected={month} onSelect={(m) => patchParams({ month: month === m ? null : m })} />
         <div class="legend">
           <span><i style={{ background: 'var(--good)' }} /> paga</span>
           <span><i style={{ background: 'var(--warn)' }} /> fatura fechada, a pagar</span>
@@ -702,6 +791,8 @@ function LimitsPanel({ data, hidden }: { data: CardsView; hidden: boolean }) {
 
 export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hidden: boolean }) {
   const cycle = route.params.get('cycle') ?? 'open';
+  // One card of the list, so its bill is one click away instead of a scroll.
+  const wanted = route.params.get('only') ?? '';
   // Old links: installments now live under Futuras and limits under Faturas.
   const rawTab = route.params.get('tab') ?? 'cards';
   const tab = rawTab === 'installments' ? 'forecast' : rawTab === 'limits' ? 'cards' : rawTab;
@@ -712,6 +803,17 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
   const today = localDay(now.toISOString());
   // The date shown is the oldest bill still owing; once it has passed, "next" would be a lie.
   const overdue = !!data?.totals.nextDueDate && data.totals.nextDueDate < today && data.totals.outstanding > 0;
+  const listed = data?.cards.filter((card) => cycle === 'open' || card.cycle !== null) ?? [];
+  // A card that has no bill in the chosen month cannot be the focus: the list shows them all again.
+  const only = listed.some((card) => card.id === wanted) ? wanted : '';
+  // Cards close on different days, so one month can have several due dates: the summary says so instead of showing the earliest as the only one.
+  // A bill of R$ 0,00 (a card not used that month) can carry another due date, and it would stretch the range for nothing.
+  const withBill = listed.filter((card) => cycle !== 'open' && card.cycle !== null);
+  const billDues = [...new Set((withBill.some((card) => card.total > 0) ? withBill.filter((card) => card.total > 0) : withBill).map((card) => card.cycle!.dueDate))].sort();
+  // In a chosen month the date comes from the bills listed below, empty ones included: the API's own date can be the one of a bill that is not on the page.
+  const dueText = overdue || cycle === 'open'
+    ? data?.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'
+    : billDues.length > 1 ? `${dayMonth(billDues[0]!)} a ${fullDay(billDues[billDues.length - 1]!)}` : billDues[0] ? fullDay(billDues[0]) : '–';
 
   return (
     <div class="page-body">
@@ -729,8 +831,9 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
           <Bars
             hidden={hidden}
             height={150}
+            valueOnSelected
             selected={cycle === 'open' ? (currentBill ?? 'open') : cycle}
-            onSelect={(key) => patchParams({ cycle: key === currentBill ? null : key })}
+            onSelect={(key) => patchParams({ cycle: key === cycle ? null : key })}
             data={bills.data.bars.map((b) => ({
               key: b.key,
               label: monthName(b.key).slice(0, 3),
@@ -740,7 +843,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
             }))}
           />
           <div class="legend">
-            <span><i style={{ background: 'var(--accent)' }} /> ainda abre cartão (os cartões fecham em dias diferentes)</span>
+            <span data-tip="Os cartões fecham em dias diferentes: um mês pode ter faturas já fechadas e outras ainda abertas."><i style={{ background: 'var(--accent)' }} /> em aberto</span>
             <span><i style={{ background: 'var(--good)' }} /> paga</span>
             <span><i style={{ background: 'var(--warn)' }} /> a pagar</span>
             <span><i style={{ background: 'var(--muted)' }} /> pagamento não conferido</span>
@@ -751,8 +854,20 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
       {tab === 'cards' && (
         <label class="inline-field">
           Ciclo
-          <Select ariaLabel="Fatura" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...(data?.cycles ?? []).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
+          <Select ariaLabel="Fatura" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...[...new Set([...(data?.cycles ?? []), ...(cycle === 'open' ? [] : [cycle])])].sort().reverse().map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
         </label>
+      )}
+      {tab === 'cards' && listed.length > 2 && (
+        <div class="filters">
+          <Chip on={only === ''} onClick={() => patchParams({ only: null })}>
+            Todos os cartões
+          </Chip>
+          {listed.map((card) => (
+            <Chip key={card.id} on={only === card.id} onClick={() => patchParams({ only: only === card.id ? null : card.id })}>
+              {cardLabel(card)}
+            </Chip>
+          ))}
+        </div>
       )}
       {tab === 'check' && <CheckTab hidden={hidden} now={now} />}
       {tab === 'check' ? null : error || (loading && !data) ? (
@@ -780,7 +895,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
                 )}
                 <div>
                   <span class="muted">{overdue ? 'Vencimento mais antigo em atraso' : cycle === 'open' ? 'Próximo vencimento' : 'Vencimento'}</span>
-                  <strong class={overdue ? 'bad-text' : ''}>{data.totals.nextDueDate ? fullDay(data.totals.nextDueDate) : '–'}</strong>
+                  <strong class={overdue ? 'bad-text' : ''}>{dueText}</strong>
                 </div>
                 {cycle === 'open' && (
                   <>
@@ -795,20 +910,21 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
                   </>
                 )}
               </div>
-              {data.totals.unexplained > 0 && cycle === 'open' && (
+              {data.totals.unexplained > 0 && (
                 <div class="note">
                   Na fatura em aberto, {brl(data.totals.unexplained, hidden)} vêm do limite usado que o banco informa para o limite compartilhado e que nenhuma compra ou parcela listada explica. Por isso a soma dos cartões mostrados é menor que o total. Pode ser uma compra que o banco ainda não enviou; o que aparecer depois reduz esse valor.
                 </div>
               )}
               {cycle === 'open' ? (
-                <div class="note">
+                <details class="note">
+                  <summary>Como lemos estes números</summary>
                   O saldo devedor é o limite usado que cada banco informa: a fatura aberta, as faturas fechadas não pagas e todas as parcelas que ainda vão vencer. Por isso é maior que a fatura aberta. Cartões que dividem o mesmo limite entram uma vez. A fatura aberta de cada cartão é a soma das compras do ciclo; quando o banco ainda não publicou a fatura, o app estima o valor pelo saldo menos as parcelas futuras e marca como estimado. Cada cartão fecha num dia, então cada um aparece no seu ciclo atual.
-                </div>
+                </details>
               ) : (
                 <div class="note">Esta tela mostra só as faturas com vencimento em {monthName(cycle)}: o total, o que falta pagar e o vencimento são destas faturas. Limite, saldo do emissor e outras faturas ficam de fora.</div>
               )}
               <div class="cards-grid">
-                {data.cards.filter((card) => cycle === 'open' || card.cycle !== null).map((card) => (
+                {listed.filter((card) => only === '' || card.id === only).map((card) => (
                   <CardBlock key={card.id} card={card} cycle={cycle} hidden={hidden} today={today} />
                 ))}
               </div>

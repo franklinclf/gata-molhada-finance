@@ -7,17 +7,20 @@ export interface Option {
   hint?: string;
   /** Extra words the search also looks in. */
   keywords?: string;
+  /** A shortcut repeats an option that is also listed in its own group. It shows only while the search box is empty, so a search does not list it twice. */
+  shortcut?: boolean;
 }
 
 export type Row = { kind: 'group'; label: string } | { kind: 'option'; option: Option };
 
 export const fold = (text: string): string => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
-/** The options that contain every word of the query, in label, group or keywords. Accents and case do not matter. */
+/** The options that contain every word of the query, in label, group or keywords. Accents and case do not matter. Shortcuts drop out once there is a query. */
 export function filterOptions(options: readonly Option[], query: string): Option[] {
   const words = fold(query).split(' ').filter(Boolean);
   if (words.length === 0) return [...options];
   return options.filter((o) => {
+    if (o.shortcut) return false;
     const text = fold(`${o.label} ${o.group ?? ''} ${o.keywords ?? ''}`);
     return words.every((w) => text.includes(w));
   });
@@ -49,4 +52,15 @@ export function step(current: number, delta: number, count: number): number {
 export function canCreate(options: readonly Option[], query: string): boolean {
   const text = fold(query);
   return text !== '' && !options.some((o) => fold(o.label) === text || fold(o.value) === text);
+}
+
+/**
+ * What Enter chooses, or null for nothing. `typed` is the text in the search box right now. When the list has not been redrawn for it yet
+ * (`typed` differs from `query`), the highlighted row belongs to the old text, so the first match of `typed` is taken and nothing is created.
+ */
+export function enterChoice(options: readonly Option[], query: string, typed: string, at: number, creatable: boolean): string | null {
+  if (typed !== query) return filterOptions(options, typed)[0]?.value ?? null;
+  const shown = filterOptions(options, query);
+  if (at < shown.length) return shown[at]!.value;
+  return creatable && canCreate(options, query) ? query.trim() : null;
 }

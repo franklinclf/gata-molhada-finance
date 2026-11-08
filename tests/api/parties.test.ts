@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { normalizeTransaction as pluggyNormalize } from '../../src/adapters/pluggy/normalize.ts';
+import { createRule, previewRule } from '../../src/api/rules.ts';
 import { effectiveTransactions } from '../../src/api/scope.ts';
 import { partyFrom } from '../../src/core/parties.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -39,7 +40,7 @@ test('both adapters read who paid, who received, the operation and the merchant 
   assert.equal(pierre({ ...pluggyRaw('p2', -1, OWNER, FRIEND), paymentData: undefined, operationType: undefined }).parties, undefined);
 });
 
-function seeded() {
+function seeded(extra: Array<Record<string, unknown>> = []) {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   store.registerSource({ id: 'pluggy', kind: 'aggregator', capabilities: {} }, NOW.toISOString());
   const acct = { id: 'chk', institution: 'Bank', kind: 'checking' as const, name: 'Conta', last4: null, balance: 0, balanceSourceId: 'pluggy', balanceAsOf: NOW.toISOString(), creditLimit: null, availableLimit: null, minimumPayment: null, dueDate: null, limitGroupId: null, refs: [] };
@@ -51,6 +52,7 @@ function seeded() {
     pluggyRaw('o3', -70, OWNER, FRIEND, { description: 'PIX ENVIADO' }),
     pluggyRaw('own', -80, OWNER, OWNER, { description: 'PIX ENVIADO' }),
     pluggyRaw('in1', 90, FRIEND, OWNER), pluggyRaw('in2', 91, FRIEND, OWNER), pluggyRaw('in3', 92, FRIEND, OWNER),
+    ...extra,
   ];
   const txns = raws.map((r) => pierre(r));
   store.upsertSourceTransactions('pluggy', txns as SourceTransaction[], NOW.toISOString());
@@ -69,11 +71,37 @@ test('a Pix to the owner\'s own document is a move between own accounts, whateve
   assert.equal(byId.get('o3')?.role, null);
 });
 
+test('money from the owner\'s own document is a move between own accounts when the source calls the operation "OUTROS", but a yield stays income', () => {
+  const byId = new Map(effectiveTransactions(seeded([
+    pluggyRaw('outros', 23700, OWNER, OWNER, { description: 'Transferência Recebida', operationType: 'OUTROS' }),
+    pluggyRaw('yield', 187, OWNER, OWNER, { description: 'Lucro', operationType: 'RENDIMENTO_APLIC_FINANCEIRA' }),
+  ])).map((t) => [t.id, t]));
+  assert.equal(byId.get('outros')?.role, 'own_transfer');
+  assert.equal(byId.get('yield')?.role, null);
+});
+
 test('a person is named by the document: a Pix with no name in its text gets the name used elsewhere', () => {
   const byId = new Map(effectiveTransactions(seeded()).map((t) => [t.id, t]));
   assert.equal(byId.get('o3')?.counterparty?.name?.toLowerCase(), 'maria souza');
   assert.equal(byId.get('o3')?.counterparty?.last4, '7788');
   assert.equal(byId.get('in1')?.counterparty?.isOwner, false);
+});
+
+test('a rule on the counterparty name catches every Pix to that person, also the one with no name in its text', () => {
+  const store = seeded();
+  const to = (direction: string) => ({ match: 'all', items: [{ field: 'counterparty', operator: 'equals', value: 'maria souza' }, { field: 'direction', operator: 'equals', value: direction }] });
+  const preview = previewRule(store, { conditions: to('out'), actions: { category: 'Mesada' } });
+  assert.ok(preview.ok);
+  assert.equal(preview.ok && preview.value.matched, 3, 'o1 and o2 carry the name, o3 gets it from the document');
+  assert.deepEqual(preview.ok && preview.value.sample.map((s) => s.id).sort(), ['o1', 'o2', 'o3']);
+  assert.equal(createRule(store, { name: 'Transferências para Maria Souza', conditions: to('out'), actions: { category: 'Mesada' } }, NOW).ok, true);
+  const byId = new Map(effectiveTransactions(store).map((t) => [t.id, t]));
+  assert.deepEqual(['o1', 'o2', 'o3'].map((id) => byId.get(id)?.category), ['Mesada', 'Mesada', 'Mesada']);
+  assert.equal(byId.get('o3')?.categoryOrigin, 'rule');
+  assert.notEqual(byId.get('own')?.category, 'Mesada', 'the owner is not Maria');
+  assert.notEqual(byId.get('in1')?.category, 'Mesada', 'money received from her is the other direction');
+  const received = previewRule(store, { conditions: to('in'), actions: { category: '' } });
+  assert.equal(received.ok && received.value.matched, 3);
 });
 
 test('the merchant code names the category when the source label does not', () => {

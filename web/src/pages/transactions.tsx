@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { brl, monthName, parseBrl } from '../format.ts';
+import { accountLabel } from '../names.ts';
 import { useLoad } from '../hooks.ts';
 import { ManualForm } from '../ManualForm.tsx';
 import { Select } from '../Select.tsx';
@@ -8,6 +9,7 @@ import { PeriodPicker } from '../period.tsx';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { CheckList, Go, Loading, Section, STATE_LABEL, TxRow } from '../ui.tsx';
+import { billPaymentNote, countNote, internalNote, tileSums } from './page-logic.ts';
 
 const STATES = ['confirmed', 'single_source', 'billed', 'stale_pending', 'ignored'].map((value) => ({ value, label: STATE_LABEL[value] ?? value }));
 
@@ -25,6 +27,21 @@ const toCents = (text: string) => {
   const cents = parseBrl(text, { allowZero: true });
   return cents === null ? null : String(cents);
 };
+
+/** A bound of the amount filter: applies a moment after typing stops, so there is no need to leave the field. */
+function AmountField({ label, value, onCommit }: { label: string; value: string | null; onCommit: (cents: string | null) => void }) {
+  const [text, setText] = useState(reais(value));
+  // A change from outside (a removed chip, a link) replaces the text; the echo of what was typed does not.
+  useEffect(() => {
+    if (toCents(text) !== value) setText(reais(value));
+  }, [value]);
+  useEffect(() => {
+    if (toCents(text) === value) return;
+    const timer = setTimeout(() => onCommit(toCents(text)), 500);
+    return () => clearTimeout(timer);
+  }, [text]);
+  return <input aria-label={label} inputMode="decimal" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />;
+}
 
 /** Transaction explorer. Every filter lives in the URL, so a link from a widget opens it already scoped. */
 export function TransactionsPage({ route, now, hidden }: { route: Route; now: Date; hidden: boolean }) {
@@ -69,7 +86,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const bulk = async (change: Parameters<typeof api.bulkEdit>[1]) => {
     setNote(null);
     try {
-      const r = await api.bulkEdit(picked, change, { applyToSimilar: similar && 'category' in change });
+      const r = await api.bulkEdit(picked, change, { applyToSimilar: similar && typeof (change as { category?: unknown }).category === 'string' });
       // Like in the drawer, the option is turned off after a save so the next change does not create rules by accident.
       if ('category' in change) setSimilar(false);
       // Moving to a bill only applies to card purchases, so the skipped ones are named by that reason.
@@ -86,10 +103,13 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const institutions = p.getAll('institution');
   const accountIds = p.getAll('accountId');
   const states = p.getAll('state');
+  // Filtered to one bill, the payment of that bill stays in the list but not in the totals.
+  const byBill = p.get('cycle') !== null;
+  const sums = data ? tileSums(data.sums, data.internal, byBill) : { income: 0, expense: 0, net: 0 };
   const active = [
     ...categories.map((c) => ({ label: c || 'Sem categoria', remove: () => set({ category: categories.filter((x) => x !== c) }) })),
     ...institutions.map((c) => ({ label: c, remove: () => set({ institution: institutions.filter((x) => x !== c) }) })),
-    ...accountIds.map((c) => ({ label: data?.facets.accounts.find((a) => a.id === c)?.name ?? 'Conta', remove: () => set({ accountId: accountIds.filter((x) => x !== c) }) })),
+    ...accountIds.map((c) => ({ label: (() => { const f = data?.facets.accounts.find((a) => a.id === c); return f ? accountLabel(f) : 'Conta'; })(), remove: () => set({ accountId: accountIds.filter((x) => x !== c) }) })),
     ...states.map((c) => ({ label: STATE_LABEL[c] ?? c, remove: () => set({ state: states.filter((x) => x !== c) }) })),
     ...(p.get('merchant') ? [{ label: `Estabelecimento: ${p.get('merchant')}`, remove: () => set({ merchant: null }) }] : []),
     ...(p.get('cycle') ? [{ label: p.get('cycle') === 'open' ? 'Fatura em aberto' : `Fatura ${monthName(p.get('cycle')!)}`, remove: () => set({ cycle: null }) }] : []),
@@ -131,14 +151,14 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
           />
         </label>
       </Section>
-      <Section title="Categorias" active={categories.length} open>
+      <Section title="Categorias" active={categories.length} open={window.innerWidth >= 760}>
         <CheckList options={(data?.facets.categories ?? []).map((f) => ({ value: f.name, label: f.name, count: f.count }))} selected={categories} onChange={(v) => set({ category: v })} />
       </Section>
       <Section title="Instituições" active={institutions.length}>
         <CheckList options={(data?.facets.institutions ?? []).map((f) => ({ value: f.name, label: f.name, count: f.count }))} selected={institutions} onChange={(v) => set({ institution: v })} />
       </Section>
       <Section title="Contas e cartões" active={accountIds.length}>
-        <CheckList options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: f.name, count: f.count }))} selected={accountIds} onChange={(v) => set({ accountId: v })} />
+        <CheckList options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: accountLabel(f), count: f.count }))} selected={accountIds} onChange={(v) => set({ accountId: v })} />
       </Section>
       <Section title="Fatura do cartão" active={p.get('cycle') ? 1 : 0}>
         <Select ariaLabel="Fatura" value={p.get('cycle') ?? ''} onChange={(value) => set({ cycle: value || null })} options={[{ value: '', label: 'Qualquer ciclo' }, { value: 'open', label: 'Fatura em aberto' }, ...(cards.data?.cycles ?? []).map((c) => ({ value: c, label: `Fatura com venc. ${monthName(c)}` }))]} />
@@ -146,9 +166,9 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
       <Section title="Valor" active={p.get('min') || p.get('max') ? 1 : 0}>
         <label class="amount">
           de R$
-          <input key={`min${p.get('min')}`} inputMode="decimal" defaultValue={reais(p.get('min'))} onChange={(e) => set({ min: toCents((e.currentTarget as HTMLInputElement).value) })} />
+          <AmountField label="Valor de" value={p.get('min')} onCommit={(min) => set({ min })} />
           até
-          <input key={`max${p.get('max')}`} inputMode="decimal" defaultValue={reais(p.get('max'))} onChange={(e) => set({ max: toCents((e.currentTarget as HTMLInputElement).value) })} />
+          <AmountField label="Valor até" value={p.get('max')} onCommit={(max) => set({ max })} />
         </label>
       </Section>
       <Section title="Status e fontes" active={states.length + (p.get('status') ? 1 : 0)}>
@@ -178,7 +198,16 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
       )}
       <PeriodPicker from={p.get('from') ?? undefined} to={p.get('to') ?? undefined} now={now} onChange={(r) => set({ from: r.from ?? null, to: r.to ?? null })} />
       <div class="searchbar">
-        <input class="search grow" placeholder="Buscar por descrição ou categoria" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
+        <input class="search grow" placeholder="Buscar por descrição, categoria ou valor" value={text} onInput={(e) => setText((e.currentTarget as HTMLInputElement).value)} />
+        {/* One tap to a card or account: the full list of accounts sits in the folded filter panel. */}
+        <Select
+          ariaLabel="Conta ou cartão"
+          value={accountIds.length > 1 ? '__many' : (accountIds[0] ?? '')}
+          placeholder={accountIds.length > 1 ? `${accountIds.length} contas` : 'Conta ou cartão'}
+          emptyLabel="Todas as contas e cartões"
+          options={(data?.facets.accounts ?? []).map((f) => ({ value: f.id, label: accountLabel(f) }))}
+          onChange={(value) => set({ accountId: value || null })}
+        />
         <Select ariaLabel="Ordem" value={p.get('sort') ?? 'date_desc'} onChange={(value) => set({ sort: value === 'date_desc' ? null : value })} options={SORTS.map((s) => ({ value: s.value, label: s.label }))} />
         <button class={active.length > 0 ? 'chip on filter-toggle' : 'chip filter-toggle'} onClick={() => setSheet(true)}>
           Filtros{active.length > 0 ? ` (${active.length})` : ''}
@@ -202,9 +231,15 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
             <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />
             <span>Valer também para as de mesma descrição</span>
           </label>
-          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: 'posted' })}>Marcar lançadas</button>
-          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: 'pending' })}>Marcar pendentes</button>
-          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ status: null })}>Status como a fonte diz</button>
+          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ category: null })}>Voltar à categoria da fonte</button>
+          <Select
+            ariaLabel="Status das selecionadas"
+            placeholder="Mudar status..."
+            value=""
+            disabled={picked.length === 0}
+            options={[{ value: 'posted', label: 'Marcar lançadas' }, { value: 'pending', label: 'Marcar pendentes' }, { value: 'source', label: 'Status como a fonte diz' }]}
+            onChange={(value) => value !== '' && void bulk({ status: value === 'source' ? null : (value as 'posted' | 'pending') })}
+          />
           <Select
             ariaLabel="Mover as selecionadas para a fatura"
             placeholder="Mover para a fatura..."
@@ -246,21 +281,29 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
               <div class="summary">
                 <div>
                   <span class="muted">Transações</span>
-                  <strong>{data.sums.count}</strong>
+                  <strong>{data.total}</strong>
+                  {countNote(data.total, data.sums.count) && <span class="muted tile-note">{countNote(data.total, data.sums.count)}</span>}
                 </div>
                 <div>
                   <span class="muted">Entradas</span>
-                  <strong class="good-text">{brl(data.sums.income, hidden)}</strong>
+                  <strong class="good-text">{brl(sums.income, hidden)}</strong>
                 </div>
                 <div>
                   <span class="muted">Saídas</span>
-                  <strong class="bad-text">{brl(data.sums.expense, hidden)}</strong>
+                  <strong class="bad-text">{brl(sums.expense, hidden)}</strong>
                 </div>
                 <div>
-                  <span class="muted">Saldo</span>
-                  <strong>{brl(data.sums.net, hidden)}</strong>
+                  <span class="muted">Resultado do filtro</span>
+                  <strong>{brl(sums.net, hidden)}</strong>
                 </div>
               </div>
+              {byBill
+                ? billPaymentNote(data.internal, hidden) && <div class="note">{billPaymentNote(data.internal, hidden)}</div>
+                : internalNote(data.internal, hidden) && (
+                    <div class="note">
+                      {internalNote(data.internal, hidden)} <button class="link" onClick={() => set({ spendingOnly: 'true' })}>Ver só gastos reais</button>
+                    </div>
+                  )}
               {data.items.length === 0 ? (
                 <div class="empty">
                   Nenhuma transação com esses filtros. <button class="link" onClick={() => navigate('transactions')}>Limpar filtros</button>

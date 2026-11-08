@@ -169,7 +169,8 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       // A closed month the issuer published no bill for has no balance estimate: only the open cycle is priced from the balance.
       else if (cycle.status !== 'open') total = posted + planned;
       else if (a.limitGroupId === null) {
-        total = Math.max(a.balance - outstanding - futureOf(a.id), posted + planned);
+        // The balance covers every unpaid bill of the card, so the estimate takes all of them out, also when one month is chosen.
+        total = Math.max(a.balance - outstandingOf(a.id) - futureOf(a.id), posted + planned);
         estimated = total !== posted + planned;
       } else total = posted + planned;
     }
@@ -233,7 +234,11 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     }
   }
   const summary = summarizeAccounts(accounts);
-  const dues = rows.map((r) => r.nextDueDate).filter((d): d is string => d !== null).sort();
+  // The next due date is that of a card with something to pay: a card with nothing owed (an unused one) says nothing about it.
+  // With nothing to pay anywhere, the cards that have a bill of this amount speak; an empty bill (a card never used) does not.
+  const owing = rows.filter((r) => r.toPay > 0);
+  const billed = rows.filter((r) => r.total > 0);
+  const dues = (owing.length > 0 ? owing : billed.length > 0 ? billed : rows).map((r) => r.nextDueDate).filter((d): d is string => d !== null).sort();
   const months = new Set<string>();
   for (const list of allCycles.values()) for (const c of list) if (c.status !== 'open') months.add(c.key);
 

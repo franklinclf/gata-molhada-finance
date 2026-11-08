@@ -1,8 +1,9 @@
 import type { Cents } from '../core/money.ts';
 import { addDays, dayNumber } from '../core/dates.ts';
 import { normalizeName } from '../core/names.ts';
-import { localDay } from '../core/time.ts';
+import { DATA_START, localDay } from '../core/time.ts';
 import { addMonthsToDay, cyclesFor, isCardPayment, type Cycle } from './cycles.ts';
+import type { MutationResult } from './mutations.ts';
 import { effectiveTransactions, visibleAccounts, type EffectiveTransaction } from './scope.ts';
 import { installments } from './installments.ts';
 import type { Store } from '../store/store.ts';
@@ -13,6 +14,10 @@ const MAX_MOVES = 3;
 const TOLERANCE: Cents = 1;
 /** A gap this close to an installment (or two) is read as that installment: banks round the cents of each one differently. */
 const INSTALLMENT_TOLERANCE: Cents = 5;
+/** A paid bill due this long ago is history. */
+const OLD_BILL_DAYS = 45;
+/** The owner's "this bill is known to be off" answers, as `accountId|cycleKey`. */
+const DISMISSED_KEY = 'bill_check_dismissed';
 
 export interface BillMove {
   transactionId: string;
@@ -31,6 +36,14 @@ export interface UnlistedInstallment {
   amount: Cents;
   /** Due month (YYYY-MM) of the bill the app counted it in. */
   cycleKey: string;
+}
+
+/** A record the owner ignored that the bank still bills. */
+export interface IgnoredCharge {
+  transactionId: string;
+  day: string;
+  amount: Cents;
+  description: string;
 }
 
 export interface BillCheckItem {
@@ -54,7 +67,31 @@ export interface BillCheckItem {
      */
     | { kind: 'missing'; amount: Cents; unlisted?: UnlistedInstallment[] }
     /** The app counts more than the bill and no charge near a closing explains it. */
-    | { kind: 'extra'; amount: Cents };
+    | { kind: 'extra'; amount: Cents }
+    /** The gap is exactly what the owner ignored in this cycle: putting these records back makes the bill close. */
+    | { kind: 'ignored'; amount: Cents; records: IgnoredCharge[] };
+  /** The app has no purchase at all in this cycle, only credits or installments it inferred. */
+  noPurchases: boolean;
+  /** The bill is paid and was due more than OLD_BILL_DAYS ago, and no ignored record explains it: history the screen keeps folded. */
+  old: boolean;
+}
+
+/**
+ * Consecutive bills of one card for which the bank sent no purchases at all, though it published the totals. They are one
+ * problem (the connection stopped returning purchases), so they are one entry instead of one alarm per month.
+ */
+export interface BillCheckRun {
+  accountId: string;
+  institution: string;
+  last4: string | null;
+  /** Due months (YYYY-MM) of the oldest and the newest bill of the run. */
+  fromKey: string;
+  toKey: string;
+  billTotal: Cents;
+  ours: Cents;
+  gap: Cents;
+  /** Newest first. */
+  bills: BillCheckItem[];
 }
 
 export interface DuplicatePayment {
@@ -68,7 +105,12 @@ export interface DuplicatePayment {
 
 export interface BillCheckView {
   generatedAt: string;
+  /** Bills that do not close, newest first. The bills of a run and the ones the owner dismissed are not here. */
   items: BillCheckItem[];
+  /** Runs of two or more consecutive bills of one card with no purchases from the bank, newest first. */
+  runs: BillCheckRun[];
+  /** Bills the owner dismissed, newest first. They can be put back. */
+  dismissed: BillCheckItem[];
   /** Card bill payments listed more than once (the pending and the posted copy, or two texts for one payment). */
   duplicatePayments: DuplicatePayment[];
   /** Pending entries set aside as stale, in case one of them is real. */
@@ -129,6 +171,12 @@ export function billCheck(store: Store, now: Date): BillCheckView {
     return [];
   };
   const items: BillCheckItem[] = [];
+  const runs: BillCheckRun[] = [];
+  const dismissedItems: BillCheckItem[] = [];
+  const dismissedKeys = dismissedBills(store);
+  // What the owner ignored, by card: a bill that does not close may be short by exactly that.
+  const ignoredBy = new Map<string, EffectiveTransaction[]>();
+  for (const t of all) if (t.excluded && t.state === 'ignored' && !isCardPayment(t)) ignoredBy.set(t.accountId, [...(ignoredBy.get(t.accountId) ?? []), t]);
   // Hidden cards stay out of Faturas, so they stay out of this check too.
   const visible = visibleAccounts(store);
   const visibleIds = new Set(visible.map((a) => a.id));
@@ -137,7 +185,10 @@ export function billCheck(store: Store, now: Date): BillCheckView {
   for (const account of cardAccounts) {
     const cycles = cyclesFor(store, account, live, today);
     const own = live.filter((t) => t.accountId === account.id && !isCardPayment(t) && t.amount < 0);
-    const membership = (c: Cycle) => own.filter((t) => (t.billCycle ? t.billCycle === c.key : localDay(t.occurredAt) >= c.from && localDay(t.occurredAt) <= c.to));
+    const within = (list: EffectiveTransaction[], c: Cycle) => list.filter((t) => (t.billCycle ? t.billCycle === c.key : localDay(t.occurredAt) >= c.from && localDay(t.occurredAt) <= c.to));
+    const membership = (c: Cycle) => within(own, c);
+    const ignored = ignoredBy.get(account.id) ?? [];
+    const entries: Array<{ item: BillCheckItem; index: number }> = [];
     // Gaps already explained by a move suggested for an earlier cycle, so the same fix is not offered twice.
     const delta = new Map<string, Cents>();
     const taken = new Set<string>();
@@ -148,6 +199,10 @@ export function billCheck(store: Store, now: Date): BillCheckView {
       const ours = cycle.charges - cycle.credits + plannedIn(account.id, cycle.key) + (delta.get(cycle.key) ?? 0);
       const gap = ours - cycle.billTotal;
       if (Math.abs(gap) <= TOLERANCE) return;
+      // Records the owner ignored that the bank still bills: putting back a charge (bill larger) or a credit (bill smaller) closes the gap.
+      const restored = exactGroup(within(ignored, cycle).map((t) => ({ t, value: gap < 0 ? -t.amount : t.amount })).filter((c) => c.value > 0), Math.abs(gap), cycle.to);
+      // The purchases from before DATA_START were deleted, so a cycle that starts earlier is only partly in the data and its total can not be judged.
+      if (cycle.from < DATA_START && !restored) return;
       const previous = cycles[i - 1];
       const next = cycles[i + 1];
       const near = (list: EffectiveTransaction[], from: string, to: string): Candidate[] =>
@@ -166,7 +221,9 @@ export function billCheck(store: Store, now: Date): BillCheckView {
       const spare = (c: Cycle | undefined): Cents | null => (c && c.billTotal !== null && c.status !== 'unknown' && c.status !== 'open' ? c.charges - c.credits + plannedIn(account.id, c.key) + (delta.get(c.key) ?? 0) - c.billTotal : null);
       const canTake = (c: Cycle | undefined, amount: Cents) => c !== undefined && (spare(c) === null || spare(c)! <= -amount + TOLERANCE);
       const canGive = (c: Cycle | undefined, amount: Cents) => c !== undefined && (spare(c) === null || spare(c)! >= amount - TOLERANCE);
-      if (gap > 0) {
+      if (restored) {
+        suggestion = { kind: 'ignored', amount: Math.abs(gap), records: restored.map((r) => ({ transactionId: r.t.id, day: localDay(r.t.occurredAt), amount: r.t.amount, description: r.t.description })) };
+      } else if (gap > 0) {
         // We count more than the bill: the last days of this cycle may belong to the next bill, the first days to the previous one.
         const tail = canTake(next, gap) ? exactGroup(near(membership(cycle), addDays(cycle.to, -EDGE_DAYS), cycle.to), gap, cycle.to) : null;
         const head = canTake(previous, gap) ? exactGroup(near(membership(cycle), cycle.from, addDays(cycle.from, EDGE_DAYS)), gap, cycle.from) : null;
@@ -184,7 +241,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
         const unlisted = unlistedFor(account.id, cycle.key, found.amount);
         if (unlisted.length > 0) found = { ...found, unlisted };
       }
-      items.push({
+      entries.push({ index: i, item: {
         accountId: account.id,
         institution: account.institution,
         last4: account.last4,
@@ -196,8 +253,24 @@ export function billCheck(store: Store, now: Date): BillCheckView {
         ours: cycle.charges - cycle.credits + plannedIn(account.id, cycle.key),
         gap: cycle.charges - cycle.credits + plannedIn(account.id, cycle.key) - cycle.billTotal,
         suggestion: found,
-      });
+        noPurchases: cycle.charges === 0,
+        // An ignored record to put back is worth seeing at any age.
+        old: !restored && (cycle.status === 'paid' || cycle.status === 'rolled') && cycle.dueDate < addDays(today, -OLD_BILL_DAYS),
+      } });
     });
+
+    const kept = entries.filter((e) => !dismissedKeys.has(`${account.id}|${e.item.cycleKey}`)).sort((a, b) => a.index - b.index);
+    dismissedItems.push(...entries.filter((e) => dismissedKeys.has(`${account.id}|${e.item.cycleKey}`)).map((e) => e.item));
+    // Bills for which the bank sent no purchases, one after the other, are one problem: the next run of them is one entry.
+    const noPurchases = (e: (typeof kept)[number]) => e.item.noPurchases && e.item.suggestion.kind === 'missing' && !e.item.suggestion.unlisted;
+    for (let k = 0; k < kept.length; ) {
+      let end = k;
+      if (noPurchases(kept[k]!)) while (end + 1 < kept.length && noPurchases(kept[end + 1]!) && kept[end + 1]!.index === kept[end]!.index + 1) end++;
+      const group = kept.slice(k, end + 1).map((e) => e.item);
+      if (group.length < 2) items.push(...group);
+      else runs.push({ accountId: account.id, institution: account.institution, last4: account.last4, fromKey: group[0]!.cycleKey, toKey: group[group.length - 1]!.cycleKey, billTotal: group.reduce((s, g) => s + g.billTotal, 0), ours: group.reduce((s, g) => s + g.ours, 0), gap: group.reduce((s, g) => s + g.gap, 0), bills: group.reverse() });
+      k = end + 1;
+    }
   }
 
   const accountOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a]));
@@ -206,7 +279,10 @@ export function billCheck(store: Store, now: Date): BillCheckView {
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
     .map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, description: t.description, institution: accountOf.get(t.accountId)?.institution ?? '', last4: accountOf.get(t.accountId)?.last4 ?? null }));
 
-  items.sort((a, b) => b.dueDate.localeCompare(a.dueDate) || a.institution.localeCompare(b.institution));
+  const newest = (a: BillCheckItem, b: BillCheckItem) => b.dueDate.localeCompare(a.dueDate) || a.institution.localeCompare(b.institution);
+  items.sort(newest);
+  dismissedItems.sort(newest);
+  runs.sort((a, b) => b.toKey.localeCompare(a.toKey) || a.institution.localeCompare(b.institution));
 
   // The same card payment listed twice: equal amounts within three days that differ in text or status.
   const duplicatePayments: DuplicatePayment[] = [];
@@ -223,5 +299,34 @@ export function billCheck(store: Store, now: Date): BillCheckView {
     }
   }
   duplicatePayments.sort((a, b) => b.members[0]!.day.localeCompare(a.members[0]!.day));
-  return { generatedAt: now.toISOString(), items, duplicatePayments, setAside };
+  return { generatedAt: now.toISOString(), items, runs, dismissed: dismissedItems, duplicatePayments, setAside };
+}
+
+function dismissedBills(store: Store): Set<string> {
+  try {
+    const raw = store.getSetting(DISMISSED_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** "I know this bill is off": it leaves the check until the owner puts it back. Kept as `accountId|cycleKey`, so a new sync does not bring it back. */
+export function setBillCheckDismissed(store: Store, bills: unknown, dismissed: unknown, now: Date): MutationResult {
+  if (typeof dismissed !== 'boolean') return { ok: false, status: 400, error: 'dismissed must be true or false' };
+  if (!Array.isArray(bills) || bills.length === 0 || bills.length > 100) return { ok: false, status: 400, error: 'bills must be a list of 1 to 100 { accountId, cycleKey }' };
+  const cards = new Set(store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card').map((a) => a.id));
+  const keys: string[] = [];
+  for (const b of bills as Array<{ accountId?: unknown; cycleKey?: unknown }>) {
+    if (typeof b?.accountId !== 'string' || typeof b.cycleKey !== 'string' || !/^\d{4}-\d{2}$/.test(b.cycleKey)) return { ok: false, status: 400, error: 'each bill needs accountId and cycleKey (YYYY-MM)' };
+    if (!cards.has(b.accountId)) return { ok: false, status: 404, error: 'not_found' };
+    keys.push(`${b.accountId}|${b.cycleKey}`);
+  }
+  const set = dismissedBills(store);
+  for (const key of keys) {
+    if (dismissed) set.add(key);
+    else set.delete(key);
+  }
+  store.setSetting(DISMISSED_KEY, JSON.stringify([...set].slice(-500)), now.toISOString());
+  return { ok: true };
 }

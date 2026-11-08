@@ -31,6 +31,13 @@ test('the bill check answers only its own path', () => {
   assert.equal(call('GET', '/api/bill-check/extra'), null);
 });
 
+test('dismissing a bill is a PUT with a list of bills and a yes or no', () => {
+  assert.equal(call('GET', '/api/bill-check/dismiss')?.status, 405);
+  assert.equal(call('PUT', '/api/bill-check/dismiss', '{not json')?.status, 400);
+  assert.equal(call('PUT', '/api/bill-check/dismiss', JSON.stringify({ bills: [], dismissed: true }))?.status, 400);
+  assert.equal(call('PUT', '/api/bill-check/dismiss', JSON.stringify({ bills: [{ accountId: 'nope', cycleKey: '2026-09' }], dismissed: true }))?.status, 404);
+});
+
 test('an AI decision with a body that is not JSON is a 400, and an empty body is still accepted where it can be', () => {
   assert.equal(call('POST', '/api/ai/accept', '{not json')?.status, 400);
   assert.equal(call('POST', '/api/ai/accept-all', '')?.status, 200);

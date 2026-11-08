@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { transactionDetail } from '../../src/api/detail.ts';
-import { explore, type ExplorerQuery } from '../../src/api/explorer.ts';
+import { amountInText, explore, type ExplorerQuery } from '../../src/api/explorer.ts';
 import { bulkEdit, saveGroup, removeGroup, addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import * as views from '../../src/api/views.ts';
@@ -333,4 +333,32 @@ test('bulk edit moves card purchases to a bill, skips the rest and goes back to 
   assert.deepEqual([back.ok, back.changed], [true, 1]);
   assert.equal(transactionDetail(store, 'phone', NOW)?.cycleByUser, false);
   assert.equal(bulkEdit(store, ['phone'], { cycleKey: '12/2026' }, NOW).ok, false);
+});
+
+test('explorer: says how much of the sums is card payments, moves between own accounts and investments', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pierre', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.replaceCanonicalAccounts([acc({ id: 'chk' })], [], NOW.toISOString());
+  const list = [
+    txn('shop', { description: 'Shop', amount: -4000 }),
+    txn('pay', { description: 'Pagamento de fatura', category: 'Pagamento de fatura', amount: -50000 }),
+    txn('own', { description: 'Transferencia mesma titularidade', category: 'Transferências', amount: 20000 }),
+    txn('save', { description: 'Aplicacao CDB', category: 'Investimentos', amount: -10000 }),
+  ];
+  store.replaceCanonicalTransactions(list, list.map((t) => ({ sourceId: 'pierre', externalId: `ext-${t.id}`, transactionId: t.id, matchPass: 0 })), NOW.toISOString());
+  const all = explore(store, base, NOW);
+  assert.deepEqual(all.sums, { count: 4, income: 20000, expense: 64000, net: -44000 });
+  assert.deepEqual(all.internal, { count: 3, income: 20000, expense: 60000 });
+  // The same numbers the "only real spending" filter leaves out.
+  const real = explore(store, { ...base, spendingOnly: true }, NOW);
+  assert.deepEqual(real.sums, { count: 1, income: 0, expense: 4000, net: -4000 });
+  assert.deepEqual(real.internal, { count: 0, income: 0, expense: 0 });
+});
+
+test('a number typed in the search box finds the transactions of that amount', () => {
+  for (const text of ['4,61', 'R$ 4,61', '4.61', '-4,61']) assert.equal(amountInText(text), 461, text);
+  assert.equal(amountInText('1.234,56'), 123456);
+  assert.equal(amountInText('12'), 1200);
+  assert.equal(amountInText('padaria'), null);
+  assert.equal(amountInText('99pay'), null);
 });

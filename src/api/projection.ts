@@ -3,7 +3,7 @@ import { addMonths } from '../core/dates.ts';
 import type { Cents } from '../core/money.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
-import { dayInMonth, type RecurringItem } from './recurring.ts';
+import { dayInMonth, isExpected, type RecurringItem } from './recurring.ts';
 import type { EffectiveTransaction } from './scope.ts';
 
 /** The open bill of cards that share a limit: one bill for the group, named by the cards and dated by the earliest due date. */
@@ -56,7 +56,8 @@ export interface IncomeEvent {
 export function incomeEvents(store: Store, recurring: RecurringItem[], today: string, until: string): { source: 'registered' | 'recurring' | 'none'; events: IncomeEvent[] } {
   const events: IncomeEvent[] = [];
   const registered = store.listIncome();
-  const source: 'registered' | 'recurring' | 'none' = registered.length > 0 ? 'registered' : recurring.some((r) => r.direction === 'in' && r.account === 'bank') ? 'recurring' : 'none';
+  const credits = recurring.filter((r) => r.direction === 'in' && r.account === 'bank' && isExpected(r));
+  const source: 'registered' | 'recurring' | 'none' = registered.length > 0 ? 'registered' : credits.length > 0 ? 'recurring' : 'none';
   if (source === 'registered') {
     for (let m = today.slice(0, 7); m <= until.slice(0, 7); m = addMonths(m, 1)) {
       for (const item of registered) {
@@ -66,8 +67,8 @@ export function incomeEvents(store: Store, recurring: RecurringItem[], today: st
       }
     }
   } else if (source === 'recurring') {
-    for (const r of recurring) {
-      if (r.direction !== 'in' || r.account !== 'bank' || r.late) continue;
+    for (const r of credits) {
+      if (r.late) continue;
       for (const day of monthlyDays(r.nextDay, r.dayOfMonth, today, until)) events.push({ day, name: r.name, amount: r.amount, origin: `entrada que se repete todo mês, dia ${r.dayOfMonth}`, estimate: r.kind === 'variable' });
     }
   }

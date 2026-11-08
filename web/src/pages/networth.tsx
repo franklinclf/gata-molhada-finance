@@ -6,6 +6,7 @@ import { Select } from '../Select.tsx';
 import { brl, dayMonth, localDay, parseBrl } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { Loading } from '../ui.tsx';
+import { endpoints, splitZero } from './page-logic.ts';
 
 const toCents = (text: string): number | null => parseBrl(text, { allowZero: true });
 
@@ -26,7 +27,7 @@ function ManualRow({ item, now, hidden, onChanged, onError }: { item: NetWorthVi
   return (
     <li class="budget-line">
       <div class="budget-head">
-        <span class="grow clip">
+        <span class="grow clip wrap-phone">
           {item.name} <span class="badge muted">{item.kind === 'asset' ? 'bem' : 'dívida'}</span> {item.archived && <span class="badge muted">arquivado</span>}
         </span>
         <strong>{last ? brl(last.value, hidden) : '—'}</strong>
@@ -62,6 +63,8 @@ export function NetWorthPage({ now, hidden, embedded = false }: { now: Date; hid
   const [message, setMessage] = useState<string | null>(null);
   if (error || (loading && !data)) return <div class="page-body">{!embedded && <h1 class="page-title">Patrimônio</h1>}<Loading error={error} /></div>;
   if (!data) return null;
+  const { shown, zero } = splitZero(data.items);
+  const ends = endpoints(data.history.map((p) => p.day), data.history.map((p) => p.net), hidden);
   const add = async () => {
     try {
       await api.addAsset(name, kind, toCents(value));
@@ -81,19 +84,38 @@ export function NetWorthPage({ now, hidden, embedded = false }: { now: Date; hid
         <div class="muted">
           {brl(data.assets, hidden)} em bens e saldos, menos {brl(data.liabilities, hidden)} em dívidas
         </div>
-        <LineChart points={data.history.map((p) => p.net)} days={data.history.map((p) => p.day)} hidden={hidden} label="Patrimônio" />
+        <LineChart points={data.history.map((p) => p.net)} days={data.history.map((p) => p.day)} hidden={hidden} label="Patrimônio" axis scale="fit" />
+        {ends && (
+          <div class="muted chart-range with-axis">
+            <span>{ends.from}</span>
+            <span>{ends.to}</span>
+          </div>
+        )}
         <div class="note">O histórico é reconstruído: parte do saldo e da fatura de hoje e desfaz as transações lançadas depois de cada fim de mês. Bens e dívidas lançados à mão valem a partir da primeira data informada.</div>
       </div>
       <section class="panel">
         <h2>De onde vem</h2>
         <ul class="rows">
-          {data.items.map((i) => (
+          {shown.map((i) => (
             <li key={`${i.kind}${i.name}`}>
-              <span class="grow clip">{i.name}</span>
+              <span class="grow clip wrap-phone">{i.name}</span>
               <strong class={i.liability ? 'bad-text' : ''}>{i.liability ? '−' : ''}{brl(i.value, hidden)}</strong>
             </li>
           ))}
         </ul>
+        {zero.length > 0 && (
+          <details class="zero-accounts">
+            <summary>Contas sem saldo ({zero.length})</summary>
+            <ul class="rows">
+              {zero.map((i) => (
+                <li key={`${i.kind}${i.name}`}>
+                  <span class="grow clip wrap-phone">{i.name}</span>
+                  <strong>{brl(0, hidden)}</strong>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {data.items.some((i) => i.kind === 'card') && (
           <div class="note">
             A dívida no cartão é o saldo devedor que o banco informa, contando cada limite compartilhado uma vez. Ela pode ser diferente do "a pagar" da tela de Cartões, que soma as faturas fechadas não pagas e a fatura aberta. Quando a soma do app passa do saldo do banco, a página Fontes e conferência avisa.

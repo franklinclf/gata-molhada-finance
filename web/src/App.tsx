@@ -14,7 +14,6 @@ import { BudgetsPage } from './pages/budgets.tsx';
 import { SettingsPage } from './pages/settings.tsx';
 import { SpendingPage } from './pages/spending.tsx';
 import { NAV, useNavOrder } from './nav.ts';
-import { useTopbarTools } from './topbar.ts';
 import { TransactionsPage } from './pages/transactions.tsx';
 import { hrefFor, useRoute } from './router.ts';
 
@@ -59,7 +58,7 @@ const MORE: Array<[string, string]> = [
 const NAV_GAP = 4;
 
 /** How many of the top bar links fit in the bar's width. When all fit, no "Mais" button is needed. */
-function useFittingCount(total: number, order: string, actions: unknown) {
+function useFittingCount(total: number, order: string, shown: boolean) {
   const bar = useRef<HTMLElement>(null);
   const probe = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(total);
@@ -68,7 +67,7 @@ function useFittingCount(total: number, order: string, actions: unknown) {
     if (!header) return;
     const measure = () => {
       if (!bar.current || !probe.current) return;
-      // The room is what the bar has left once the brand and the page actions (which grow while customizing the panel) take theirs.
+      // The room is what the bar has left once the brand and the page actions take theirs.
       const style = getComputedStyle(header);
       const gap = parseFloat(style.columnGap) || 0;
       const others = ([...header.children] as HTMLElement[]).filter((child) => child !== bar.current);
@@ -93,7 +92,8 @@ function useFittingCount(total: number, order: string, actions: unknown) {
     observer.observe(header);
     for (const child of header.children) observer.observe(child);
     return () => observer.disconnect();
-  }, [total, order, actions]);
+    // `shown`: the bar does not exist while the login is checked, so it is measured again once it appears.
+  }, [total, order, shown]);
   return { bar, probe, fit };
 }
 
@@ -106,12 +106,13 @@ export function App() {
   const [menu, setMenu] = useState(false);
   const route = useRoute();
   const nav = useNavOrder();
-  // Measured again when the page actions change, since they take room from the menu.
-  const tools = useTopbarTools();
-  const { bar, probe, fit } = useFittingCount(NAV.length, nav.ids.join(), tools);
+  const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page === 'status' ? 'settings' : route.page;
+  // "Mais" names the page open behind it, so it is clear where you are; the probe measures it with the longest name.
+  const hiddenNow = (fit: number) => nav.items.slice(fit).find(([id]) => id === section);
+  const longest = nav.items.reduce((a, [, label]) => (label.length > a.length ? label : a), '');
+  const { bar, probe, fit } = useFittingCount(NAV.length, `${nav.ids.join()}|${longest}`, phase === 'in');
   const [dragging, setDragging] = useState<string | null>(null);
   // Cash flow and net worth are views of the accounts page.
-  const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page === 'status' ? 'settings' : route.page;
   const link = (id: string, label: string, onClick?: () => void) => (
     <a
       key={id}
@@ -224,7 +225,7 @@ export function App() {
           {fit < NAV.length && (
             <div class="nav-more">
               <button class={nav.items.slice(fit).some(([id]) => id === section) ? 'navlink on' : 'navlink'} aria-expanded={menu} onClick={(e) => { e.stopPropagation(); setMenu(!menu); }}>
-                Mais ▾
+                Mais{hiddenNow(fit) ? ` · ${hiddenNow(fit)![1]}` : ''} ▾
               </button>
               {menu && (
                 <div class="nav-menu">
@@ -242,11 +243,10 @@ export function App() {
             {nav.items.map(([id, label]) => (
               <span key={id} class="navlink">{label}</span>
             ))}
-            <span class="navlink">Mais ▾</span>
+            <span class="navlink">Mais · {longest} ▾</span>
           </div>
         </nav>
         <div class="topbar-actions">
-          {tools}
           <button class="icon icon-btn" onClick={() => setHidden(!hidden)} aria-pressed={hidden} aria-label={hidden ? 'Mostrar valores' : 'Ocultar valores'} title={hidden ? 'Mostrar valores' : 'Ocultar valores'}>
             {hidden ? <EyeOff /> : <Eye />}
           </button>

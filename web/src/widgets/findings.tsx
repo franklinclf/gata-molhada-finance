@@ -1,4 +1,5 @@
 import { api } from '../api.ts';
+import { billsToCheck } from '../bill-check.ts';
 import { ago, maskMoney } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { patchParams } from '../router.ts';
@@ -12,6 +13,9 @@ export const KIND_LABEL: Record<string, string> = {
 
 export function FindingsWidget({ now, size, hidden }: WidgetProps) {
   const { data, error, loading } = useLoad(() => api.findings(), [], 120_000);
+  const bills = useLoad(() => api.billCheck(), [], 120_000);
+  const billCount = bills.data ? billsToCheck(bills.data) : 0;
+  const total = (data?.items.length ?? 0) + billCount;
   return (
     <Widget
       title="Para conferir"
@@ -19,15 +23,25 @@ export function FindingsWidget({ now, size, hidden }: WidgetProps) {
       now={now}
       loading={loading && !data}
       error={error}
+      empty={data && bills.data && total === 0 ? 'Nada para conferir' : undefined}
       head={
         data && (
           <>
-            <div class="big">{data.items.length}</div>
-            <div class="muted">{data.items.length === 0 ? 'Nada para conferir' : 'registros que podem ser o mesmo, em fontes diferentes'}</div>
+            <div class="big">{total}</div>
+            <div class="muted">
+              {total === 0
+                ? 'Nada para conferir'
+                : [data.items.length > 0 ? `${data.items.length} ${data.items.length === 1 ? 'registro que pode ser o mesmo' : 'registros que podem ser o mesmo'}, em fontes diferentes` : '', billCount > 0 ? `${billCount} ${billCount === 1 ? 'fatura que não fecha' : 'faturas que não fecham'}` : ''].filter(Boolean).join(' · ')}
+            </div>
           </>
         )
       }
     >
+      {billCount > 0 && size !== 'sm' && (
+        <Go page="cards" params={{ tab: 'check' }}>
+          Ver as {billCount} {billCount === 1 ? 'fatura' : 'faturas'} em Cartões, aba Conferir
+        </Go>
+      )}
       {data && size !== 'sm' && data.items.length > 0 && (
         <>
           <FitList

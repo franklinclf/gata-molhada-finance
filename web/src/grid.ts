@@ -104,6 +104,37 @@ export function reflow<T extends Box>(items: T[], columns: number): T[] {
   return items.map((i) => placed.find((p) => p.id === i.id)!);
 }
 
+/**
+ * A saved layout shown inside `columns`. A layout saved on a wider screen has widgets past the last column; those are
+ * put in the first free place (narrowed if they are wider than the grid) and everything that already fits stays where it
+ * is, so no two widgets share a cell. Nothing is saved: on the wide screen the layout is still the one that was saved.
+ */
+export function fitToColumns<T extends Box>(items: T[], columns: number): T[] {
+  const inside = items.filter((i) => i.x + i.w <= columns);
+  if (inside.length === items.length) return items;
+  if (inside.some((a, n) => inside.some((b, m) => n < m && collides(a, b)))) return reflow(items, columns);
+  const placed: T[] = [...inside];
+  const moved = new Map<string, T>();
+  for (const item of items.filter((i) => i.x + i.w > columns).sort(byPosition)) {
+    const w = Math.min(item.w, columns);
+    const next = { ...item, w, ...freeSlot(placed, w, item.h, columns) };
+    placed.push(next);
+    moved.set(item.id, next);
+  }
+  return items.map((i) => moved.get(i.id) ?? i);
+}
+
+/** Rows a widget with nothing to show keeps: one when it is wide enough to say so beside its title, two otherwise. */
+export function collapsedHeight(w: number): number {
+  return w >= 3 ? 1 : 2;
+}
+
+/** The layout with the widgets that have nothing to show shrunk to a line, and the ones below them moved up. */
+export function collapseEmpty<T extends Box>(items: T[], empty: ReadonlySet<string>): T[] {
+  if (empty.size === 0) return items;
+  return compact(items.map((i) => (empty.has(i.id) ? { ...i, h: Math.min(i.h, collapsedHeight(i.w)) } : i)));
+}
+
 /** How many list rows fit in a widget of this height, after the header, the key figure and the footer. */
 export function rowsFit(h: number, reserved = 3): number {
   return Math.max(Math.floor((h - reserved) * 1.6), 0);

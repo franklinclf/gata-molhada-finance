@@ -8,6 +8,7 @@ import { PeriodPicker, PRESETS } from '../period.tsx';
 import { patchParams, type Route } from '../router.ts';
 import { localDay } from '../format.ts';
 import { Go, Loading, TxRow } from '../ui.tsx';
+import { trendChange } from './page-logic.ts';
 
 /** What a category (or merchant) is made of: the individual transactions, loaded when the row is opened. */
 function Members({ name, by, from, to, hidden }: { name: string; by: 'category' | 'merchant'; from: string; to: string; hidden: boolean }) {
@@ -201,12 +202,23 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
         ) : (
           <section class="panel">
             <h2>Gasto por categoria nos últimos {trend.data.months.length} meses</h2>
-            <div class="muted">A linha vai de {monthName(trend.data.months[0]!)} a {monthName(trend.data.months.at(-1)!)}; o último ponto é o mês em andamento. A seta só aparece quando o mês em andamento já passou da média dos meses fechados, e novo é uma categoria sem gasto nos meses fechados. Clique no nome para ver as compras do mês.</div>
+            <div class="muted">A linha vai de {monthName(trend.data.months[0]!)} a {monthName(trend.data.months.at(-1)!)}; o último ponto é o mês em andamento. A seta só aparece quando o mês em andamento já passou da média dos meses fechados, e novo é uma categoria sem gasto nos meses fechados. O mês passado é o mês inteiro, e o número abaixo do valor deste mês mostra a diferença para ele; só uma alta é destacada, porque o mês em andamento ainda não terminou. Clique no nome para ver as compras do mês.</div>
             <ul class="rows tall">
+              <li class="trend-row trend-head" aria-hidden="true">
+                <span>Categoria</span>
+                <span />
+                <span>Média</span>
+                <span>Mês passado</span>
+                <span>Este mês</span>
+                <span />
+              </li>
               {trend.data.rows.map((r) => {
                 // The current month is partial, so being under the average of whole months says nothing yet; only a rise is a signal.
                 const diff = r.average > 0 ? r.current / r.average - 1 : null;
                 const note = diff === null ? (r.current > 0 ? 'novo' : '') : diff > 0 ? `▲ ${percent(diff)}` : 'mês em andamento';
+                // The month before the current one, when the data goes back that far.
+                const previous = r.points.length >= 2 ? r.points.at(-2)! : null;
+                const change = trendChange(r.current, previous, hidden);
                 return (
                   <li key={r.name} class="trend-row">
                     <Go class="clip" page="transactions" params={{ category: r.name, from: `${today.slice(0, 7)}-01`, to: today, netSpending: 'true' }}>
@@ -214,8 +226,16 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
                       {r.parent && <span class="muted"> · {r.parent}</span>}
                     </Go>
                     <Sparkline points={r.points} tip={r.points.map((p, i) => `${monthName(trend.data!.months[i]!)}: ${hidden ? '••••' : brl(p)}`).join('\n')} />
-                    <span class="muted">média {brl(r.average, hidden)}</span>
-                    <strong>{brl(r.current, hidden)}</strong>
+                    <span class="muted">
+                      <span class="t-lbl">média</span> {brl(r.average, hidden)}
+                    </span>
+                    <span class="muted">
+                      <span class="t-lbl">mês passado</span> {previous === null ? '—' : brl(previous, hidden)}
+                    </span>
+                    <span class="t-now">
+                      <span class="t-lbl muted">este mês</span> <strong>{brl(r.current, hidden)}</strong>
+                      {change && <small class={change.rising ? 'bad-text t-change' : 'muted t-change'}>{change.text}</small>}
+                    </span>
                     <span class={diff !== null && diff > 0.25 ? 'bad-text trend-note' : 'muted trend-note'}>{note}</span>
                   </li>
                 );
@@ -237,14 +257,19 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
             <LineChart points={cumulative(data.daily, data.from, data.to)} hidden={hidden} days={daysBetween(data.from, data.to)} />
             <div class="muted chart-caption">Gasto acumulado de {dayMonth(data.from)} a {dayMonth(data.to)}: de {brl(0, hidden)} até {brl(data.total, hidden)}.</div>
             <h3>Últimos 12 meses (clique em um mês)</h3>
-            <Bars
-              hidden={hidden}
-              height={140}
-              valueOnSelected
-              selected={selectedMonth}
-              onSelect={(m) => patchParams(monthBounds(m, today))}
-              data={months.map((m) => ({ key: m, label: monthName(m).slice(0, 3), value: perMonth.get(m) ?? 0, tip: `${monthName(m)}: ${hidden ? '••••' : brl(perMonth.get(m) ?? 0)}` }))}
-            />
+            {/* Until the year is back, bars would draw zero months as if they were facts. */}
+            {year.data ? (
+              <Bars
+                hidden={hidden}
+                height={140}
+                valueOnSelected
+                selected={selectedMonth}
+                onSelect={(m) => patchParams(monthBounds(m, today))}
+                data={months.map((m) => ({ key: m, label: monthName(m).slice(0, 3), value: perMonth.get(m) ?? 0, tip: `${monthName(m)}: ${hidden ? '••••' : brl(perMonth.get(m) ?? 0)}` }))}
+              />
+            ) : (
+              <Loading error={year.error} />
+            )}
           </div>
           <div class="panel split top">
             <Ring size={170} selected={open} onSelect={(k) => setOpen(open === k ? null : k)} segments={rows.slice(0, 8).map((g, i) => ({ key: g.name, value: g.amount, color: PALETTE[i % PALETTE.length]!, tip: `${g.name}\n${hidden ? '••••' : brl(g.amount)} · ${percent(g.share)}` }))}>
@@ -256,7 +281,7 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
                 <li key={g.name} class="expandable">
                   <button class="row-btn" onClick={() => setOpen(open === g.name ? null : g.name)} aria-expanded={open === g.name}>
                     <span class="swatch" style={{ background: PALETTE[i % PALETTE.length] ?? 'var(--muted)' }} />
-                    <span class="grow clip">{g.name}</span>
+                    <span class="grow clip wrap-phone">{g.name}</span>
                     <span class="muted">{purchases(g.count)} · {percent(g.share)}</span>
                     <strong>{brl(g.amount, hidden)}</strong>
                     <span aria-hidden="true">{open === g.name ? '▾' : '▸'}</span>
@@ -267,7 +292,7 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
                       {g.children.map((c) => (
                         <li key={c.name} class="expandable">
                           <button class="row-btn" onClick={() => setOpenChild(openChild === c.name ? null : c.name)} aria-expanded={openChild === c.name}>
-                            <span class="grow clip">{c.name}</span>
+                            <span class="grow clip wrap-phone">{c.name}</span>
                             <span class="muted">{purchases(c.count)} · {percent(c.amount / g.amount)}</span>
                             <strong>{brl(c.amount, hidden)}</strong>
                             <span aria-hidden="true">{openChild === c.name ? '▾' : '▸'}</span>

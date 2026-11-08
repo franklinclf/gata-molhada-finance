@@ -23,7 +23,9 @@ const ENTRIES: Array<[string[], string]> = [
   [['Academia e centros de lazer', 'Gyms and fitness centers'], 'Academia'],
   [['Telecomunicação', 'Telecommunications', 'Celular', 'Mobile'], 'Telecomunicação'],
   [['Transferências', 'Transfers', 'Transferência - PIX', 'Transfer - PIX', 'Transferência - TED', 'Transfer - TED', 'Transferência - Boleto bancário', 'Transfer - Bank Slip'], 'Transferências'],
-  [['Investimentos', 'Investments', 'Automatic investment', 'Renda fixa', 'Fixed income', 'Juros de rendimentos de dividendos', 'Proceeds interests and dividends'], 'Investimentos'],
+  [['Investimentos', 'Investments', 'Automatic investment', 'Renda fixa', 'Fixed income'], 'Investimentos'],
+  // Interest and dividends paid out are money earned, not money put away.
+  [['Juros de rendimentos de dividendos', 'Proceeds interests and dividends'], 'Renda'],
   [['Pet Shops e veterinários', 'Pet supplies and vet'], 'Pets'],
   [['Aluguel', 'Rent'], 'Aluguel'],
   [['Moradia', 'Housing', 'Contas da casa'], 'Moradia'],

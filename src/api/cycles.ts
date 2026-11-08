@@ -105,13 +105,14 @@ const PUBLISH_GRACE_DAYS = 7;
 /**
  * Payments of the card bill. The same payment reported twice on the same day counts once, and so does a pending copy
  * and a posted copy of one payment a few days apart (Meu Pluggy shows the bank's pending debit and the card's posted
- * credit, and they can fall on different days when the payment is made late on a Friday).
+ * credit, and they can fall on different days when the payment is made late on a Friday). A negative one is money the bank
+ * gave back after a bill was paid twice ("DEVOLUCAO SALDO CREDOR"): it takes from what was paid, so the bill stops looking overpaid.
  */
 function paymentsOf(transactions: EffectiveTransaction[]): Array<{ day: string; amount: Cents }> {
   const seen = new Map<string, Array<{ sources: string[]; status: string; text: string }>>();
   const out: Array<{ day: string; amount: Cents; status: string; merged: boolean }> = [];
   for (const t of transactions) {
-    if (t.excluded || t.amount <= 0 || !isCardPayment(t)) continue;
+    if (t.excluded || t.amount === 0 || !isCardPayment(t)) continue;
     const day = localDay(t.occurredAt);
     const key = `${day}|${t.amount}`;
     // The same payment shows up again when another source, the pending copy, or the other leg (the bank's own text, "PAGTO. POR DEB
@@ -196,6 +197,23 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
     }
   });
 
+  // Payments by window. A negative one is money the bank gave back after a bill was paid twice: it first offsets the latest earlier
+  // window that is overpaid, up to its excess, and only the rest takes from the window it falls in. A return never makes a bill "paid" by less than nothing.
+  const paidIn = windows.map((w, i) => (w.open ? 0 : payments.filter((p) => p.amount > 0 && p.day >= w.to && (windows[i + 1] === undefined || p.day < windows[i + 1]!.to)).reduce((s, p) => s + p.amount, 0)));
+  windows.forEach((w, i) => {
+    if (w.open) return;
+    let rest = payments.filter((p) => p.amount < 0 && p.day >= w.to && (windows[i + 1] === undefined || p.day < windows[i + 1]!.to)).reduce((s, p) => s - p.amount, 0);
+    for (let j = i - 1; j >= 0 && rest > 0; j--) {
+      const total = windows[j]!.total;
+      if (total === null || paidIn[j]! - total <= TOLERANCE) continue;
+      const taken = Math.min(rest, paidIn[j]! - total);
+      paidIn[j]! -= taken;
+      rest -= taken;
+      break;
+    }
+    paidIn[i] = Math.max(0, paidIn[i]! - rest);
+  });
+
   const cycles: Cycle[] = windows.map((w, i) => {
     const edit = w.open ? undefined : edits.get(`${account.id}|${w.key}`);
     let charges = 0;
@@ -208,8 +226,7 @@ export function cyclesFor(store: Store, account: CanonicalAccount, transactions:
       if (t.amount < 0) charges += -t.amount;
       else credits += t.amount;
     }
-    const next = windows[i + 1];
-    const paid = w.open ? 0 : payments.filter((p) => p.day >= w.to && (next === undefined || p.day < next.to)).reduce((s, p) => s + p.amount, 0);
+    const paid = paidIn[i]!;
     let status: CycleStatus;
     let outstanding = 0;
     let overpaid = 0;
@@ -260,7 +277,7 @@ function applyLatePayments(store: Store, accountId: string, cycles: Cycle[], pay
     const older = cycles.slice(0, i).find(owed);
     if (!older) return;
     const applied = Math.min(c.overpaid, older.outstanding);
-    const day = payments.filter((p) => p.day >= c.to && p.day < (cycles[i + 1]?.to ?? '9999-12-31')).map((p) => p.day).sort()[0] ?? c.to;
+    const day = payments.filter((p) => p.amount > 0 && p.day >= c.to && p.day < (cycles[i + 1]?.to ?? '9999-12-31')).map((p) => p.day).sort()[0] ?? c.to;
     older.latePaid = { amount: (older.latePaid?.amount ?? 0) + applied, day: older.latePaid?.day ?? day };
     older.paid += applied;
     older.outstanding -= applied;

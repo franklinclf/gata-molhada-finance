@@ -1,6 +1,8 @@
+import { useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import { Bars, Meter, Ring } from '../charts.tsx';
 import { brl, dayMonth, localDay, monthName } from '../format.ts';
+import { cardName } from '../names.ts';
 import { chartHeight } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { Go, StatusBadge } from '../ui.tsx';
@@ -11,22 +13,31 @@ const BAR_COLOR: Record<string, string> = { open: 'var(--accent)', paid: 'var(--
 const BAR_NAME: Record<string, string> = { open: 'em aberto', paid: 'paga', overdue: 'vencida', unknown: 'não conferida' };
 const barColor = (status: string) => BAR_COLOR[status] ?? 'var(--warn)';
 
-export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: WidgetProps) {
-  const cycle = config.cycle ?? 'open';
+export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
+  // A month picked on the chart lasts for this visit only: it is not saved with the layout, so the widget always opens on what is owed now.
+  const [cycle, setCycle] = useState('open');
   const { data, error, loading } = useLoad(() => api.cards(cycle), [cycle], 120_000);
   const bills = useLoad(() => api.bills(), [], 300_000);
+  // With a month picked, the widget also says what is owed overall and offers the way back.
+  const all = useLoad(() => (cycle === 'open' ? Promise.resolve(null) : api.cards('open')), [cycle], 120_000);
   const today = localDay(now.toISOString());
-  const options = [{ id: 'open', label: 'Em aberto' }, ...(data?.cycles ?? []).map((c) => ({ id: c, label: `Venc. ${monthName(c)}` }))];
+  // The month picked on the chart is listed too, even when it is the current one and no bill of it is closed yet.
+  const months = [...new Set([...(data?.cycles ?? []), ...(cycle === 'open' ? [] : [cycle])])].sort().reverse();
+  const options = [{ id: 'open', label: 'Em aberto' }, ...months.map((c) => ({ id: c, label: `Venc. ${monthName(c)}` }))];
+  const byMonth = cycle !== 'open';
   const used = data && data.totals.creditLimit > 0 ? data.totals.used / data.totals.creditLimit : 0;
-  // Only what is still unpaid is listed: a card with nothing to pay, or no bill in the chosen month, is left out. The biggest debt comes first.
-  const shown = (data?.cards.filter((c) => c.toPay > 0) ?? []).sort((a, b) => b.toPay - a.toPay);
+  // "Em aberto" lists only what is still unpaid, the biggest debt first. A chosen month lists every bill due in it, paid or not.
+  const amountOf = (c: { toPay: number; total: number }) => (byMonth ? c.total : c.toPay);
+  const shown = (data?.cards.filter((c) => (byMonth ? c.cycle !== null && c.total > 0 : c.toPay > 0)) ?? []).sort((a, b) => amountOf(b) - amountOf(a));
   const closedUnpaid = data?.cards.reduce((s, c) => s + c.outstanding, 0) ?? 0;
   // The part of the shared limit no listed purchase explains is in the header total, so it gets its own line to make the rows add up.
-  const unexplained = cycle === 'open' ? (data?.totals.unexplained ?? 0) : 0;
+  const unexplained = data?.totals.unexplained ?? 0;
   const due = data?.totals.nextDueDate ?? null;
+  // What falls due by the next due date, apart from the later bills the headline also adds up.
+  const dueByNext = due ? (bills.data?.bars ?? []).filter((b) => b.key <= due.slice(0, 7)).reduce((sum, b) => sum + Math.max(0, b.total - b.paid), 0) : 0;
   const late = (day: string | null) => day !== null && day < today;
-  const months = Math.max(4, Math.min(12, Math.floor((pixels?.width ?? 380) / 52)));
-  const barData = (bills.data?.bars ?? []).slice(-months);
+  const barCount = Math.max(4, Math.min(12, Math.floor((pixels?.width ?? 380) / 52)));
+  const barData = (bills.data?.bars ?? []).slice(-barCount);
   const roomy = pixels !== undefined && pixels.height >= 600;
   return (
     <Widget
@@ -36,19 +47,29 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
       now={now}
       loading={loading && !data}
       error={error}
-      actions={<PeriodSelect value={cycle} options={options} onChange={(id) => setConfig({ cycle: id })} />}
+      actions={<PeriodSelect value={cycle} options={options} onChange={setCycle} />}
       head={
         data && (
           <>
-            <div class="big">{brl(data.totals.toPay, hidden)}</div>
-            <div class="muted" data-tip={closedUnpaid > 0 || data.totals.futureInstallments > 0 ? `${brl(data.totals.toPay - closedUnpaid, hidden)} em fatura aberta + ${brl(closedUnpaid, hidden)} em faturas fechadas não pagas${cycle === 'open' && data.totals.futureInstallments > 0 ? `\nFora do total: ${brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras` : ''}` : undefined}>{due ? `A pagar · ${late(due) ? 'venceu em' : cycle === 'open' ? 'vence' : 'vencimento'} ${dayMonth(due)}` : 'A pagar'}</div>
+            <div class="big">{brl(byMonth ? data.totals.cycleTotal : data.totals.toPay, hidden)}</div>
+            <div class="muted" data-tip={closedUnpaid > 0 || data.totals.futureInstallments > 0 ? `${brl(data.totals.toPay - closedUnpaid, hidden)} em fatura aberta + ${brl(closedUnpaid, hidden)} em faturas fechadas não pagas${cycle === 'open' && data.totals.futureInstallments > 0 ? `\nFora do total: ${brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras` : ''}` : undefined}>{byMonth ? `Faturas com vencimento em ${monthName(cycle)} · ${data.totals.toPay > 0 ? `a pagar ${brl(data.totals.toPay, hidden)}` : 'tudo pago'}` : due ? `Todas as faturas não pagas · ${late(due) ? 'venceu em' : 'próximo vencimento'} ${dayMonth(due)}` : 'Todas as faturas não pagas'}</div>
+            {!byMonth && due && dueByNext > 0 && dueByNext < data.totals.toPay && <div class="muted">{brl(dueByNext, hidden)} vencem até {dayMonth(due)}</div>}
+            {byMonth && all.data && (
+              <div class="muted">
+                Todas as não pagas: {brl(all.data.totals.toPay, hidden)}
+                {all.data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(all.data.totals.nextDueDate)}` : ''}{' '}
+                <button class="link" onClick={() => setCycle('open')}>
+                  Ver em aberto
+                </button>
+              </div>
+            )}
             {size !== 'sm' && bills.data && (pixels === undefined || pixels.height >= 430) && (
               <>
                 <Bars
                   hidden={hidden}
                   height={chartHeight(pixels, 440, 80, 150)}
                   selected={cycle === 'open' ? (bills.data.bars.find((b) => b.current)?.key ?? 'open') : cycle}
-                  onSelect={(key) => setConfig({ cycle: key === bills.data?.bars.find((b) => b.current)?.key ? 'open' : key })}
+                  onSelect={(key) => setCycle(key === cycle ? 'open' : key)}
                   data={barData.map((b) => ({
                     key: b.key,
                     label: monthName(b.key).slice(0, 3),
@@ -61,7 +82,7 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
                   {[...new Set(barData.map((b) => (BAR_NAME[b.status] ? b.status : 'warn')))].map((status) => (
                     <span key={status}>
                       <i style={{ background: barColor(status) }} />
-                      {BAR_NAME[status] ?? 'a pagar'}
+                      {BAR_NAME[status] ?? 'fechada, não paga'}
                     </span>
                   ))}
                 </div>
@@ -93,7 +114,7 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
               shown.length === 0
                 ? [
                     <li key="none" class="muted">
-                      Nada a pagar {cycle === 'open' ? 'agora' : 'neste mês'}.
+                      {byMonth ? 'Nenhuma fatura com vencimento neste mês.' : 'Nada a pagar agora.'}
                     </li>,
                   ]
                 : shown.map((c) => {
@@ -104,7 +125,7 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
                       <li key={c.id}>
                         <div class="grow">
                           <Go class="clip" page="transactions" params={{ accountId: c.id, cycle: c.cycle ? (cycle === 'open' ? 'open' : c.cycle.key) : undefined }}>
-                            {c.institution} {c.name}
+                            {cardName(c.institution, c.name)}
                             {c.last4 ? ` •••• ${c.last4}` : ''}
                           </Go>
                           {cycle === 'open' && <Meter fraction={c.creditLimit ? 1 - (c.availableLimit ?? c.creditLimit - c.balance) / c.creditLimit : 0} tip="Limite usado" />}
@@ -115,7 +136,7 @@ export function CardsWidget({ now, hidden, size, pixels, config, setConfig }: Wi
                             {c.cycle?.adjusted ? (c.cycle.adjusted.by === 'auto' ? ' · sobra rolou' : ' · ajustada') : ''}
                           </div>
                         </div>
-                        <strong>{brl(c.toPay, hidden)}</strong>
+                        <strong>{brl(amountOf(c), hidden)}</strong>
                       </li>
                     );
                   })
