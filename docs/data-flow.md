@@ -23,7 +23,7 @@ flowchart TD
   end
 
   subgraph REC["3. Reconciliação (runReconciliation)"]
-    ST --> TRIM["Corta antes de DEFAULT_DATA_START<br/>2026-01-01"]
+    ST --> TRIM["Deixa de fora o que é anterior a DEFAULT_DATA_START<br/>2026-01-01 (os registros ficam guardados)"]
     TRIM --> ACC["Contas canônicas<br/>reconcile/accounts.ts"]
     ACC --> TX["Transações canônicas<br/>reconcile/transactions.ts<br/>estados: single_source, confirmed,<br/>stale_pending (só conta), billed, ignored"]
     TX --> PROOF["Prova por fatura<br/>reconcile/bill-proof.ts"]
@@ -75,7 +75,7 @@ flowchart LR
   H --> K
 ```
 
-Cartão: uma pendente nunca é posta de lado por idade, porque o Meu Pluggy mantém toda compra da fatura aberta como pendente.
+Cartão: uma pendente nunca é posta de lado por idade, porque o Meu Pluggy mantém toda compra da fatura aberta como pendente. Na camada efetiva, a compra de cartão que a fonte ainda chama de pendente aparece como lançada quando a fatura dela já foi publicada (`statusByBill` em `src/api/scope.ts`): pela fatura que o banco indicou (`billForecast`) ou, sem indicação, pela data até o último fechamento publicado. Uma escolha sua de status vale mais, e os totais não mudam.
 
 ## 3. Quem decide a categoria (da mais forte para a mais fraca)
 

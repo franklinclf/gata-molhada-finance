@@ -156,7 +156,7 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
       </section>
       <section class="panel">
         <h2>Pendentes postas de lado ({setAside.length})</h2>
-        <div class="muted">Pendentes antigas em conta que só uma fonte vê ficam fora dos totais. Se alguma for real, abra e mude o status para lançada.</div>
+        <div class="muted">Pendentes antigas em conta que só uma fonte vê ficam fora dos totais. Se alguma for real, marque como lançada aqui (ela volta para os totais) ou abra para ver os detalhes.</div>
         {setAside.length === 0 ? (
           <div class="empty">Nenhuma.</div>
         ) : (
@@ -167,6 +167,9 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
                   {fullDay(t.day)} · {t.description} <span class="muted">({t.institution}{t.last4 ? ` ${t.last4}` : ''})</span>
                 </button>
                 <span>{brl(t.amount, hidden)}</span>
+                <Button size="sm" disabled={busy === t.id} onClick={() => void apply(t.id, () => api.setStatus(t.id, 'posted'))}>
+                  {busy === t.id ? 'Marcando...' : 'Marcar como lançada'}
+                </Button>
               </li>
             ))}
           </ul>

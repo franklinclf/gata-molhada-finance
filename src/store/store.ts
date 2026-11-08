@@ -376,8 +376,6 @@ export interface Store {
   setTransactionIgnored(transactionId: string, ignored: boolean, now: string): void;
   dismissFinding(findingId: string, now: string): void;
   listDismissedFindingIds(): Set<string>;
-  /** Hard-deletes source transactions dated before the instant. Returns how many were removed. */
-  deleteSourceTransactionsBefore(instant: string): number;
   /**
    * Drops source transactions inside a window that the latest read did not return, account by account (`seenAt` is the
    * stamp that read gave to every record it returned). Pass only accounts that were read to the end. A record the provider

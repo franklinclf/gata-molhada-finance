@@ -64,3 +64,29 @@ test('the mutations check their input, and only a card charge can be moved to a 
   assert.deepEqual(setTransactionCycle(store, 'card-charge', '2026-10', NOW), { ok: true });
   assert.equal(effectiveTransactions(store).find((t) => t.id === 'card-charge')?.billCycle, '2026-10');
 });
+
+test('a pending card charge shows as posted once the bill that holds it is published', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-oct', accountExternalId: 'ext-card', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 30000, minimumPayment: null }], NOW.toISOString());
+  const forecast = (month: string) => ({ operation: null, mcc: null, payer: null, receiver: null, billForecast: month });
+  const source = (externalId: string, occurredAt: string, parties?: ReturnType<typeof forecast>) => ({ externalId, accountExternalId: 'ext-card', occurredAt, amount: -1000, description: externalId, descriptionRaw: null, status: 'pending' as const, installment: null, category: null, parties });
+  store.upsertSourceTransactions('pluggy', [
+    source('e-forecast', '2026-10-02T15:00:00Z', forecast('2026-10')),
+    source('e-dated', '2026-10-03T15:00:00Z'),
+    source('e-after', '2026-10-20T15:00:00Z'),
+    source('e-next', '2026-10-07T15:00:00Z', forecast('2026-11')),
+    source('e-word', '2026-10-04T15:00:00Z', forecast('2026-10')),
+  ], NOW.toISOString());
+  const days: Record<string, string> = { forecast: '2026-10-02', dated: '2026-10-03', after: '2026-10-20', next: '2026-10-07', word: '2026-10-04' };
+  const list = Object.entries(days).map(([n, day]) => tx(n, 'card', { description: n, occurredAt: `${day}T15:00:00Z` }));
+  store.replaceCanonicalAccounts([account('card', 'credit_card')], [], NOW.toISOString());
+  store.replaceCanonicalTransactions(list, list.map((t) => ({ sourceId: 'pluggy', externalId: `e-${t.id}`, transactionId: t.id, matchPass: 0 })), NOW.toISOString());
+  store.setTransactionOverride('word', { status: 'pending' }, NOW.toISOString());
+  const read = Object.fromEntries(effectiveTransactions(store).map((t) => [t.id, [t.status, t.statusByBill, t.statusByUser]]));
+  assert.deepEqual(read.forecast, ['posted', true, false], 'the bank puts it on a published bill');
+  assert.deepEqual(read.dated, ['posted', true, false], 'no word from the bank: dated on or before the last closing');
+  assert.deepEqual(read.after, ['pending', false, false], 'dated after the last closing, so it is still on the open bill');
+  assert.deepEqual(read.next, ['pending', false, false], 'the bank expects it on a bill that is not published');
+  assert.deepEqual(read.word, ['pending', false, true], 'the owner called it pending');
+});

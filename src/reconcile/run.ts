@@ -60,8 +60,8 @@ export const manualId = (id: number): string => `man_${id}`;
 /** Rebuilds canonical accounts, then canonical transactions and findings, and saves all of them. */
 export function runReconciliation(store: Store, options: RunOptions & { staleDays?: number; dataStart?: string } = {}): FullReconciliation {
   const now = options.now ?? (() => new Date());
+  // Records older than the start stay in the store (nothing is lost); only the window below leaves them out of the canonical data.
   const dataStart = options.dataStart ?? DATA_START;
-  store.deleteSourceTransactionsBefore(startOfLocalDay(dataStart));
   const accounts = runAccountReconciliation(store, options);
   const views = loadSourceViews(store, options.priority ?? sourcePriority(store));
   const transactions = reconcileTransactions({

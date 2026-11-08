@@ -131,11 +131,21 @@ test('ignoring a transaction keeps it out of the totals through rebuilds, and br
   assert.equal(store.listCanonicalTransactions({ includeExcluded: true }).some((t) => t.state === 'ignored'), false);
 });
 
-test('records before the data start are deleted', () => {
-  const store = seededTransactions();
-  store.upsertSourceTransactions('pierre', [tx({ externalId: 'ancient', accountExternalId: 'p1', occurredAt: '2025-06-01T12:00:00.000Z', amount: -1, descriptionRaw: 'ANCIENT' })], NOW.toISOString());
-  assert.ok(store.listSourceTransactions('pierre').some((t) => t.externalId === 'ancient'));
+test('records dated before the data start stay stored, and only the canonical data leaves them out', () => {
+  const store = seeded();
+  const at = NOW.toISOString();
+  store.upsertSourceTransactions('pluggy', [
+    tx({ externalId: 'old-one', accountExternalId: 'g1', occurredAt: '2025-11-28T12:00:00.000Z', amount: -555, descriptionRaw: 'OLD ONE' }),
+    tx({ externalId: 'new-one', accountExternalId: 'g1', occurredAt: '2026-10-20T12:00:00.000Z', amount: -666, descriptionRaw: 'NEW ONE' }),
+  ], at);
+  const stored = store.listSourceTransactions('pluggy').length;
   runReconciliation(store, { now: () => NOW });
-  assert.equal(store.listSourceTransactions('pierre').some((t) => t.externalId === 'ancient'), false);
-  assert.equal(store.listCanonicalTransactions().some((t) => t.descriptionRaw === 'ANCIENT'), false);
+  const canonical = store.listCanonicalTransactions({ includeExcluded: true }).map((t) => t.id);
+  runReconciliation(store, { now: () => later });
+  assert.equal(store.listSourceTransactions('pluggy').length, stored, 'nothing is deleted from the source records');
+  assert.ok(store.listSourceTransactions('pluggy').some((t) => t.externalId === 'old-one'));
+  const after = store.listCanonicalTransactions({ includeExcluded: true });
+  assert.deepEqual(after.map((t) => t.id), canonical, 'a second run gives the same canonical data');
+  assert.ok(!after.some((t) => t.amount === -555), 'the old record is not part of the canonical data');
+  assert.ok(after.some((t) => t.amount === -666));
 });
