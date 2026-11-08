@@ -730,7 +730,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
             hidden={hidden}
             height={150}
             selected={cycle === 'open' ? (currentBill ?? 'open') : cycle}
-            onSelect={(key) => patchParams({ cycle: key === currentBill ? null : key })}
+            onSelect={(key) => patchParams({ cycle: key === cycle ? null : key })}
             data={bills.data.bars.map((b) => ({
               key: b.key,
               label: monthName(b.key).slice(0, 3),
@@ -751,7 +751,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
       {tab === 'cards' && (
         <label class="inline-field">
           Ciclo
-          <Select ariaLabel="Fatura" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...(data?.cycles ?? []).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
+          <Select ariaLabel="Fatura" value={cycle} onChange={(value) => patchParams({ cycle: value === 'open' ? null : value })} options={[{ value: 'open', label: 'Em aberto (atual)' }, ...[...new Set([...(data?.cycles ?? []), ...(cycle === 'open' ? [] : [cycle])])].sort().reverse().map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))]} />
         </label>
       )}
       {tab === 'check' && <CheckTab hidden={hidden} now={now} />}

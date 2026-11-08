@@ -90,7 +90,8 @@ export function StatusBadge({ status }: { status: string }) {
     paid: ['Paga', 'good'],
     rolled: ['Sobra rolou', 'warn'],
     partial: ['Paga em parte', 'warn'],
-    unpaid: ['A pagar', 'warn'],
+    // Closed and not paid yet, before its due date.
+    unpaid: ['Fechada', 'warn'],
     overdue: ['Vencida', 'bad'],
     empty: ['Sem gastos', 'muted'],
     unknown: ['Pagamento não conferido', 'muted'],

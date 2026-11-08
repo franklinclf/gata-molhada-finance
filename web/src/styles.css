@@ -119,7 +119,8 @@ a.go.title { color: inherit; }
 .big-rows { gap: 4px; }
 
 /* ---------- dashboard grid ---------- */
-.grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: var(--row); gap: var(--gap); padding-bottom: 32px; }
+/* Room above the first row: on hover a widget lifts 1px and shows its edge, and in edit mode the outline sits 2px outside the cell. Without it the sticky top bar covers that edge. */
+.grid12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: var(--row); gap: var(--gap); padding-top: 6px; padding-bottom: 32px; }
 .grid12 .cell { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .grid12 .cell > .widget { flex: 1; min-height: 0; }
 .grid12.editing .cell { outline: 2px dashed var(--track); outline-offset: 2px; border-radius: 24px; }

@@ -233,7 +233,9 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     }
   }
   const summary = summarizeAccounts(accounts);
-  const dues = rows.map((r) => r.nextDueDate).filter((d): d is string => d !== null).sort();
+  // The next due date is that of a card with something to pay: a card with nothing owed (an unused one) says nothing about it.
+  const owing = rows.filter((r) => r.toPay > 0);
+  const dues = (owing.length > 0 ? owing : rows).map((r) => r.nextDueDate).filter((d): d is string => d !== null).sort();
   const months = new Set<string>();
   for (const list of allCycles.values()) for (const c of list) if (c.status !== 'open') months.add(c.key);
 
