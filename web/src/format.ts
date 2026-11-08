@@ -132,6 +132,15 @@ export function monthName(key: string): string {
   return `${MONTHS[Number(month) - 1] ?? month}/${year}`;
 }
 
+const MONTHS_LONG = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+/** "novembro" from YYYY-MM; the year is added only when it is not the one of `today` (a local day). */
+export function monthLong(key: string, today: string): string {
+  const [year, month] = key.split('-');
+  const name = MONTHS_LONG[Number(month) - 1] ?? month ?? key;
+  return year === today.slice(0, 4) ? name : `${name} de ${year}`;
+}
+
 /** Local day N days before another local day. */
 export function daysBefore(day: string, n: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);

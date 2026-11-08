@@ -6,7 +6,7 @@ import { deleteIncome, saveIncome, type IncomeResult } from './income.ts';
 import { explore, type ExplorerQuery, type SortKey } from './explorer.ts';
 import { acceptAll, acceptSuggestion, aiView, decide, listDecisions, rejectSuggestion, resetDecisions, type DecisionStatus } from './ai.ts';
 import { forecast } from './forecast.ts';
-import { installments } from './installments.ts';
+import { ESTIMATED_PREFIX, estimatedDetail, installments } from './installments.ts';
 import { createGoal, deleteGoal, listGoals, updateGoal, type GoalResult } from './goals.ts';
 import { calendar } from './calendar.ts';
 import { outlook } from './outlook.ts';
@@ -410,6 +410,10 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       }
       if (parts.length === 3 && id !== undefined) {
         if (method !== 'GET') return methodNotAllowed();
+        if (id.startsWith(ESTIMATED_PREFIX)) {
+          const estimated = estimatedDetail(store, id, now);
+          return estimated ? { status: 200, body: estimated } : { status: 404, body: { error: 'not_found' } };
+        }
         const detail = transactionDetail(store, id, now);
         return detail ? { status: 200, body: detail } : { status: 404, body: { error: 'not_found' } };
       }

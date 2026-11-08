@@ -115,6 +115,10 @@ flowchart TD
   CMP -->|"nada explica"| MS["Falta (lançar à mão) ou sobra (pendente suspeita)"]
 ```
 
+### Parcelas que o banco cobra e não listou
+
+O plano de parcelas (`installments`, `src/api/installments.ts`) conta os meses a partir das parcelas vistas e marca como `inferred` as que o banco cobra na fatura mas nunca listou. Os totais de fatura (`cards`, `cyclesFor`, Conferir) somam essas parcelas pelo plano. Para as telas que listam ou somam transações, `estimatedTransactions` transforma cada uma numa linha sintética somente leitura (`est_<compra>_<n>`, marcada `estimated`), que só entra em Transações (`explore`) e nos gastos (`spendingTransactions`: Gastos, Orçamento, Tendência, comparação do mês). Ela não passa por `effectiveTransactions`, e por isso os ciclos, a conferência e o resumo dos cartões não a veem e não há contagem dupla. Se uma cobrança do mesmo texto e valor já está na fatura da parcela, a linha não é criada. O fluxo de caixa, o patrimônio e a previsão também não a usam.
+
 ## 5. O que o dono pode corrigir, e o que sobrevive a uma nova leitura
 
 | Correção | Onde fica | Sobrevive à releitura |
@@ -161,3 +165,4 @@ As respostas brutas (`raw_snapshots`) também são reduzidas ao fim de cada sinc
 - Retenção de respostas brutas: `KEEP_RAW_READS` e `READ_GAP_MS` em `src/sync/sync.ts`; cópias do recomeço: `KEEP_RESET_COPIES` em `src/main.ts`.
 - Ritmo esperado de leitura e avisos de dado velho e de conta parada: `EXPECTED_READ_HOURS`, `LATE_GRACE_HOURS` e `SILENT_DAYS` em `src/api/views.ts`.
 - Janela das análises (desde `DATA_START`, até o fim do período pedido): `liveTransactions` e `spendingTransactions` em `src/api/views.ts`, a mesma regra do explorador.
+- Parcelas estimadas como transação: `estimatedTransactions` e `ESTIMATED_PREFIX` em `src/api/installments.ts`.

@@ -33,7 +33,7 @@ export function transactionsCsv(rows: ExplorerRow[], localDay: (iso: string) => 
       money(t.amount, style),
       t.status === 'pending' ? 'pendente' : 'lançada',
       t.installment ? `${t.installment.number}/${t.installment.total}` : '',
-      STATE[t.state] ?? t.state,
+      t.estimated ? 'estimada' : (STATE[t.state] ?? t.state),
       cell(t.counterparty?.name ?? '', d),
     ].join(d),
   );

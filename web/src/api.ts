@@ -9,7 +9,7 @@ import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
 import type { BillCheckView } from '../../src/api/bill-check.ts';
 import type { ExplorerResult } from '../../src/api/explorer.ts';
-import type { InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
+import type { EstimatedDetail, InstallmentsView, InstallmentPurchase, InstallmentSlot } from '../../src/api/installments.ts';
 import type { AnalystReply } from '../../src/ai/analyst.ts';
 import type { ChatConversation, ChatMessage } from '../../src/store/store.ts';
 import type { GoalView } from '../../src/api/goals.ts';
@@ -130,6 +130,7 @@ export const api = {
   /** Explorer with any filters, given as URL parameters. */
   explore: (params: URLSearchParams) => request<ExplorerResult>(`/api/transactions?${params.toString()}`),
   detail: (id: string) => request<TransactionDetail>(`/api/transactions/${encodeURIComponent(id)}`),
+  estimatedDetail: (id: string) => request<EstimatedDetail>(`/api/transactions/${encodeURIComponent(id)}`),
   setCategory: (id: string, category: string | null, applyToSimilar: boolean) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/category`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category, applyToSimilar }) }),
   candidates: (id: string) => request<{ items: Candidate[] }>(`/api/transactions/${encodeURIComponent(id)}/candidates`),

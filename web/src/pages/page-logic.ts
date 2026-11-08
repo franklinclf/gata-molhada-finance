@@ -1,4 +1,4 @@
-import { brl, brlShort, dayMonth, localDay, MASK } from '../format.ts';
+import { brl, brlShort, dayMonth, localDay, MASK, monthLong, monthName } from '../format.ts';
 
 /** "1 vez", "3 vezes". */
 export const times = (n: number): string => `${n} ${n === 1 ? 'vez' : 'vezes'}`;
@@ -18,6 +18,12 @@ export function internalNote(internal: { count: number; income: number; expense:
   const money = (cents: number) => brl(cents, hidden);
   const parts = [internal.income > 0 ? `entraram ${money(internal.income)}` : '', internal.expense > 0 ? `saíram ${money(internal.expense)}` : ''].filter(Boolean);
   return `Nas somas há ${internal.count} ${internal.count === 1 ? 'movimento' : 'movimentos'} que não são renda nem gasto (pagamento de fatura, transferência entre suas contas, investimento): ${parts.join(' e ')}.`;
+}
+
+/** The totals include installments the bank bills but never listed; null when none is in the result. */
+export function estimatedNote(estimated: { count: number; expense: number }, hidden: boolean): string | null {
+  if (estimated.count === 0) return null;
+  return `As somas incluem ${estimated.count} ${estimated.count === 1 ? 'parcela estimada' : 'parcelas estimadas'} (${brl(estimated.expense, hidden)}): o banco cobra na fatura, mas não listou. Elas já estão no total da fatura e não podem ser editadas.`;
 }
 
 /**
@@ -90,4 +96,45 @@ export function trendChange(current: number, previous: number | null, hidden: bo
   const delta = current - previous;
   if (delta === 0) return { text: 'igual', rising: false };
   return { text: `${delta > 0 ? '+' : '−'}${brl(Math.abs(delta), hidden)}`, rising: delta > 0 };
+}
+
+// ---------- which card bills the Faturas widget and the Cartões page show ----------
+
+/**
+ * `current`: the bills that fall due in the current month (the bar /api/cards/bills flags as current). `open`: everything still unpaid,
+ * closed bills and the open ones of any due month. Any other value is one due month (YYYY-MM).
+ */
+export const CURRENT_CYCLE = 'current';
+
+/**
+ * The cycle to ask /api/cards for. Undefined while the bars are not loaded, so no request is made for a month not known yet.
+ * With no open bar at all (no card has a bill) the current cycle falls back to everything unpaid.
+ */
+export function resolveCycle(choice: string, bars: ReadonlyArray<{ key: string; current: boolean }> | undefined): string | undefined {
+  if (choice !== CURRENT_CYCLE) return choice;
+  if (bars === undefined) return undefined;
+  return bars.find((b) => b.current)?.key ?? 'open';
+}
+
+/** The choice a month stands for: the current bill is the "current" button, not a month of the list. */
+export function choiceOf(key: string, currentKey: string | undefined): string {
+  return key === currentKey ? CURRENT_CYCLE : key;
+}
+
+/** Label of the "current cycle" button: the short name of the month the bill falls due in ("Ciclo atual (nov)"). */
+export function currentLabel(currentKey: string | undefined): string {
+  return currentKey !== undefined && currentKey !== 'open' ? `Ciclo atual (${monthName(currentKey).slice(0, 3)})` : 'Ciclo atual';
+}
+
+/** The due months of the dropdown: every cycle but the current one, which has its button; the month picked stays listed. Newest first. */
+export function otherCycles(cycles: readonly string[], currentKey: string | undefined, picked: string): string[] {
+  const months = new Set(cycles);
+  if (/^\d{4}-\d{2}$/.test(picked)) months.add(picked);
+  months.delete(currentKey ?? '');
+  return [...months].sort().reverse();
+}
+
+/** One line that says what the numbers on show count. `today` is a local day. */
+export function cycleCaption(cycle: string, today: string): string {
+  return cycle === 'open' ? 'Tudo que falta pagar nos cartões' : `Faturas que vencem em ${monthLong(cycle, today)}`;
 }
