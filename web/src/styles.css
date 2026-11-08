@@ -676,3 +676,31 @@ body.wide .main { max-width: none; }
   .rows li.limit-line > .grow { flex-basis: 100%; }
   .rows li.limit-line .limit-use { flex-basis: 100%; text-align: left; }
 }
+
+/* Dashboard review */
+/* The panel controls sit in a row above the grid, so the top menu has the same links on every page. */
+.dash-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; padding-bottom: 6px; }
+.widget-body[hidden] { display: none; }
+/* A widget with nothing to show: its title and one short note on a line (the grid gives it one or two rows). */
+.widget.empty-state { padding-top: 14px; padding-bottom: 14px; justify-content: center; }
+.widget.empty-state header { flex-wrap: nowrap; }
+.widget.empty-state h2 { flex: 0 1 auto; }
+.empty-note { flex: 1; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container (max-width: 220px) {
+  .widget.empty-state header { flex-wrap: wrap; }
+  .empty-note { flex-basis: 100%; text-align: left; white-space: normal; }
+}
+/* A small widget (a cell or two wide) trades the footer and some padding for room: the title wraps and the key figure shrinks to fit instead of being cut. */
+.widget.sm { padding: 12px 14px; gap: 6px; }
+.widget.sm h2 { font-size: 14px; line-height: 1.2; white-space: normal; }
+.widget.sm h2 a.title { white-space: normal; overflow: visible; }
+.widget.sm .big { font-size: clamp(15px, 12cqi, 26px); }
+.widget.sm .muted { font-size: 12px; }
+/* Customizing: send to the top, and the undo bar after a removal. */
+.grip-actions { display: flex; align-items: center; gap: 8px; }
+.grip .top { background: transparent; border: 0; color: var(--muted); font-size: 12px; cursor: pointer; padding: 2px 6px; }
+.grip .top:hover { color: var(--text); }
+.dash-undo { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; background: var(--card-2); border-radius: var(--radius-pill); box-shadow: var(--shadow-2); font-size: 14px; }
+/* Analyst: a long conversation title ends in an ellipsis inside its column instead of running under the chat. */
+.chat-list { min-width: 0; }
+.chat-list .rows li > button.link:first-child { flex: 1; min-width: 0; overflow: hidden; text-align: left; }
