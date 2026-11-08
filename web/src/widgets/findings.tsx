@@ -19,6 +19,7 @@ export function FindingsWidget({ now, size, hidden }: WidgetProps) {
       now={now}
       loading={loading && !data}
       error={error}
+      empty={data && data.items.length === 0 ? 'Nada para conferir' : undefined}
       head={
         data && (
           <>

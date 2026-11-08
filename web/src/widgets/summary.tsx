@@ -27,8 +27,9 @@ export function SummaryWidget({ now, hidden, size }: WidgetProps) {
         flow.data && (
           <>
             <div class="big">{brl(flow.data.net, hidden)}</div>
-            <div class="muted">
-              entrou menos saiu das contas, sem cartão ({brl(flow.data.inflow, hidden)} − {brl(flow.data.outflow, hidden)})
+            {/* A small widget keeps the short reading; the numbers behind it are in the tooltip. */}
+            <div class="muted" data-tip={`Entrou ${brl(flow.data.inflow, hidden)}, saiu ${brl(flow.data.outflow, hidden)}`}>
+              {size === 'sm' ? 'saldo das contas, sem cartão' : `entrou menos saiu das contas, sem cartão (${brl(flow.data.inflow, hidden)} − ${brl(flow.data.outflow, hidden)})`}
             </div>
           </>
         )
