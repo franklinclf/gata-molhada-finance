@@ -61,6 +61,8 @@ export interface ExplorerResult extends Stamped {
   total: number;
   items: ExplorerRow[];
   sums: { count: number; income: Cents; expense: Cents; net: Cents };
+  /** The part of `sums` that is not income or spending: card payments, moves between own accounts and investments. The screen says so beside the totals. */
+  internal: { count: number; income: Cents; expense: Cents };
   /** Counts for each filter option. A facet ignores its own filter, so the other options stay visible. */
   facets: { categories: Facet[]; accounts: Array<Facet & { id: string }>; institutions: Facet[] };
   /** Date range of each card cycle chosen, for the screen to show. */
@@ -142,9 +144,15 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
 
   let income = 0;
   let expense = 0;
+  const internal = { count: 0, income: 0, expense: 0 };
   for (const t of matching) {
     if (t.amount >= 0) income += t.amount;
     else expense += -t.amount;
+    if (isNonSpending(t)) {
+      internal.count += 1;
+      if (t.amount >= 0) internal.income += t.amount;
+      else internal.expense += -t.amount;
+    }
   }
 
   const facet = (skip: Dimension, key: (t: EffectiveTransaction) => string): Map<string, Facet> => {
@@ -174,6 +182,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     total: shown.length,
     items,
     sums: { count: matching.length, income, expense, net: income - expense },
+    internal,
     facets: {
       categories: sortFacets(facet('category', (t) => t.category ?? '')),
       accounts: [...accountFacets.values()].map((f) => ({ ...f, id: f.name, name: `${byId.get(f.name)?.institution ?? ''} ${byId.get(f.name)?.name ?? ''}`.trim() })).sort((a, b) => b.count - a.count),

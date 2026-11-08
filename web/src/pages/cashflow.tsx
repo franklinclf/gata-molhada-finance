@@ -1,6 +1,6 @@
 import { api } from '../api.ts';
 import { Bars, DayDots } from '../charts.tsx';
-import { brl, lastMonths, localDay, monthBounds, monthName } from '../format.ts';
+import { brl, dayMonth, lastMonths, localDay, monthBounds, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { PeriodPicker, PRESETS } from '../period.tsx';
 import { patchParams, type Route } from '../router.ts';
@@ -65,19 +65,28 @@ export function CashflowPage({ route, now, hidden, embedded = false }: { route: 
           <div class="panel">
             <div class="muted chart-legend">Um ponto por dia do período: verde quando entrou mais do que saiu, vermelho quando saiu mais, cinza quando nada se moveu. Passe o mouse ou toque para ver os valores.</div>
             <DayDots days={flow.data.days} from={flow.data.from} to={flow.data.to} hidden={hidden} onSelect={(day) => patchParams({ from: day, to: day })} />
+            <div class="muted chart-range">
+              <span>{dayMonth(flow.data.from)}</span>
+              <span>{dayMonth(flow.data.to)}</span>
+            </div>
             <h3>Últimos 12 meses (clique em um mês)</h3>
             {perMonth.size > 0 && [...perMonth.values()].every((r) => r.inflow === 0 && r.outflow === 0) && !yearAgo.loading && <div class="muted chart-legend">Nenhuma entrada ou saída nas contas nestes 12 meses.</div>}
             <div class="muted chart-legend">Barras verdes são o que entrou no mês e vermelhas o que saiu. Os valores aparecem ao passar o mouse ou tocar.</div>
-            <Bars
-              hidden={hidden}
-              height={150}
-              selected={selectedMonth}
-              onSelect={(month) => patchParams({ ...Object.fromEntries(Object.entries(monthBounds(month, today))) })}
-              data={months.flatMap((m) => [
-                { key: `${m}:in`, group: m, label: monthName(m).slice(0, narrow ? 1 : 3), value: perMonth.get(m)!.inflow, color: 'var(--good)', tip: `${monthName(m)}\nEntrou ${hidden ? '••••' : brl(perMonth.get(m)!.inflow)}` },
-                { key: `${m}:out`, group: m, label: '', value: perMonth.get(m)!.outflow, color: 'var(--bad)', tip: `${monthName(m)}\nSaiu ${hidden ? '••••' : brl(perMonth.get(m)!.outflow)}` },
-              ])}
-            />
+            {/* Until the year is back, bars would draw zero months as if they were facts. */}
+            {yearAgo.data ? (
+              <Bars
+                hidden={hidden}
+                height={150}
+                selected={selectedMonth}
+                onSelect={(month) => patchParams({ ...Object.fromEntries(Object.entries(monthBounds(month, today))) })}
+                data={months.flatMap((m) => [
+                  { key: `${m}:in`, group: m, label: monthName(m).slice(0, narrow ? 1 : 3), value: perMonth.get(m)!.inflow, color: 'var(--good)', tip: `${monthName(m)}\nEntrou ${hidden ? '••••' : brl(perMonth.get(m)!.inflow)}` },
+                  { key: `${m}:out`, group: m, label: '', value: perMonth.get(m)!.outflow, color: 'var(--bad)', tip: `${monthName(m)}\nSaiu ${hidden ? '••••' : brl(perMonth.get(m)!.outflow)}` },
+                ])}
+              />
+            ) : (
+              <Loading error={yearAgo.error} />
+            )}
             <div class="note">Considera só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga. Transferências entre suas contas e aplicações ou resgates de investimento ficam de fora; o líquido investido aparece à parte.</div>
           </div>
           <div class="tabs">

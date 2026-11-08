@@ -21,6 +21,15 @@ export interface NetWorthItem {
   assetId?: number;
 }
 
+const KIND_LABEL: Record<string, string> = { checking: 'Conta corrente', savings: 'Poupança' };
+
+/** "Bank · Conta corrente": the kind tells two accounts of one bank apart, and the source's raw account name (often the legal name) is left out. The last digits or the name only come in when the kind is not enough. */
+function accountLabel(a: { institution: string; kind: string; name: string; last4: string | null }, all: Array<{ institution: string; kind: string }>): string {
+  const label = `${a.institution} · ${KIND_LABEL[a.kind] ?? a.name}`;
+  if (all.filter((o) => o.institution === a.institution && o.kind === a.kind).length < 2) return label;
+  return `${label} ${a.last4 ? `•••• ${a.last4}` : a.name}`;
+}
+
 export interface NetWorthPoint {
   /** Last day of the month, or today for the current one. */
   day: string;
@@ -59,8 +68,8 @@ export function netWorth(store: Store, now: Date, opts: ViewOptions = {}, months
   const active = manual.filter((a) => !a.archived);
 
   const items: NetWorthItem[] = [
-    ...bank.map((a): NetWorthItem => ({ name: `${a.institution} · ${a.name}`, kind: 'bank', value: Math.max(a.balance, 0), liability: false })),
-    ...bank.filter((a) => a.balance < 0).map((a): NetWorthItem => ({ name: `${a.institution} · ${a.name} (saldo negativo)`, kind: 'bank', value: -a.balance, liability: true })),
+    ...bank.map((a): NetWorthItem => ({ name: accountLabel(a, bank), kind: 'bank', value: Math.max(a.balance, 0), liability: false })),
+    ...bank.filter((a) => a.balance < 0).map((a): NetWorthItem => ({ name: `${accountLabel(a, bank)} (saldo negativo)`, kind: 'bank', value: -a.balance, liability: true })),
     ...(debtNow > 0 ? [{ name: 'Dívida no cartão (saldo informado pelo banco)', kind: 'card' as const, value: debtNow, liability: true }] : []),
     ...active.flatMap((a): NetWorthItem[] => {
       const value = valueOn(a.values, today);

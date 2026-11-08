@@ -20,13 +20,16 @@ const KIND: Record<string, string> = { checking: 'Conta corrente', savings: 'Pou
 function AccountsTab({ hidden }: { hidden: boolean }) {
   const { data, error, reload } = useLoad(() => api.accounts(), []);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [toggled, setToggled] = useState<string | null>(null);
   if (!data) return <Loading error={error} />;
   const byInstitution = new Map<string, typeof data.items>();
   for (const a of data.items) byInstitution.set(a.institution, [...(byInstitution.get(a.institution) ?? []), a]);
-  const toggle = async (id: string, value: boolean) => {
+  const toggle = async (id: string, value: boolean, label: string) => {
     setToggleError(null);
+    setToggled(null);
     try {
       await api.setHidden(id, value);
+      setToggled(`${label}: ${value ? 'oculta, fora dos totais e das listas' : 'visível de novo'}.`);
       reload();
     } catch (e) {
       setToggleError(e instanceof Error ? e.message : 'Não foi possível salvar.');
@@ -36,6 +39,7 @@ function AccountsTab({ hidden }: { hidden: boolean }) {
     <>
       <p class="muted">Contas e cartões ocultos saem de todos os totais, gráficos e listas. Os dados continuam sendo lidos e você pode voltar a mostrá-los aqui.</p>
       {toggleError && <div class="error" role="alert">{toggleError}</div>}
+      <div class="note" role="status">{toggled}</div>
       {[...byInstitution].map(([institution, list]) => (
         <section class="panel" key={institution}>
           <h2>{institution}</h2>
@@ -52,7 +56,7 @@ function AccountsTab({ hidden }: { hidden: boolean }) {
                   </div>
                 </div>
                 <label class="switch">
-                  <input type="checkbox" checked={!a.hidden} onChange={(e) => void toggle(a.id, !(e.currentTarget as HTMLInputElement).checked)} />
+                  <input type="checkbox" aria-label={`Mostrar ${institution} ${a.name}${a.last4 ? ` final ${a.last4}` : ''}`} checked={!a.hidden} onChange={(e) => void toggle(a.id, !(e.currentTarget as HTMLInputElement).checked, `${a.name}${a.last4 ? ` •••• ${a.last4}` : ''}`)} />
                   <span>{a.hidden ? 'Oculta' : 'Visível'}</span>
                 </label>
               </li>
