@@ -19,6 +19,9 @@ export const DEFAULT_POLL_INTERVAL_MS = 5 * 60_000;
  */
 export const SYNC_LOOKBACK_DAYS = 45;
 
+/** Setting that is '1' while a change a source reported has not been read yet. It survives a restart. */
+export const pendingSyncKey = (sourceId: string): string => `observer_pending_sync:${sourceId}`;
+
 export function observedSources(adapters: SourceAdapter[], withWebhook: ReadonlySet<string> = new Set()): ObservedSource[] {
   return adapters
     .filter((adapter) => adapter.fetchFreshness !== undefined)

@@ -1095,6 +1095,15 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return new Set((db.prepare('SELECT finding_id FROM dismissed_findings').all() as Array<{ finding_id: string }>).map((r) => r.finding_id));
     },
 
+    earliestSourceTransactionAt(sourceId: SourceId, externalIds: string[]): string | null {
+      let earliest: string | null = null;
+      const one = db.prepare('SELECT occurred_at FROM source_transactions WHERE source_id = ? AND external_id = ?');
+      for (const id of externalIds) {
+        const row = one.get(sourceId, id) as { occurred_at: string } | undefined;
+        if (row && (earliest === null || row.occurred_at < earliest)) earliest = row.occurred_at;
+      }
+      return earliest;
+    },
     pruneUnseenSourceTransactions(sourceId: SourceId, accountIds: string[], from: string, to: string, seenAt: string, force = false): AccountPruneResult {
       const skipped: AccountPruneResult['skipped'] = [];
       let removed = 0;

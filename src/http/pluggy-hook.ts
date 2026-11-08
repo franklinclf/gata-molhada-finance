@@ -14,6 +14,10 @@ export interface PluggyEvent {
   /** Present on item/error. */
   errorCode: string | null;
   errorMessage: string | null;
+  /** transactions/created: the oldest date among the new transactions, which can be older than the usual read window. */
+  transactionsMinDate: string | null;
+  /** transactions/updated and transactions/deleted: the ids that changed. */
+  transactionIds: string[];
 }
 
 /** Reads the fields this app uses from a Pluggy webhook body. Null when it is not an item event. */
@@ -27,6 +31,8 @@ export function parsePluggyEvent(payload: unknown): PluggyEvent | null {
     itemId: p.itemId,
     errorCode: typeof error?.code === 'string' ? error.code : null,
     errorMessage: typeof error?.message === 'string' ? error.message : null,
+    transactionsMinDate: typeof p.transactionsMinDate === 'string' && !Number.isNaN(Date.parse(p.transactionsMinDate)) ? p.transactionsMinDate : null,
+    transactionIds: Array.isArray(p.transactionIds) ? p.transactionIds.filter((id): id is string => typeof id === 'string' && id !== '') : [],
   };
 }
 
@@ -51,6 +57,8 @@ export function effectOf(event: string): EventEffect {
     case 'item/error':
     case 'item/waiting_user_input':
     case 'item/waiting_user_action':
+    // The connection was removed at Meu Pluggy (by the owner, or by Pluggy when the consent ended): its data stops arriving.
+    case 'item/deleted':
       return { wake: false, alert: 'raise' };
     default:
       return { wake: false, alert: null };

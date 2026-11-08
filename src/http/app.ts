@@ -32,6 +32,8 @@ export interface AppDeps extends RouterDeps {
   resetter?: Resetter;
   /** Lets Pluggy tell the app that an item changed. Absent (and the route answers 404) when no secret is set. */
   pluggyHook?: PluggyHook;
+  /** Checks the source often for a while, because the owner asked for a refresh at Meu Pluggy. Null or absent when nothing watches the source. */
+  watchSources?: () => { until: string } | null;
   /** Answers a question to the analyst. Absent when the AI is off. */
   /** Asks the categorizer now, for everything pending, everything again, or one transaction. Absent when the AI is off. */
   categorize?: (scope: AiRunScope) => Promise<AiRunReply>;
@@ -244,6 +246,11 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
       // Starting a deploy is not dangerous in itself (it adopts the newest image that passed CI), but it restarts the app, so it needs a recent sign-in.
       if (!deps.auth.isFullSession(token)) return done(json(403, { error: 'reauth_required' }));
       return done(deps.deployNow() ? json(202, { asked: true }) : json(429, { error: 'too_soon' }));
+    }
+    if (pathname === '/api/sources/watch') {
+      if (method !== 'POST') return done(notAllowed('POST'));
+      const watching = deps.watchSources?.() ?? null;
+      return done(watching ? json(202, watching) : json(503, { error: 'unavailable' }));
     }
     if (pathname === '/api/ai/run') {
       if (method !== 'POST') return done(notAllowed('POST'));

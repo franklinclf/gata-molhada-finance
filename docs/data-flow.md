@@ -137,7 +137,7 @@ Renda esperada (`incomeEvents` em `src/api/projection.ts`, a mesma para o Mês e
 ## 6. Custo e limites
 
 - IA: categorizador, juiz de pares e analista passam por `src/ai/spend.ts`. O limite mensal vale para o maior entre o que o app registrou e o total da chave no OpenRouter.
-- Open Finance: o Meu Pluggy sincroniza uma vez por dia e não aceita pedido de atualização. O webhook avisa quando termina. Transações de 7 a 365 dias só podem ser relidas 4 vezes por mês por CPF e instituição.
+- Open Finance: o Meu Pluggy sincroniza cada banco a cada 24 horas, ou quando o dono toca em Atualizar no próprio Meu Pluggy. Os itens que ele compartilha com o app são espelhos (proxy) e a API não aceita pedido de atualização deles. O webhook avisa quando termina, e o botão Atualizar do app abre a conexão no Meu Pluggy e acompanha até os dados entrarem. Transações de 7 a 365 dias só podem ser relidas 4 vezes por mês por CPF e instituição.
 
 ## 7. Janela de leitura
 

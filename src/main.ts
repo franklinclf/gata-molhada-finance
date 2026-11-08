@@ -112,29 +112,56 @@ const pluggySecret = process.env.PLUGGY_WEBHOOK_SECRET?.trim();
 const pluggyLabels = new Map((loadAdapterEnv(process.env).pluggy?.items ?? []).map((item) => [item.itemId, item.label]));
 let observer: Observer | undefined;
 let wakeTimer: NodeJS.Timeout | undefined;
+/** What the events of one burst asked for, merged: a forced read wins over a check, and the oldest start wins. */
+let pendingWake: { sync: boolean; readFrom: Date | undefined } = { sync: false, readFrom: undefined };
 // Pluggy sends a burst per item (item/updated plus one transactions event per account), so the read waits a moment and runs once.
-const wakeObserver = (sync: boolean): void => {
+const wakeObserver = (sync: boolean, readFrom: Date | undefined): void => {
   if (!observer) return;
+  pendingWake = { sync: pendingWake.sync || sync, readFrom: readFrom && (!pendingWake.readFrom || readFrom < pendingWake.readFrom) ? readFrom : pendingWake.readFrom };
   clearTimeout(wakeTimer);
-  wakeTimer = setTimeout(() => observer?.wake('pluggy', sync), 3_000);
+  wakeTimer = setTimeout(() => {
+    const wake = pendingWake;
+    pendingWake = { sync: false, readFrom: undefined };
+    observer?.wake('pluggy', wake.sync, wake.readFrom);
+  }, 3_000);
+};
+/** Margin before the oldest changed record, so the read and its clean-up (which skips the first day) both cover it. */
+const READ_MARGIN_MS = 2 * 86_400_000;
+/** How far back the next read must go to see what a transactions event named: new records can be months old, and an updated or deleted one is looked up. */
+const readFromOf = (event: PluggyEvent): Date | undefined => {
+  const oldest = event.transactionsMinDate ?? (event.transactionIds.length > 0 ? store.earliestSourceTransactionAt('pluggy', event.transactionIds) : null);
+  return oldest === null ? undefined : new Date(Date.parse(oldest) - READ_MARGIN_MS);
 };
 const pluggyHook = pluggySecret
   ? {
       secret: pluggySecret,
       onEvent: (event: PluggyEvent): void => {
         const label = pluggyLabels.get(event.itemId);
-        if (label === undefined) return;
-        const effect = effectOf(event.event);
         const now = new Date();
+        if (label === undefined) {
+          // A connection added or renewed at Meu Pluggy can arrive under a new item id, which is not read until PLUGGY_ITEMS has it.
+          if (event.event === 'item/created') recordAlert(store, event.itemId, { institution: 'Meu Pluggy', event: event.event, code: null, message: event.itemId, at: now.toISOString() }, now);
+          console.log(`pluggy webhook: ${event.event} for an item not in PLUGGY_ITEMS`);
+          return;
+        }
+        const effect = effectOf(event.event);
         if (effect.alert === 'raise') recordAlert(store, event.itemId, { institution: label, event: event.event, code: event.errorCode, message: event.errorMessage, at: now.toISOString() }, now);
         if (effect.alert === 'clear') recordAlert(store, event.itemId, null, now);
-        if (effect.wake) wakeObserver(effect.wake === 'sync');
+        if (effect.wake) wakeObserver(effect.wake === 'sync', effect.wake === 'sync' ? readFromOf(event) : undefined);
         console.log(`pluggy webhook: ${event.event} for ${label}${event.errorCode ? ` (${event.errorCode})` : ''}`);
       },
     }
   : undefined;
 const categorize = aiConfig.enabled && aiConfig.apiKey ? (scope: AiRunScope) => runCategorizerNow(store, aiConfig, () => new Date(), scope).finally(() => void refreshKeyUsage(store, aiConfig.apiKey!, new Date())) : undefined;
-const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, resetter, backup, deployHook, pluggyHook, analyst, categorize, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
+/** The owner asked for a refresh at Meu Pluggy: check its items often for a while, so the new data shows up even if a webhook is late. */
+const WATCH_MS = 10 * 60_000;
+const watchSources = (): { until: string } | null => {
+  if (!observer) return null;
+  const until = Date.now() + WATCH_MS;
+  observer.boost('pluggy', until);
+  return { until: new Date(until).toISOString() };
+};
+const server = createHttpServer({ store, version: config.version, auth, secureCookies: config.secureCookies, resetter, backup, deployHook, pluggyHook, watchSources, analyst, categorize, deployNow: config.version === 'dev' ? undefined : deployNow, startedAt: new Date().toISOString() }, config.webDir);
 
 const observerStop = new AbortController();
 if (config.observer) {

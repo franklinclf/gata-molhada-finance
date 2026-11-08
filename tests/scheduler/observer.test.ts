@@ -199,3 +199,43 @@ test('a change seen but not yet read is remembered across a restart', async () =
   assert.deepEqual(events.map((e) => e.type), ['synced']);
   assert.equal(adapter.transactionCalls.length, 2);
 });
+
+test('a wake that names an older change reads back to it once, up to a year', async () => {
+  const adapter = new ScriptedAdapter('pluggy', { reads: [[at('pluggy', 30)]] });
+  const { observer, sources } = setup([adapter]);
+  await observer.tick(sources[0]!);
+  observer.wake('pluggy', true, new Date(T0 - 200 * 86_400_000));
+  await observer.tick(sources[0]!);
+  assert.equal(adapter.transactionCalls[1]?.toISOString(), new Date(T0 - 200 * 86_400_000).toISOString());
+  observer.wake('pluggy', true);
+  await observer.tick(sources[0]!);
+  assert.equal(adapter.transactionCalls[2]?.toISOString(), new Date(T0 - SYNC_LOOKBACK_DAYS * 86_400_000).toISOString());
+  observer.wake('pluggy', true, new Date(T0 - 900 * 86_400_000));
+  await observer.tick(sources[0]!);
+  assert.equal(adapter.transactionCalls[3]?.toISOString(), new Date(T0 - 365 * 86_400_000).toISOString());
+});
+
+test('a wider read that failed is tried again from the same start', async () => {
+  const adapter = new ScriptedAdapter('pluggy', { reads: [[at('pluggy', 30)]], failTransactions: 2 });
+  const { observer, sources } = setup([adapter]);
+  await observer.tick(sources[0]!);
+  observer.wake('pluggy', true, new Date(T0 - 100 * 86_400_000));
+  await observer.tick(sources[0]!);
+  await observer.tick(sources[0]!);
+  assert.equal(adapter.transactionCalls.length, 3);
+  assert.equal(adapter.transactionCalls[2]?.toISOString(), new Date(T0 - 100 * 86_400_000).toISOString());
+});
+
+test('while the owner waits for a refresh, checks come every 15 seconds, then go back to the interval', async () => {
+  const adapter = new ScriptedAdapter('pluggy', { reads: [[at('pluggy', 30)]] });
+  const { observer, sources, clock } = setup([adapter], [1_800_000]);
+  const states = (observer as unknown as { states: Map<string, { nextDueAt: number }> }).states;
+  await observer.tick(sources[0]!);
+  observer.boost('pluggy', T0 + 600_000);
+  assert.equal(states.get('pluggy')?.nextDueAt, 0);
+  await observer.tick(sources[0]!);
+  assert.equal(states.get('pluggy')?.nextDueAt, clock.t + 15_000);
+  clock.t = T0 + 600_001;
+  await observer.tick(sources[0]!);
+  assert.equal(states.get('pluggy')?.nextDueAt, clock.t + 1_800_000);
+});

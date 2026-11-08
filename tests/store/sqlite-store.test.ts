@@ -89,6 +89,16 @@ test('a retired source keeps its records but stops reporting freshness, and come
   assert.equal(store.listFreshness().length, 2);
 });
 
+test('the oldest date among named source records tells how far back a read must go', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, '2026-10-01T00:00:00Z');
+  const row = (externalId: string, occurredAt: string) => ({ externalId, accountExternalId: 'a', occurredAt, amount: -100, description: 'X', descriptionRaw: null, status: 'posted' as const, installment: null, category: null });
+  store.upsertSourceTransactions('pluggy', [row('t1', '2026-09-10T12:00:00.000Z'), row('t2', '2026-06-01T12:00:00.000Z')], '2026-10-01T00:00:00Z');
+  assert.equal(store.earliestSourceTransactionAt('pluggy', ['t1', 't2', 'gone']), '2026-06-01T12:00:00.000Z');
+  assert.equal(store.earliestSourceTransactionAt('pluggy', ['gone']), null);
+  assert.equal(store.earliestSourceTransactionAt('other', ['t1']), null);
+});
+
 test('the change count grows with every write and stays put when only reading', () => {
   const store = openSqliteStore(':memory:', fileURLToPath(new URL('../../migrations', import.meta.url)));
   const before = store.changeCount();
