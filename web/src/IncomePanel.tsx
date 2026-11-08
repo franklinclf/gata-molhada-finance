@@ -26,8 +26,9 @@ const blank = (): Draft => ({ id: null, name: '', amount: '', day: '', rule: 'pr
  * The fixed income the owner registers (one entry per payment day, so a salary paid on the 11th and the 25th is two entries).
  * Shared by Contas, where the money outlook is, and Cartões, which adds the table of what is left each month after the bills.
  */
-export function IncomePanel({ months, hidden, focus = false }: { months?: Array<{ key: string; income: number; bills: number }>; hidden: boolean; /** Scrolls here and opens the form when nothing is registered yet. */ focus?: boolean }) {
+export function IncomePanel({ months, hidden, focus = false, prefill = null }: { months?: Array<{ key: string; income: number; bills: number }>; hidden: boolean; /** Scrolls here and opens the form when nothing is registered yet. */ focus?: boolean; /** A detected income to correct: the form opens with its name, value and day. */ prefill?: { name: string; amount: number; day: number } | null }) {
   const list = useLoad(() => api.income(), []);
+  const recurring = useLoad(() => api.recurring(), []);
   const [form, setForm] = useState<Draft | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   // The entry just saved, so a second payment day of the same income takes one click.
@@ -35,12 +36,18 @@ export function IncomePanel({ months, hidden, focus = false }: { months?: Array<
   const top = useRef<HTMLDivElement>(null);
   const focused = useRef(false);
   const items = list.data?.items ?? [];
+  // Credits the app saw every month on a bank account. Registered income replaces them in the outlook, so one that no registered
+  // entry covers (about the same amount, a day close to it) would drop out: they are listed to be registered too.
+  const detected = (recurring.data?.items ?? []).filter((r) => r.direction === 'in' && r.account === 'bank' && r.regular && !r.stale);
+  const uncovered = detected.filter((r) => !items.some((i) => Math.abs(i.amount - r.amount) <= r.amount * 0.1 && Math.abs(i.dayOfMonth - r.dayOfMonth) <= 5));
+  const fill = (r: { name: string; amount: number; dayOfMonth: number }) => setForm({ id: null, name: r.name, amount: (r.amount / 100).toFixed(2).replace('.', ','), day: String(r.dayOfMonth), rule: 'previous' });
   useEffect(() => {
     if (!focus || focused.current || !list.data) return;
     focused.current = true;
     top.current?.scrollIntoView({ block: 'start' });
-    if (list.data.items.length === 0) setForm(blank());
-  }, [focus, list.data]);
+    if (prefill) setForm({ id: null, name: prefill.name, amount: (prefill.amount / 100).toFixed(2).replace('.', ','), day: String(prefill.day), rule: 'previous' });
+    else if (list.data.items.length === 0) setForm(blank());
+  }, [focus, list.data, prefill]);
   const run = async (work: () => Promise<unknown>, saved?: { name: string; amount: string; rule: NonBusinessRule }) => {
     setMessage(null);
     try {
@@ -72,6 +79,22 @@ export function IncomePanel({ months, hidden, focus = false }: { months?: Array<
             </li>
           ))}
         </ul>
+      )}
+      {uncovered.length > 0 && (
+        <div class="note">
+          {items.length > 0
+            ? 'Com renda cadastrada, a previsão conta só o que está cadastrado. Estas entradas que se repetem ficaram de fora; cadastre-as com o dia certo:'
+            : 'Entradas que se repetem nas suas contas. Cadastre cada uma com o dia em que o pagamento é feito (o banco às vezes lança no dia seguinte):'}
+          <ul class="rows">
+            {uncovered.map((r) => (
+              <li key={`${r.key}|${r.dayOfMonth}`}>
+                <span class="grow clip">{r.name} <span class="muted">o banco lança por volta do dia {r.dayOfMonth}</span></span>
+                <strong>{brl(r.amount, hidden)}</strong>
+                <button class="link" onClick={() => fill(r)}>Cadastrar</button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {last && !form && (
         <div class="note">
