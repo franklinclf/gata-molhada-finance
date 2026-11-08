@@ -90,7 +90,7 @@ flowchart TD
   R6 --> R7["Rótulo da fonte, como veio"]
 ```
 
-O papel (pagamento de fatura, entre contas suas, investimento) vem de fatos da fonte e é independente da categoria mostrada. Só uma escolha sua o muda.
+O papel (pagamento de fatura, entre contas suas, investimento) vem de fatos da fonte e é independente da categoria mostrada. Só uma escolha sua o muda. Um Pix ou transferência sem papel que espelha, em outra conta sua, uma transferência entre contas suas marcada pela fonte (mesmo valor, sinal oposto, até 2 dias) ganha o mesmo papel; esse pareamento olha todas as contas, ocultas inclusive, para dar o mesmo resultado em todas as telas.
 
 ## 4. Ciclos de cartão
 

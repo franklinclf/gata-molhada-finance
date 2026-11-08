@@ -3,7 +3,7 @@ import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { groupBill, incomeEvents, monthlyDays } from './projection.ts';
-import { detectRecurring, type RecurringItem } from './recurring.ts';
+import { detectRecurring, isExpected, type RecurringItem } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
 import { cards, cashFlow } from './views.ts';
 
@@ -50,7 +50,7 @@ function projectedByDay(store: Store, recurring: RecurringItem[], now: Date, opt
   };
   // Money out of the bank: recurring payments. One that is late has not shown up and is still expected today, once; the next ones keep their days.
   for (const r of recurring) {
-    if (r.account === 'card' || r.direction !== 'out') continue;
+    if (r.account === 'card' || r.direction !== 'out' || !isExpected(r)) continue;
     if (r.nextDay < today) add(r.nextDay, { name: r.name, amount: r.amount, direction: 'out', kind: 'recurring', late: r.late });
     for (const day of monthlyDays(r.nextDay, r.dayOfMonth, today, until)) add(day, { name: r.name, amount: r.amount, direction: 'out', kind: 'recurring', late: false });
   }

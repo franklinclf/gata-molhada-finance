@@ -5,7 +5,7 @@ import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { installments } from './installments.ts';
 import { groupBill, incomeEvents, monthlyDays } from './projection.ts';
-import { detectRecurring, type RecurringItem } from './recurring.ts';
+import { detectRecurring, isExpected, type RecurringItem } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
 import { stamp, type Stamped } from './stamp.ts';
 import { cards } from './views.ts';
@@ -96,7 +96,8 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
   const bankAccounts = accounts.filter((a) => a.kind !== 'credit_card');
   const cardAccounts = accounts.filter((a) => a.kind === 'credit_card');
   const balance = bankAccounts.reduce((s, a) => s + a.balance, 0);
-  const recurring = detectRecurring(store, now, opts);
+  // A marked item with no monthly rhythm, or one that stopped, is listed on its screen but not expected here.
+  const recurring = detectRecurring(store, now, opts).filter(isExpected);
 
   // Card bills: closed ones still owed, and the open one. A bill already overdue is due today.
   const raw: Raw[] = [];

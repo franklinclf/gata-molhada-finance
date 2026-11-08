@@ -99,20 +99,20 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
         ) : (
           <ul class="rows tall">
             {data.recurring.map((r) => (
-              <li key={r.key}>
+              <li key={`${r.key}|${r.dayOfMonth}`}>
                 <div class="grow">
                   <div class="clip">
-                    {r.name} {r.label === 'subscription' && <span class="badge info">assinatura</span>} {r.manual && <span class="badge muted">marcada por você</span>} {r.kind === 'variable' && <span class="badge muted">valor varia</span>} {r.account === 'card' && <span class="badge muted">no cartão</span>} {r.late && <span class="badge bad">atrasado</span>}
+                    {r.name} {r.label === 'subscription' && <span class="badge info">assinatura</span>} {r.manual && <span class="badge muted">marcada por você</span>} {r.kind === 'variable' && <span class="badge muted">valor varia</span>} {r.account === 'card' && <span class="badge muted">no cartão</span>} {r.late && <span class="badge bad">atrasado</span>} {r.stale && <span class="badge muted">parou de cobrar</span>} {!r.regular && !r.stale && <span class="badge muted">sem periodicidade clara</span>}
                   </div>
                   <div class="muted">
-                    todo dia {r.dayOfMonth} · {r.occurrences} vezes · próximo {dayMonth(r.nextDay)}
+                    {r.regular && !r.stale ? `todo dia ${r.dayOfMonth} · ${r.occurrences} vezes · próximo ${dayMonth(r.nextDay)}` : `${r.occurrences} ${r.occurrences === 1 ? 'vez' : 'vezes'} · última ${dayMonth(r.lastDay)}`}
                   </div>
                 </div>
                 <strong class={r.direction === 'in' ? 'good-text' : ''}>
                   {r.direction === 'in' ? '+' : '−'}
                   {brl(r.amount, hidden)}
                 </strong>
-                <button class="link" onClick={() => void api.ignoreRecurring(r.key, true).then(reload)}>
+                <button class="link" onClick={() => void api.markRecurring(r.key, 'none').then(reload)}>
                   Não é recorrente
                 </button>
               </li>
