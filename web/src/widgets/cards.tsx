@@ -70,10 +70,7 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
             {byMonth && all.data && (
               <div class="muted">
                 Tudo que falta pagar: {brl(all.data.totals.toPay, hidden)}
-                {all.data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(all.data.totals.nextDueDate)}` : ''}{' '}
-                <button class="link" onClick={() => setChoice('open')}>
-                  Ver em aberto
-                </button>
+                {all.data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(all.data.totals.nextDueDate)}` : ''}
               </div>
             )}
             {size !== 'sm' && bills.data && (pixels === undefined || pixels.height >= 430) && (

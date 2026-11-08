@@ -76,6 +76,8 @@ export function seriesDescription(description: string): string {
 const MIN_PREFIX = 8;
 /** Days between an installment charge and the credit of the same amount that cancels it. */
 const REFUND_DAYS = 3;
+/** Days after a refunded installment with no later number charged that show the purchase was cancelled (two bills have closed since). */
+const STOPPED_AFTER_DAYS = 75;
 
 const seriesText = (description: string) => normalizeName(seriesDescription(description));
 
@@ -86,7 +88,7 @@ const namesSeries = (refund: string, series: string) => Math.min(refund.length, 
  * Installment charges cancelled by a credit of the same amount and text a few days later (a purchase refunded right away).
  * A cancelled purchase has no installments to come, so it must not plan any.
  */
-export function refundedCharges(transactions: EffectiveTransaction[]): Set<string> {
+export function refundedCharges(transactions: EffectiveTransaction[], today?: string): Set<string> {
   const byId = new Map(transactions.map((t) => [t.id, t]));
   const credits = transactions.filter((t) => !t.excluded && t.amount > 0 && t.role === null);
   const used = new Set<string>();
@@ -100,7 +102,10 @@ export function refundedCharges(transactions: EffectiveTransaction[]): Set<strin
     if (t.reversal?.side === 'charge' && t.reversal.amount >= -t.amount) {
       const refund = byId.get(t.reversal.otherId);
       const named = refund !== undefined && namesSeries(seriesText(refund.description), text);
-      if (t.reversal.byUser || named || (refund?.amount ?? 0) >= -t.amount * t.installment.total - t.installment.total) {
+      // Or when the purchase stopped there: no later number of it was charged, although two bills have closed since.
+      const later = transactions.some((o) => o.id !== t.id && o.accountId === t.accountId && !o.excluded && o.installment?.total === t.installment!.total && o.installment.number > t.installment!.number && Math.abs(o.amount - t.amount) <= t.installment!.total && namesSeries(seriesText(o.description), text));
+      const stopped = today !== undefined && !later && dayNumber(today) - dayNumber(localDay(t.occurredAt)) >= STOPPED_AFTER_DAYS;
+      if (t.reversal.byUser || named || stopped || (refund?.amount ?? 0) >= -t.amount * t.installment.total - t.installment.total) {
         out.add(t.id);
         continue;
       }
@@ -151,7 +156,7 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}, lo
   const transactions = loaded ?? effectiveTransactions(store, opts, accounts);
   const today = localDay(now.toISOString());
 
-  const refunded = refundedCharges(transactions);
+  const refunded = refundedCharges(transactions, today);
   const series = new Map<string, EffectiveTransaction[]>();
   const shapes = new Map<string, { accountId: string; text: string; total: number; amount: Cents }>();
   for (const t of transactions) {
