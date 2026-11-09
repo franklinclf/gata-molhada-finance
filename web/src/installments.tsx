@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import type { InstallmentPurchase, InstallmentSlot } from './api.ts';
 import { Bars } from './charts.tsx';
 import { brl, monthName } from './format.ts';
+import { Info } from './Info.tsx';
 import { Go } from './ui.tsx';
 
 export const SLOT_LABEL: Record<InstallmentSlot['status'], string> = {
@@ -60,25 +61,34 @@ export function PurchaseRow({ p, hidden, detailed = false }: { p: InstallmentPur
                 <th>Parcela</th>
                 <th>Fatura (venc.)</th>
                 <th>Situação</th>
-                <th>Data da compra/cobrança</th>
+                <th class="num">
+                  Data <Info tip="Dia da compra ou da cobrança desta parcela, quando o banco a listou." label="Sobre a data" />
+                </th>
               </tr>
             </thead>
             <tbody>
               {p.slots.map((s) => (
                 <tr key={s.number}>
-                  <td>
+                  <td class="num">
                     {s.number}/{p.total}
                   </td>
-                  <td>
+                  <td class="num">
                     <Go page="cards" params={{ cycle: s.cycle }}>
                       {monthName(s.cycle)}
                     </Go>
                   </td>
                   <td>
-                    <span class="dot-status" style={{ background: SLOT_COLOR[s.status] }} /> {SLOT_LABEL[s.status]}
-                    {s.inferred ? ' · estimada' : ''}
+                    <span class="nowrap">
+                      <span class="dot-status" style={{ background: SLOT_COLOR[s.status] }} /> {SLOT_LABEL[s.status]}
+                    </span>
+                    {s.inferred && (
+                      <>
+                        {' · '}
+                        <Info tip="O banco não listou esta parcela: o app deduz o mês contando a partir das parcelas que ele listou.">estimada</Info>
+                      </>
+                    )}
                   </td>
-                  <td>{s.day ? s.day.split('-').reverse().join('/') : '–'}</td>
+                  <td class="num">{s.day ? s.day.split('-').reverse().join('/') : '–'}</td>
                 </tr>
               ))}
             </tbody>

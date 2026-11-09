@@ -101,7 +101,8 @@ export function trendChange(current: number, previous: number | null, hidden: bo
 // ---------- which card bills the Faturas widget and the Cartões page show ----------
 
 /**
- * `current`: the bills that fall due in the current month (the bar /api/cards/bills flags as current). `open`: everything still unpaid,
+ * `current`: the bills of the next due month to pay, the bar /api/cards/bills flags as current. A month whose bills have all closed
+ * stays current until they are paid, also after the due day; then the month still open takes over. `open`: everything still unpaid,
  * closed bills and the open ones of any due month. Any other value is one due month (YYYY-MM).
  */
 export const CURRENT_CYCLE = 'current';
@@ -126,13 +127,24 @@ export function currentLabel(currentKey: string | undefined): string {
   return currentKey !== undefined && currentKey !== 'open' ? `Ciclo atual (${monthName(currentKey).slice(0, 3)})` : 'Ciclo atual';
 }
 
-/** The due months of the dropdown: every cycle but the current one, which has its button; the month picked stays listed. Newest first. */
-export function otherCycles(cycles: readonly string[], currentKey: string | undefined, picked: string): string[] {
-  const months = new Set(cycles);
+/**
+ * The due months of the dropdown: every cycle but the current one, which has its button; the month picked stays listed. Newest first.
+ * `cycles` are the closed months of /api/cards; the months of the bars add the ones still open, which are not current while an
+ * earlier bill is still to pay.
+ */
+export function otherCycles(cycles: readonly string[], currentKey: string | undefined, picked: string, bars: ReadonlyArray<{ key: string }> = []): string[] {
+  const months = new Set([...cycles, ...bars.map((b) => b.key)]);
   if (/^\d{4}-\d{2}$/.test(picked)) months.add(picked);
   months.delete(currentKey ?? '');
   return [...months].sort().reverse();
 }
+
+/** An option of the "Outros ciclos" dropdown, as short as the bars' tips: "Venc. dez/2026". */
+export const cycleOption = (key: string): { value: string; label: string } => ({ value: key, label: `Venc. ${monthName(key)}` });
+
+/** Hover text of the two buttons, the same on the widget and on the Cartões page. */
+export const CURRENT_TIP = 'Faturas do próximo vencimento a pagar. Ficam aqui até serem pagas, mesmo depois do vencimento; depois vem o mês seguinte.';
+export const OPEN_TIP = 'Tudo que falta pagar: faturas fechadas não pagas e a fatura aberta de cada cartão';
 
 /** One line that says what the numbers on show count. `today` is a local day. */
 export function cycleCaption(cycle: string, today: string): string {
