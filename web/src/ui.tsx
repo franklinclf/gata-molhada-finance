@@ -1,6 +1,7 @@
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import { brl, dayMonth, foreignMoney, localDay } from './format.ts';
+import { sourceLabel, theSource } from './names.ts';
 import { hrefFor } from './router.ts';
 
 export function Loading({ error }: { error?: string | null }) {
@@ -138,7 +139,7 @@ export function TxRow({ t, hidden, onOpen, pick: wanted }: { t: { id: string; es
           <span class="tx-badges">
             {t.foreign && <span class="badge info" data-tip={hidden ? 'Compra em outra moeda' : `Compra em ${foreignMoney(t.foreign.amount, t.foreign.currency)}, cobrada em reais pelo cartão`}>{t.foreign.currency}</span>}
             {/* With one live source, "only one source has it" says nothing, so only a retired source's leftovers are marked. */}
-            {t.state === 'single_source' && t.sourceIds && t.sourceIds.length === 1 && t.sourceIds[0] !== 'pluggy' && <span class="badge muted" data-tip={`Só o ${t.sourceIds[0]} tem esta transação`}>só {t.sourceIds[0]}</span>}
+            {t.state === 'single_source' && t.sourceIds && t.sourceIds.length === 1 && t.sourceIds[0] !== 'pluggy' && <span class="badge muted" data-tip={`Só ${theSource(t.sourceIds[0]!)} tem esta transação`}>só {sourceLabel(t.sourceIds[0]!)}</span>}
             {t.reversal?.side === 'charge' && (
               <span class="badge good" data-tip={hidden ? 'Estornado' : `${t.reversal.partial ? 'Estorno parcial' : 'Estornado'} em ${dayMonth(t.reversal.otherDay)}: ${brl(t.reversal.amount)} de volta`}>
                 {t.reversal.partial ? 'estorno parcial' : 'estornado'}

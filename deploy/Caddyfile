@@ -7,8 +7,19 @@
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 		-Server
 	}
-	request_body {
-		max_size 1MB
+	# A statement PDF (and the page image sent to the AI reader) is larger than any other request. The app checks the
+	# session before reading these bodies and keeps its own caps (6 MiB for the PDF, 1.5 MiB for the image).
+	@billFiles path /api/bill-files /api/bill-files/vision
+	handle @billFiles {
+		request_body {
+			max_size 6MiB
+		}
+		reverse_proxy app:8080
 	}
-	reverse_proxy app:8080
+	handle {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy app:8080
+	}
 }

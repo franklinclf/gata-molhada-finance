@@ -34,7 +34,7 @@ O Meu Pluggy sincroniza cada banco sozinho uma vez por dia, ou quando o dono toc
 
 - **Login:** cinco erros seguidos de senha ou código travam só o endereço de onde vieram (o último da cadeia `X-Forwarded-For`, que o Caddy preenche) por 15 minutos. Um bloqueio geral só vem depois de 30 erros espalhados, então um estranho sozinho não impede o dono de entrar. Cada erro e cada bloqueio vai para o log do app (`docker logs gmf-app`) com o endereço, sem senha nem código. Erros 500 do servidor também são registrados.
 - **Arquivos:** o app cria o banco, os arquivos de diário e os backups só com permissão do dono (0600, pasta de backups 0700), e o backup antes de cada deploy também.
-- **Cabeçalhos:** o Caddy envia HSTS por um ano e Permissions-Policy, e limita o corpo de qualquer requisição a 1 MB. A política de conteúdo (CSP) fica no app.
+- **Cabeçalhos:** o Caddy envia HSTS por um ano e Permissions-Policy, e limita o corpo de qualquer requisição a 1 MB, menos o envio de fatura em PDF (`/api/bill-files` e `/api/bill-files/vision`), que vai até 6 MiB. O app tem os próprios limites: 256 KB nas rotas JSON, 6 MiB no PDF e 1,5 MiB na imagem para a IA, e só lê esses corpos maiores depois de conferir a sessão. A política de conteúdo (CSP) fica no app.
 - **Imagem:** o deploy puxa `:latest` do GHCR e só o CI publica essa tag. Não há fixação por digest nem verificação de assinatura; quem controlar a conta do GitHub ou o token do GHCR controla o que roda na VM como root. Proteja os dois com autenticação em dois fatores.
 - **Testes:** o CI roda também os testes de shell de `deploy/` e `infra/azure/`.
 

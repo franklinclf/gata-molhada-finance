@@ -10,7 +10,8 @@ import { categoryFromRules, sortRules, type RuleSubject } from './rules-engine.t
 import { titleOf } from '../core/title.ts';
 import { merchantOf } from '../core/merchant.ts';
 import { counterpartyOf, evidenceRole, ownerNames, roleOf, slipBillPayments, type Role } from './roles.ts';
-import type { Store } from '../store/store.ts';
+import { publishedSourceBills } from './cycles.ts';
+import type { Store, StoredSourceBill } from '../store/store.ts';
 
 export interface ViewOptions {
   /** Include the accounts the user chose to hide. Off by default, so every total ignores them. */
@@ -119,19 +120,17 @@ export function visibleLimitGroups(store: Store, accounts: CanonicalAccount[]): 
 }
 
 /** Per card, the due months of the bills the issuers published and the latest closing day among them. A published bill has closed. */
-function publishedBills(store: Store): Map<string, { months: Set<string>; lastClosing: string }> {
+function publishedBills(store: Store, bills: StoredSourceBill[]): Map<string, { months: Set<string>; lastClosing: string }> {
   const accountOf = new Map<string, string>();
   for (const a of store.listCanonicalAccounts()) if (a.kind === 'credit_card') for (const r of a.refs) if (r.role === 'member') accountOf.set(`${r.sourceId}|${r.externalId}`, a.id);
   const result = new Map<string, { months: Set<string>; lastClosing: string }>();
-  for (const sourceId of store.listSourceIds()) {
-    for (const b of store.listSourceBills(sourceId)) {
-      const accountId = accountOf.get(`${sourceId}|${b.accountExternalId}`);
-      if (accountId === undefined || b.closingDate === null) continue;
-      const entry = result.get(accountId) ?? { months: new Set<string>(), lastClosing: b.closingDate };
-      entry.months.add(b.dueDate.slice(0, 7));
-      if (b.closingDate > entry.lastClosing) entry.lastClosing = b.closingDate;
-      result.set(accountId, entry);
-    }
+  for (const b of bills) {
+    const accountId = accountOf.get(`${b.sourceId}|${b.accountExternalId}`);
+    if (accountId === undefined || b.closingDate === null) continue;
+    const entry = result.get(accountId) ?? { months: new Set<string>(), lastClosing: b.closingDate };
+    entry.months.add(b.dueDate.slice(0, 7));
+    if (b.closingDate > entry.lastClosing) entry.lastClosing = b.closingDate;
+    result.set(accountId, entry);
   }
   return result;
 }
@@ -156,7 +155,9 @@ export function effectiveTransactions(
   const billMonth = new Map<string, string>();
   for (const sourceId of store.listSourceIds()) for (const b of store.listSourceBills(sourceId)) billMonth.set(b.externalId, b.dueDate.slice(0, 7));
   const institutionOf = new Map(store.listCanonicalAccounts().map((a) => [a.id, a.institution]));
-  const published = publishedBills(store);
+  // One bill per card and due month (a PDF of a statement Pluggy also has is the same bill), for closings and boleto matching alike.
+  const bills = publishedSourceBills(store);
+  const published = publishedBills(store, bills);
   // A set-aside pending entry the owner called posted is brought back, so it must be loaded even when excluded ones are not wanted.
   // Every account is loaded, also when one is asked for, so the other side of a move between accounts is found the same way on every screen.
   const loaded = store.listCanonicalTransactions({ includeExcluded: true });
@@ -171,7 +172,7 @@ export function effectiveTransactions(
   const slipPayments = slipBillPayments(
     // Every live bank transaction, whatever the view asked for, so the same boleto is matched the same way on every screen.
     store.listCanonicalTransactions({ includeExcluded: false }).filter((t) => !cardIds.has(t.accountId)).map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, labels: mergeLabels(t.category, labelsOf.get(t.id)), description: t.description })),
-    store.listSourceIds().flatMap((sourceId) => store.listSourceBills(sourceId)),
+    bills,
   );
   // Rows are built for every account, so the other side of a move to a hidden account is found the same way on every screen.
   const built: EffectiveTransaction[] = all

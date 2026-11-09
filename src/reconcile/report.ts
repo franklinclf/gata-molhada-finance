@@ -1,6 +1,6 @@
 import type { TransactionReconciliation } from './transactions.ts';
 
-const PASS_LABELS = ['', 'same instant', 'same day', 'installment', 'same amount within 36 hours'];
+const PASS_LABELS = ['', 'same instant', 'same day', 'installment', 'same amount within 36 hours', 'same amount on the same bill'];
 
 /** Plain-text summary of a transaction reconciliation. `limit` caps the findings listed per kind. */
 export function formatTransactionReport(result: TransactionReconciliation, limit = 10): string[] {

@@ -25,6 +25,9 @@ import type { RuleSuggestion } from '../../src/api/rule-suggestions.ts';
 import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts';
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
+import type { ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine } from '../../src/api/bill-import.ts';
+
+export type { ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine };
 
 export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, ChangeView, ChatMessageView, GoalView, CalendarView, CalendarDay, OutlookView, RecurringItem, TrendView, CompareView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
@@ -83,11 +86,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', ...init });
   if (response.status === 401 && !path.startsWith('/api/auth/login')) onUnauthorized();
   const text = await response.text();
-  const body = text ? (JSON.parse(text) as unknown) : null;
-  // A change made by the owner (not a login or a chat question) can alter any list on screen.
-  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && path !== '/api/layout' && path !== '/api/rules/preview';
+  // An answer that is not JSON comes from the proxy (a body over its limit), not from the app.
+  let body: unknown = null;
+  try {
+    body = text ? (JSON.parse(text) as unknown) : null;
+  } catch {
+    if (response.ok) throw new ApiError(response.status, 'O servidor mandou uma resposta que o app não entende.');
+  }
+  // A change made by the owner (not a login, a chat question or a preview) can alter any list on screen. Reading a
+  // statement file and previewing it write nothing; applying it and undoing it do.
+  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && path !== '/api/layout' && path !== '/api/rules/preview' && !/^\/api\/bill-files(\?.*)?$|^\/api\/bill-files\/(preview|vision)$/.test(path);
   if (!response.ok) {
-    const message = (body as { message?: string; error?: string } | null)?.message ?? (body as { error?: string } | null)?.error ?? response.statusText;
+    const message = (body as { message?: string; error?: string } | null)?.message ?? (body as { error?: string } | null)?.error ?? (response.status === 413 ? 'O arquivo é grande demais para enviar.' : response.statusText);
     throw new ApiError(response.status, message);
   }
   if (changes) invalidateData();
@@ -261,6 +271,20 @@ export const api = {
   resetState: () => request<{ available: boolean; running?: boolean; mode?: 'soft' | 'hard' | null; step?: string | null; startedAt?: string | null; finishedAt?: string | null; result?: 'completed' | 'failed' | null; summary?: string | null; error?: string | null }>('/api/reset'),
   startReset: (mode: 'soft' | 'hard') => request<{ started: true }>('/api/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) }),
   findings: () => request<{ items: FindingItem[] }>('/api/findings'),
+  /**
+   * Sends one statement PDF as the raw body, the file name in the query (shown back to no one: the server ignores it).
+   * Reading it writes nothing, so the screens are not reloaded.
+   */
+  uploadBill: (file: Blob, name: string) =>
+    request<BillPreview | ImageOnly>(`/api/bill-files${query({ name: name.slice(0, 200) })}`, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file }),
+  previewBill: (input: { fileHash: string; accountId?: string; targets?: Record<string, string> }) =>
+    request<BillPreview>('/api/bill-files/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
+  applyBill: (input: { fileHash: string; accountId?: string; targets?: Record<string, string>; removeManual?: string[] }) =>
+    request<ApplyResult>('/api/bill-files/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
+  billImports: () => request<{ items: BillImportView[] }>('/api/bill-files'),
+  undoBillImport: (id: number) => request<{ removed: number; restoredManual: number }>(`/api/bill-files/${id}`, { method: 'DELETE' }),
+  readBillWithAi: (input: { fileHash: string; image: string }) =>
+    request<BillPreview>('/api/bill-files/vision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
   layout: () => request<Layout>('/api/layout'),
   saveLayout: (layout: Layout) => request<Layout>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(layout) }),
 };

@@ -228,3 +228,73 @@ test('one posted twin settles only one pending entry, and an ignored twin settle
   const sameSource = run([pending('a'), { ...posted, externalId: 'y' }], []);
   assert.equal(sameSource.transactions.filter((t) => t.state === 'stale_pending').length, 0);
 });
+
+// --- the same statement in two sources (a PDF of the bill and the aggregator) ---------------------------------------
+
+const onBill = (billId: string) => ({ parties: { operation: null, mcc: null, payer: null, receiver: null, billId } });
+/** pierre plays the aggregator and pluggy the statement here: the bill months are keyed by source. */
+const months = (entries: Array<[string, string]>) => ({ billMonths: new Map(entries) });
+
+test('joins a charge on the same bill whatever its day and text, the closest days first', () => {
+  const r = run(
+    [
+      tx({ externalId: 'a1', occurredAt: '2026-10-25T03:00:00.000Z', amount: -5000, description: 'LOJA AGREGADOR', descriptionRaw: null, ...onBill('b1') }),
+      tx({ externalId: 'a2', occurredAt: '2026-10-05T03:00:00.000Z', amount: -5000, description: 'OUTRA LOJA', descriptionRaw: null, ...onBill('b1') }),
+    ],
+    [
+      tx({ externalId: 'p1', occurredAt: '2026-10-04T03:00:00.000Z', amount: -5000, description: 'OUTRA LOJA CIDADE', descriptionRaw: null, ...onBill('s1') }),
+      tx({ externalId: 'p2', occurredAt: '2026-10-21T03:00:00.000Z', amount: -5000, description: 'LOJA DO EXTRATO', descriptionRaw: null, ...onBill('s1') }),
+    ],
+    months([['pierre|b1', '2026-11'], ['pluggy|s1', '2026-11']]),
+  );
+  assert.equal(r.transactions.length, 2);
+  const partner = (id: string) => r.links.find((l) => l.transactionId === r.links.find((x) => x.externalId === id)!.transactionId && l.sourceId === 'pierre')?.externalId;
+  assert.equal(partner('p1'), 'a2');
+  assert.equal(partner('p2'), 'a1');
+  assert.deepEqual(r.links.filter((l) => l.sourceId === 'pluggy').map((l) => l.matchPass), [5, 5]);
+});
+
+test('records on different published bills never join, even with the same day, amount and text', () => {
+  // The installments of one purchase repeat the purchase day and the text on every bill.
+  const same = { occurredAt: '2026-08-15T03:00:00.000Z', amount: -3000, description: 'LOJA PARCELADA', descriptionRaw: null };
+  const r = run(
+    [tx({ externalId: 'a-oct', ...same, ...onBill('b10') }), tx({ externalId: 'a-nov', ...same, ...onBill('b11') })],
+    [tx({ externalId: 'p-nov', ...same, ...onBill('s11') }), tx({ externalId: 'p-oct', ...same, ...onBill('s10') })],
+    months([['pierre|b10', '2026-10'], ['pierre|b11', '2026-11'], ['pluggy|s10', '2026-10'], ['pluggy|s11', '2026-11']]),
+  );
+  const pairs = r.transactions.map((t) => r.links.filter((l) => l.transactionId === t.id).map((l) => l.externalId).sort().join('+')).sort();
+  assert.deepEqual(pairs, ['a-nov+p-nov', 'a-oct+p-oct']);
+});
+
+test('different installment numbers are different charges', () => {
+  const same = { occurredAt: '2026-08-15T03:00:00.000Z', amount: -3000, description: 'LOJA PARCELADA', descriptionRaw: null };
+  const r = run([tx({ externalId: 'a', ...same, installment: { number: 2, total: 3 } })], [tx({ externalId: 'p', ...same, installment: { number: 3, total: 3 } })]);
+  assert.equal(r.transactions.length, 2);
+});
+
+test('a charge only the later source has takes the text the first source gives that merchant', () => {
+  const r = run(
+    [tx({ externalId: 'a1', occurredAt: '2026-09-15T03:00:00.000Z', amount: -3000, description: 'LOJAEXEMPLO*ONLINE 01/03', descriptionRaw: null, installment: { number: 1, total: 3 }, ...onBill('b9') })],
+    [
+      tx({ externalId: 'p1', occurredAt: '2026-08-15T03:00:00.000Z', amount: -3000, description: 'LOJA EXEMPLO', descriptionRaw: null, installment: { number: 1, total: 3 }, ...onBill('s9') }),
+      tx({ externalId: 'p2', occurredAt: '2026-08-15T03:00:00.000Z', amount: -3000, description: 'LOJA EXEMPLO', descriptionRaw: null, installment: { number: 2, total: 3 }, ...onBill('s10') }),
+      tx({ externalId: 'p3', occurredAt: '2026-10-01T03:00:00.000Z', amount: -1500, description: 'PADARIA EXEMPLO', descriptionRaw: null, ...onBill('s10') }),
+    ],
+    months([['pierre|b9', '2026-09'], ['pluggy|s9', '2026-09'], ['pluggy|s10', '2026-10']]),
+  );
+  const text = (id: string) => r.transactions.find((t) => t.id === r.links.find((l) => l.externalId === id)!.transactionId)?.description;
+  assert.equal(text('p1'), 'LOJAEXEMPLO*ONLINE 01/03');
+  assert.equal(text('p2'), 'LOJAEXEMPLO*ONLINE 02/03');
+  // Nothing learned about this merchant: its own text stays.
+  assert.equal(text('p3'), 'PADARIA EXEMPLO');
+});
+
+test('two lone records on different published bills are not offered as a possible match', () => {
+  const r = run(
+    [tx({ externalId: 'a', occurredAt: '2026-10-01T03:00:00.000Z', amount: -4000, description: 'LOJA A', descriptionRaw: null, ...onBill('b10') })],
+    [tx({ externalId: 'p', occurredAt: '2026-10-04T03:00:00.000Z', amount: -4000, description: 'LOJA B', descriptionRaw: null, ...onBill('s11') })],
+    months([['pierre|b10', '2026-10'], ['pluggy|s11', '2026-11']]),
+  );
+  assert.equal(r.transactions.length, 2);
+  assert.equal(r.findings.length, 0);
+});

@@ -69,3 +69,18 @@ export function netWorthLabel(name: string, kind: string): string {
   const product = productName(institution!, rest.join(' · '));
   return (product ? `${institution} · ${product}` : institution!) + note;
 }
+
+/** How a source is named on screen. The PDF statements the owner uploads are "Fatura em PDF"; other sources keep their id. */
+export function sourceLabel(id: string): string {
+  return id === 'pdf' ? 'Fatura em PDF' : id;
+}
+
+/** The source with its article, for a sentence: "o pluggy", "a fatura em PDF". */
+export function theSource(id: string): string {
+  return id === 'pdf' ? 'a fatura em PDF' : `o ${id}`;
+}
+
+/** "no pluggy", "na fatura em PDF". */
+export function inSource(id: string): string {
+  return id === 'pdf' ? 'na fatura em PDF' : `no ${id}`;
+}

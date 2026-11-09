@@ -238,6 +238,31 @@ export interface IncomeItem {
   untilMonth: string | null;
 }
 
+/** A card account of the PDF source that the owner tied to a card account of another source. */
+export interface BillImportAccount {
+  pdfAccountExternalId: string;
+  targetSourceId: SourceId;
+  targetExternalId: string;
+}
+
+/** One statement file applied. `removedManual` are the typed-in transactions the owner dropped because the file brings them. */
+export interface BillImport {
+  id: number;
+  fileHash: string;
+  billId: string;
+  issuer: string;
+  dueDate: string;
+  closingDate: string | null;
+  total: number;
+  cardFinals: string[];
+  lineCount: number;
+  method: 'text' | 'vision';
+  removedManual: Array<Omit<ManualTransaction, 'id'>>;
+  status: 'applied' | 'replaced' | 'undone';
+  appliedAt: string;
+  resolvedAt: string | null;
+}
+
 export interface PruneResult {
   removed: number;
   /** True when the removal was refused because it looked like a failed read. */
@@ -440,6 +465,16 @@ export interface Store {
    * reconnected item gets new account ids and leaves the old ones behind). Refuses when it would remove most accounts.
    */
   pruneUnseenSourceAccounts(sourceId: SourceId, seenAt: string, force?: boolean): PruneResult;
+  /** Removes one statement of a source: the transactions that carry its bill id and the bill itself. */
+  deleteSourceBillRecords(sourceId: SourceId, billId: string): { transactions: number; bills: number };
+  /** Removes the accounts of a source that have no transaction and no bill left. Returns how many went. */
+  deleteEmptySourceAccounts(sourceId: SourceId): number;
+  listBillImportAccounts(): BillImportAccount[];
+  setBillImportAccount(pin: BillImportAccount, now: string): void;
+  /** Statement files applied, newest first. */
+  listBillImports(): BillImport[];
+  addBillImport(row: Omit<BillImport, 'id' | 'status' | 'resolvedAt'>): number;
+  setBillImportStatus(id: number, status: BillImport['status'], at: string): void;
   /** Map of `${accountId}|${cycleKey}` to true (settled by hand) or false (kept as owed by hand). */
   listCycleOverrides(): Map<string, boolean>;
   /** Saves the user's word on a bill; null removes it. */
