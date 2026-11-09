@@ -93,8 +93,8 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
             <ul class="rows">
               {s.moves.map((m) => (
                 <li key={m.transactionId}>
-                  <button class="link grow clip" onClick={() => patchParams({ tx: m.transactionId })}>
-                    {fullDay(m.day)} · {m.description}
+                  <button class="link grow clip" data-tip={m.name ? `${m.name}\nBanco: ${m.description}` : undefined} onClick={() => patchParams({ tx: m.transactionId })}>
+                    {fullDay(m.day)} · {m.name ?? m.description}
                   </button>
                   <span>{brl(m.amount, hidden)}</span>
                   <span class="muted">vai para a fatura de {monthName(m.toCycleKey)}</span>
@@ -108,8 +108,8 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
               <ul class="rows">
                 {s.records.map((r) => (
                   <li key={r.transactionId}>
-                    <button class="link grow clip" onClick={() => patchParams({ tx: r.transactionId })}>
-                      {fullDay(r.day)} · {r.description}
+                    <button class="link grow clip" data-tip={r.name ? `${r.name}\nBanco: ${r.description}` : undefined} onClick={() => patchParams({ tx: r.transactionId })}>
+                      {fullDay(r.day)} · {r.name ?? r.description}
                     </button>
                     <span>{brl(r.amount, hidden)}</span>
                   </li>
@@ -120,7 +120,7 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
           {s.kind === 'missing' && s.unlisted && (
             <div class="muted">
               O banco cobra {brl(s.amount, hidden)} a mais, e o valor bate com {s.unlisted.length === 1 ? 'uma parcela que o banco não listou' : 'duas parcelas que o banco não listou'}:{' '}
-              {s.unlisted.map((u) => `${u.number}/${u.total} de ${u.description}, que o app contou na fatura de ${monthName(u.cycleKey)}`).join(' e ')}. Confira se {s.unlisted.length === 1 ? 'ela foi cobrada' : 'elas foram cobradas'} nesta fatura antes de lançar a diferença.
+              {s.unlisted.map((u) => `${u.number}/${u.total} de ${u.name ?? u.description}, que o app contou na fatura de ${monthName(u.cycleKey)}`).join(' e ')}. Confira se {s.unlisted.length === 1 ? 'ela foi cobrada' : 'elas foram cobradas'} nesta fatura antes de lançar a diferença.
             </div>
           )}
           {s.kind === 'missing' && !s.unlisted && <div class="muted">O banco cobra {brl(s.amount, hidden)} que nenhuma compra perto do fechamento explica. Provavelmente uma compra, juros ou IOF que não chegaram: use “Lançar a diferença”.</div>}
@@ -289,8 +289,8 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
                   <ul class="rows">
                     {g.members.map((m) => (
                       <li key={m.id}>
-                        <button class="link grow clip" onClick={() => patchParams({ tx: m.id })}>
-                          {fullDay(m.day)} · {m.description} <span class="muted">({m.status === 'pending' ? 'pendente' : 'lançada'})</span>
+                        <button class="link grow clip" data-tip={m.name ? `${m.name}\nBanco: ${m.description}` : undefined} onClick={() => patchParams({ tx: m.id })}>
+                          {fullDay(m.day)} · {m.name ?? m.description} <span class="muted">({m.status === 'pending' ? 'pendente' : 'lançada'})</span>
                         </button>
                         <button class="link" disabled={busy === m.id} onClick={() => void apply(m.id, () => api.setIgnored(m.id, true))}>
                           Ignorar esta
@@ -313,8 +313,8 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
           <ul class="rows">
             {setAside.map((t) => (
               <li key={t.id}>
-                <button class="link grow clip" onClick={() => patchParams({ tx: t.id })}>
-                  {fullDay(t.day)} · {t.description} <span class="muted">({t.institution}{t.last4 ? ` ${t.last4}` : ''})</span>
+                <button class="link grow clip" data-tip={t.name ? `${t.name}\nBanco: ${t.description}` : undefined} onClick={() => patchParams({ tx: t.id })}>
+                  {fullDay(t.day)} · {t.name ?? t.description} <span class="muted">({t.institution}{t.last4 ? ` ${t.last4}` : ''})</span>
                 </button>
                 <span>{brl(t.amount, hidden)}</span>
                 <Button size="sm" disabled={busy === t.id} onClick={() => void apply(t.id, () => api.setStatus(t.id, 'posted'))}>

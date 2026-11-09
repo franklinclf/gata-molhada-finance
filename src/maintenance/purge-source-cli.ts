@@ -30,7 +30,7 @@ try {
   const report = store.purgeSource(sourceId, apply);
   console.log(`${apply ? 'removed' : 'would remove'} from ${sourceId}:`);
   for (const [table, n] of Object.entries(report.removed)) if (n > 0) console.log(`  ${table}: ${n}`);
-  console.log(`choices moved to another source's record: ${report.moved.categoryOverrides} categories, ${report.moved.installmentOverrides} installments`);
+  console.log(`choices moved to another source's record: ${report.moved.categoryOverrides} categories, ${report.moved.installmentOverrides} installments, ${report.moved.names} names`);
   if (apply) {
     runReconciliation(store);
     console.log('canonical data rebuilt');

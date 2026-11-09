@@ -155,6 +155,9 @@ export const api = {
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }),
   setReversal: (id: string, otherId: string | null) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/reversal`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ otherId }) }),
+  /** The owner's own name for a transaction; on an installment it names the whole purchase. Null or blank removes it. */
+  setName: (id: string, name: string | null) =>
+    request<{ ok: true; changed: number }>(`/api/transactions/${encodeURIComponent(id)}/name`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
   setCycle: (id: string, cycleKey: string | null) =>
     request<{ ok: true }>(`/api/transactions/${encodeURIComponent(id)}/cycle`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cycleKey }) }),
   dismiss: (findingId: string) => request<{ ok: true }>(`/api/findings/${encodeURIComponent(findingId)}/dismiss`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),

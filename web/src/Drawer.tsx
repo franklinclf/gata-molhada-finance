@@ -80,6 +80,57 @@ function InstallmentField({ id, d, act }: { id: string; d: Detail; act: Act }) {
   );
 }
 
+/** Longest name the server takes (`MAX_TRANSACTION_NAME`). */
+const MAX_NAME = 60;
+
+/**
+ * The owner's own name for the transaction, shown in the lists in place of the standard one. The bank text stays as it is, and
+ * rules and the AI go on reading it. On an installment the name is the purchase's, and the app adds the counter.
+ */
+function NameField({ id, current, installment, act }: { id: string; current: string | null; installment: { number: number; total: number } | null; act: Act }) {
+  const [value, setValue] = useState(current ?? '');
+  const [saved, setSaved] = useState<string | null>(null);
+  const typed = value.replace(/\s+/g, ' ').trim();
+  const canSave = typed !== '' && typed !== (current ?? '');
+  const save = async (name: string | null) => {
+    setSaved(null);
+    if (!(await act.run(() => api.setName(id, name)))) return;
+    if (name === null) {
+      setValue('');
+      setSaved('Nome removido. Volta o nome padrão.');
+    } else {
+      setValue(name);
+      setSaved(installment ? 'Nome salvo em todas as parcelas desta compra.' : 'Nome salvo.');
+    }
+  };
+  const hint = installment ? `Vale para todas as parcelas; o contador (${installment.number}/${installment.total}) é automático.` : 'Aparece nas listas no lugar do nome padrão. O texto do banco continua guardado e é o que as regras usam.';
+  return (
+    <Field label="Nome personalizado" hint={saved ?? hint}>
+      <div class="inline-inputs">
+        <input
+          class="wide"
+          maxLength={MAX_NAME}
+          placeholder={installment ? 'Ex.: Notebook novo' : 'Ex.: Presente de aniversário'}
+          aria-label="Nome personalizado"
+          value={value}
+          onInput={(e) => setValue((e.currentTarget as HTMLInputElement).value)}
+          onKeyDown={(e) => e.key === 'Enter' && canSave && void save(typed)}
+        />
+        {canSave && (
+          <button class="primary small" disabled={act.busy} onClick={() => void save(typed)}>
+            Salvar
+          </button>
+        )}
+        {current !== null && (
+          <button class="link" disabled={act.busy} onClick={() => void save(null)}>
+            Limpar
+          </button>
+        )}
+      </div>
+    </Field>
+  );
+}
+
 /** Fewer characters than this in a merchant key make "Assinatura ou recorrente" ask before it marks every charge with that key. */
 const MIN_RECURRING_KEY = 4;
 
@@ -101,6 +152,7 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
     <div class="dsec">
       <h3>Corrigir</h3>
       <div class="correct">
+        {!manual && <NameField key={id} id={id} current={d.transaction.customName} installment={d.transaction.installment} act={act} />}
         {!manual && (
           <Field label={`Status${d.statusByUser ? ' (definido por você)' : ''}`} hint={d.statusByUser ? undefined : d.statusByBill ? 'A fonte ainda diz pendente, mas a fatura desta compra já fechou.' : `A fonte diz: ${d.transaction.status === 'pending' ? 'pendente' : 'lançada'}.`}>
             <Select
@@ -123,7 +175,7 @@ function Corrections({ id, d, manual, act }: { id: string; d: Detail; manual: bo
             />
           </Field>
         )}
-        <Field label="Assinatura ou recorrente" hint={`${detected.charAt(0).toUpperCase()}${detected.slice(1)}. Vale para todas as cobranças de “${d.transaction.title}” (chave “${r.name}”).${shortKey ? ' A chave é curta e pode pegar cobranças de outros lugares.' : ''}`}>
+        <Field label="Assinatura ou recorrente" hint={`${detected.charAt(0).toUpperCase()}${detected.slice(1)}. Vale para todas as cobranças de “${d.transaction.customName !== null ? d.transaction.description : d.transaction.title}” (chave “${r.name}”).${shortKey ? ' A chave é curta e pode pegar cobranças de outros lugares.' : ''}`}>
           <Select
             ariaLabel="Recorrência"
             value={r.label ?? ''}
@@ -456,9 +508,10 @@ function SameDescription({ d, hidden }: { d: Detail; hidden: boolean }) {
 }
 
 /** Side panel with what is known about one transaction and the few things the owner may want to change. */
-/** An installment the bank bills but never listed: shown as a transaction for analyses, with nothing to edit. */
+/** An installment the bank bills but never listed: shown as a transaction for analyses. Only the name of its purchase can be changed here. */
 function EstimatedDrawer({ id, hidden }: { id: string; hidden: boolean }) {
   const detail = useLoad(() => api.estimatedDetail(id), [id]);
+  const act = useAction();
   const close = () => patchParams({ tx: null });
   const d = detail.data;
   return (
@@ -473,8 +526,8 @@ function EstimatedDrawer({ id, hidden }: { id: string; hidden: boolean }) {
         ) : (
           <>
             <div>
-              <h2>{d.transaction.description}</h2>
-              <div class="muted">Parcela estimada</div>
+              <h2>{d.transaction.customName !== null ? d.transaction.title : d.transaction.description}</h2>
+              <div class="muted">Parcela estimada{d.transaction.customName !== null ? ` · Banco: ${d.transaction.description}` : ''}</div>
             </div>
             <div class="big">{brl(d.transaction.amount, hidden)}</div>
             <div class="chips">
@@ -482,11 +535,16 @@ function EstimatedDrawer({ id, hidden }: { id: string; hidden: boolean }) {
               {d.transaction.status === 'pending' && <span class="badge">fatura que ainda não chegou</span>}
             </div>
             <p>
-              O banco cobra esta parcela na fatura, mas não a listou como transação. O app a calcula contando os meses a partir das parcelas desta compra que ele viu. A parcela já está no total da fatura; aqui ela aparece só para que as análises por transação não a deixem de fora. Se o banco passar a listá-la, esta linha deixa de existir. Por ser uma estimativa, não dá para mudar a categoria nem ignorar.
+              O banco cobra esta parcela na fatura, mas não a listou como transação. O app a calcula contando os meses a partir das parcelas desta compra que ele viu. A parcela já está no total da fatura; aqui ela aparece só para que as análises por transação não a deixem de fora. Se o banco passar a listá-la, esta linha deixa de existir. Por ser uma estimativa, não dá para mudar a categoria nem ignorar. O nome personalizado vale para a compra toda.
             </p>
+            {act.error && <div class="error" role="alert">{act.error}</div>}
+            <NameField key={id} id={id} current={d.purchase.customName} installment={d.transaction.installment} act={act} />
             <dl class="facts">
               <dt>Compra</dt>
-              <dd>{d.purchase.description}</dd>
+              <dd>
+                {d.purchase.customName ?? d.purchase.description}
+                {d.purchase.customName !== null && <span class="hint"> · banco: {d.purchase.description}</span>}
+              </dd>
               <dt>Parcela</dt>
               <dd>
                 {d.number} de {d.purchase.total} · {brl(d.purchase.amount, hidden)} cada

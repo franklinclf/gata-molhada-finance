@@ -5,6 +5,8 @@ import { isManualId, manualNumber } from './manual.ts';
 import { categoryParents } from './category-groups.ts';
 import { overlapWith, removeGroupBudget, renameGroupBudget, rowsAfterGroupRename } from './budgets.ts';
 import { effectiveTransactions, resolveAlias, ruleKey } from './scope.ts';
+import { ESTIMATED_PREFIX, purchaseOfEstimated } from './installments.ts';
+import { seriesMates } from './series.ts';
 import { cyclesFor } from './cycles.ts';
 import { localDay } from '../core/time.ts';
 
@@ -463,6 +465,58 @@ export function setCycleSettled(store: Store, accountId: unknown, cycleKey: unkn
   if (!store.listCanonicalAccounts().some((a) => a.id === accountId && a.kind === 'credit_card')) return { ok: false, status: 404, error: 'not_found' };
   store.setCycleOverride(accountId, cycleKey, settled, now.toISOString());
   return { ok: true };
+}
+
+/** Longest name the owner can give a transaction. */
+export const MAX_TRANSACTION_NAME = 60;
+
+/**
+ * Reads a name typed for a transaction: spaces are collapsed and the ends trimmed. Blank text (or null) means "no name". Text
+ * longer than `MAX_TRANSACTION_NAME`, with control characters, or anything that is not text is refused rather than cut.
+ */
+export function cleanTransactionName(value: unknown): { ok: true; name: string | null } | { ok: false; error: string } {
+  const error = `name must be text of up to ${MAX_TRANSACTION_NAME} characters, or null to remove it`;
+  if (value === null) return { ok: true, name: null };
+  if (typeof value !== 'string') return { ok: false, error };
+  const name = value.replace(/\s+/g, ' ').trim();
+  if (name.length > MAX_TRANSACTION_NAME || /[\u0000-\u001f\u007f]/.test(name)) return { ok: false, error };
+  return { ok: true, name: name === '' ? null : name };
+}
+
+/**
+ * The transactions a name given to this one goes on: an installment's name is the purchase's, so it goes on every installment of
+ * it (grouped as the plan of installments groups them). An estimated installment names the purchase it belongs to. An error when
+ * the transaction does not exist or was typed in by hand (its description is already the owner's own text).
+ */
+export function nameTargets(store: Store, id: string, now: Date): { ids: string[]; series: boolean } | { error: MutationResult & { ok: false } } {
+  const all = effectiveTransactions(store, { includeHidden: true, includeExcluded: true });
+  if (id.startsWith(ESTIMATED_PREFIX)) {
+    const purchase = purchaseOfEstimated(store, id, now);
+    const first = purchase?.memberIds[0];
+    if (first === undefined) return { error: { ok: false, status: 404, error: 'not_found' } };
+    return { ids: [...new Set([...purchase!.memberIds, ...seriesMates(all, first)])], series: true };
+  }
+  const transaction = all.find((t) => t.id === id);
+  if (!transaction) return { error: { ok: false, status: 404, error: 'not_found' } };
+  if (isManualId(id)) return { error: { ok: false, status: 400, error: 'a transaction you typed in is edited directly' } };
+  return transaction.installment ? { ids: seriesMates(all, id), series: true } : { ids: [id], series: false };
+}
+
+/**
+ * The owner names a transaction ("Nome personalizado"). The screens show the name, with the counter "2/5" on an installment, and
+ * keep the bank text next to it; rules, the AI and the merchant grouping go on reading the bank text. On an installment the name
+ * is the purchase's: it goes on every installment, and the ones planned or still to arrive show it too. Blank or null removes it.
+ */
+export function setTransactionName(store: Store, id: string, value: unknown, now: Date): MutationResult & { changed?: number } {
+  const clean = cleanTransactionName(value);
+  if (!clean.ok) return { ok: false, status: 400, error: clean.error };
+  const targets = nameTargets(store, id, now);
+  if ('error' in targets) return targets.error;
+  const at = now.toISOString();
+  store.transaction(() => {
+    for (const target of targets.ids) store.setTransactionName(target, clean.name, at);
+  });
+  return { ok: true, changed: targets.ids.length };
 }
 
 /** The user says which installment a charge is, for charges the sources deliver without it. `null` clears what was set. */

@@ -110,7 +110,7 @@ export const STATE_LABEL: Record<string, string> = {
   ignored: 'Ignorada por você (fora dos totais)',
 };
 
-export function TxRow({ t, hidden, onOpen, pick: wanted }: { t: { id: string; estimated?: true; sourceIds?: string[]; title?: string; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void; /** When given, the row shows a checkbox and a click toggles it instead of opening the drawer. */ pick?: { on: boolean; toggle: () => void } }) {
+export function TxRow({ t, hidden, onOpen, pick: wanted }: { t: { id: string; estimated?: true; sourceIds?: string[]; title?: string; customName?: string | null; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void; /** When given, the row shows a checkbox and a click toggles it instead of opening the drawer. */ pick?: { on: boolean; toggle: () => void } }) {
   // An estimated installment is read-only (no category, status or bill to change), so it is never picked: a click opens its explanation.
   const pick = t.estimated ? undefined : wanted;
   return (
@@ -122,7 +122,10 @@ export function TxRow({ t, hidden, onOpen, pick: wanted }: { t: { id: string; es
         </label>
       )}
       <div class="grow">
-        <div class="clip">{t.title ?? t.description}</div>
+        {/* A name the owner gave keeps the bank text at hand. */}
+        <div class="clip" data-tip={t.customName ? `${t.title ?? t.customName}\nBanco: ${t.description}` : undefined}>
+          {t.title ?? t.description}
+        </div>
         {/* On a narrow screen the account moves to its own line, so the category is the part that keeps its room. */}
         <div class="muted tx-meta">
           <span class="tx-day">{dayMonth(localDay(t.occurredAt))}</span>

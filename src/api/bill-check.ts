@@ -19,11 +19,16 @@ const OLD_BILL_DAYS = 45;
 /** The owner's "this bill is known to be off" answers, as `accountId|cycleKey`. */
 const DISMISSED_KEY = 'bill_check_dismissed';
 
+/** The name the owner gave a transaction, as the lists show it, only when there is one. */
+const ownName = (t: Pick<EffectiveTransaction, 'customName' | 'title'>): { name?: string } => (t.customName !== null ? { name: t.title } : {});
+
 export interface BillMove {
   transactionId: string;
   day: string;
   amount: Cents;
   description: string;
+  /** The name the owner gave it (with the counter on an installment), when it has one. `description` stays the bank text. */
+  name?: string;
   /** Due month (YYYY-MM) of the bill the charge should be moved to. */
   toCycleKey: string;
 }
@@ -31,6 +36,8 @@ export interface BillMove {
 export interface UnlistedInstallment {
   purchaseId: string;
   description: string;
+  /** The name the owner gave the purchase, when it has one. */
+  name?: string;
   number: number;
   total: number;
   amount: Cents;
@@ -44,6 +51,8 @@ export interface IgnoredCharge {
   day: string;
   amount: Cents;
   description: string;
+  /** The name the owner gave it (with the counter on an installment), when it has one. `description` stays the bank text. */
+  name?: string;
 }
 
 export interface BillCheckItem {
@@ -100,7 +109,7 @@ export interface DuplicatePayment {
   last4: string | null;
   amount: Cents;
   /** The records that look like one payment, oldest first. Ignoring all but one is the fix. */
-  members: Array<{ id: string; day: string; title: string; description: string; status: string }>;
+  members: Array<{ id: string; day: string; title: string; description: string; status: string; name?: string }>;
 }
 
 export interface BillCheckView {
@@ -114,7 +123,7 @@ export interface BillCheckView {
   /** Card bill payments listed more than once (the pending and the posted copy, or two texts for one payment). */
   duplicatePayments: DuplicatePayment[];
   /** Pending entries set aside as stale, in case one of them is real. */
-  setAside: Array<{ id: string; day: string; amount: Cents; description: string; institution: string; last4: string | null }>;
+  setAside: Array<{ id: string; day: string; amount: Cents; description: string; institution: string; last4: string | null; name?: string }>;
 }
 
 interface Candidate {
@@ -189,7 +198,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
     const near = new Set([-1, 0, 1].map((n) => addMonthsToDay(`${key}-01`, n).slice(0, 7)));
     const slots = plan.purchases
       .filter((p) => p.accountId === accountId)
-      .flatMap((p) => p.slots.filter((x) => x.inferred && (x.status === 'paid' || x.status === 'billed') && x.cycle !== key && near.has(x.cycle)).map((x) => ({ purchaseId: p.id, description: p.description, number: x.number, total: p.total, amount: p.amount, cycleKey: x.cycle })));
+      .flatMap((p) => p.slots.filter((x) => x.inferred && (x.status === 'paid' || x.status === 'billed') && x.cycle !== key && near.has(x.cycle)).map((x) => ({ purchaseId: p.id, description: p.description, ...(p.customName !== null ? { name: p.customName } : {}), number: x.number, total: p.total, amount: p.amount, cycleKey: x.cycle })));
     const hit = (value: Cents) => Math.abs(value - amount) <= INSTALLMENT_TOLERANCE;
     const single = slots.filter((x) => hit(x.amount));
     if (single.length > 0) return single.slice(0, 3);
@@ -240,7 +249,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
         const sum = picked.reduce((s, p) => s + p.value, 0);
         delta.set(fromCycleKey, (delta.get(fromCycleKey) ?? 0) - sum);
         delta.set(toCycle.key, (delta.get(toCycle.key) ?? 0) + sum);
-        suggestion = { kind: 'move', moves: picked.map((p) => ({ transactionId: p.t.id, day: localDay(p.t.occurredAt), amount: p.t.amount, description: p.t.description, toCycleKey: toCycle.key })) };
+        suggestion = { kind: 'move', moves: picked.map((p) => ({ transactionId: p.t.id, day: localDay(p.t.occurredAt), amount: p.t.amount, description: p.t.description, ...ownName(p.t), toCycleKey: toCycle.key })) };
       };
       // A neighbour with no published bill says nothing either way. One with a bill can take a charge only if it is short by
       // that much, and give one only if it has that much to spare; anything else would trade one gap for another.
@@ -248,7 +257,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
       const canTake = (c: Cycle | undefined, amount: Cents) => c !== undefined && (spare(c) === null || spare(c)! <= -amount + TOLERANCE);
       const canGive = (c: Cycle | undefined, amount: Cents) => c !== undefined && (spare(c) === null || spare(c)! >= amount - TOLERANCE);
       if (restored) {
-        suggestion = { kind: 'ignored', amount: Math.abs(gap), records: restored.map((r) => ({ transactionId: r.t.id, day: localDay(r.t.occurredAt), amount: r.t.amount, description: r.t.description })) };
+        suggestion = { kind: 'ignored', amount: Math.abs(gap), records: restored.map((r) => ({ transactionId: r.t.id, day: localDay(r.t.occurredAt), amount: r.t.amount, description: r.t.description, ...ownName(r.t) })) };
       } else if (gap > 0) {
         // We count more than the bill: the last days of this cycle may belong to the next bill, the first days to the previous one.
         const tail = canTake(next, gap) ? exactGroup(near(membership(cycle), addDays(cycle.to, -EDGE_DAYS), cycle.to), gap, cycle.to) : null;
@@ -303,7 +312,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
   const setAside = all
     .filter((t) => t.excluded && t.state === 'stale_pending' && visibleIds.has(t.accountId))
     .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-    .map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, description: t.description, institution: accountOf.get(t.accountId)?.institution ?? '', last4: accountOf.get(t.accountId)?.last4 ?? null }));
+    .map((t) => ({ id: t.id, day: localDay(t.occurredAt), amount: t.amount, description: t.description, institution: accountOf.get(t.accountId)?.institution ?? '', last4: accountOf.get(t.accountId)?.last4 ?? null, ...ownName(t) }));
 
   const newest = (a: BillCheckItem, b: BillCheckItem) => b.dueDate.localeCompare(a.dueDate) || a.institution.localeCompare(b.institution);
   items.sort(newest);
@@ -321,7 +330,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
       const looksRepeated = group.length > 1 && group.some((o) => o.status !== first.status || normalizeName(o.description) !== normalizeName(first.description));
       for (const o of group) used.add(o.id);
       if (!looksRepeated) continue;
-      duplicatePayments.push({ accountId: account.id, institution: account.institution, last4: account.last4, amount: first.amount, members: group.map((o) => ({ id: o.id, day: localDay(o.occurredAt), title: o.title, description: o.description, status: o.status })) });
+      duplicatePayments.push({ accountId: account.id, institution: account.institution, last4: account.last4, amount: first.amount, members: group.map((o) => ({ id: o.id, day: localDay(o.occurredAt), title: o.title, description: o.description, status: o.status, ...ownName(o) })) });
     }
   }
   duplicatePayments.sort((a, b) => b.members[0]!.day.localeCompare(a.members[0]!.day));

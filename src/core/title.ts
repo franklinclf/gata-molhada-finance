@@ -68,3 +68,13 @@ export function titleOf(t: TitleInput): string {
   const name = merchantName(t.description);
   return name.length > 0 ? name : t.description;
 }
+
+/**
+ * What the screens show for a transaction the owner named. An installment gets its counter at the end ("Notebook novo 2/5"),
+ * from the number and count the app knows; when the count is not known, only the number ("Notebook novo (parcela 2)").
+ */
+export function namedTitle(name: string, installment: { number: number; total: number | null } | null): string {
+  if (!installment || !Number.isInteger(installment.number) || installment.number < 1) return name;
+  const { number, total } = installment;
+  return total !== null && Number.isInteger(total) && total >= 2 && total >= number ? `${name} ${number}/${total}` : `${name} (parcela ${number})`;
+}

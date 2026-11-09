@@ -248,6 +248,29 @@ test('ignoring and bringing back are undone with a rebuild', async () => {
   assert.notEqual(stateOf(store, 'ONLY HERE'), 'ignored');
 });
 
+test('the chat names a transaction, the bank text stays next to the name, and undo takes the name away', async () => {
+  const store = seeded();
+  assert.equal(asksForChange('renomeie a compra da loja azul'), true);
+  assert.equal(asksForChange('quero renomear a compra da loja azul'), true);
+  const { client } = scripted([tool('transactions', { q: 'LOJA AZUL' }), tool('set_name', { tx: 't1', name: '  Presente   de aniversário ' }), answer('Pronto.')]);
+  const reply = await ask(store, opts(client), { question: 'renomeie a compra da loja azul para Presente de aniversário' });
+  assert.deepEqual(reply.changes.map((c) => [c.tool, c.label, c.count, c.status, c.undoable]), [['set_name', 'Nome "Presente de aniversário" para a transação', 1, 'applied', true]]);
+  const named = () => effectiveTransactions(store).find((t) => t.description === 'COMPRA LOJA AZUL')!;
+  assert.deepEqual([named().title, named().customName, categoryOf(store, 'COMPRA LOJA AZUL')], ['Presente de aniversário', 'Presente de aniversário', null]);
+  // A later search by the name finds it, and shows the bank text too.
+  const again = scripted([tool('transactions', { q: 'aniversário' }), answer('ok')]);
+  await ask(store, opts(again.client), { conversationId: reply.conversationId, question: 'quanto foi o presente de aniversário?' });
+  const rows = observations(again.calls, 1)[0]!.resultado!.transacoes as Array<{ nome?: string; descricao: string }>;
+  assert.deepEqual(rows.map((r) => [r.nome, r.descricao]), [['Presente de aniversário', 'COMPRA LOJA AZUL']]);
+  // A name that is too long is refused, not cut.
+  const long = scripted([tool('transactions', { q: 'LOJA AZUL' }), tool('set_name', { tx: 't1', name: 'x'.repeat(61) }), answer('não deu')]);
+  const refused = await ask(store, opts(long.client), { conversationId: reply.conversationId, question: 'renomeie a compra da loja azul' });
+  assert.deepEqual(refused.changes, []);
+  assert.equal(named().customName, 'Presente de aniversário');
+  assert.equal(undoChange(store, minutes(1), reply.changes[0]!.id).ok, true);
+  assert.deepEqual([named().customName, named().title], [null, 'Compra Loja Azul']);
+});
+
 test('undo refuses and marks a conflict when the owner changed the same thing afterwards', async () => {
   const store = seeded();
   const { client } = scripted([tool('set_category', { filter: { q: 'PADARIA' }, category: 'Supermercado' }), answer('feito')]);
@@ -436,6 +459,7 @@ test('the arguments stored with a change plan the same change again, for every w
     ['set_budget', { name: 'Supermercado', month: '2026-10', amount: 432.1 }],
     ['upsert_income', { name: 'Renda exemplo', amount: 1500.5 }],
     ['delete_income', { name: 'Renda exemplo' }],
+    ['set_name', { tx: ref('COMPRA LOJA AZUL'), name: 'Presente de aniversário' }],
   ];
   assert.deepEqual(cases.map(([name]) => name), WRITE_TOOLS.map((t) => t.name), 'every write tool has a case');
   // unlink needs a pair to exist.
