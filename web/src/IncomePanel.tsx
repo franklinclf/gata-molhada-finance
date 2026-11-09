@@ -162,10 +162,10 @@ export function IncomePanel({ months, hidden, focus = false, prefill = null }: {
           <tbody>
             {months.map((m) => (
               <tr key={m.key}>
-                <td>{monthName(m.key)}</td>
-                <td>{brl(m.income, hidden)}</td>
-                <td>{brl(m.bills, hidden)}</td>
-                <td><strong class={m.income - m.bills < 0 ? 'bad-text' : 'good-text'}>{brl(m.income - m.bills, hidden)}</strong></td>
+                <td class="num">{monthName(m.key)}</td>
+                <td class="num">{brl(m.income, hidden)}</td>
+                <td class="num">{brl(m.bills, hidden)}</td>
+                <td class="num"><strong class={m.income - m.bills < 0 ? 'bad-text' : 'good-text'}>{brl(m.income - m.bills, hidden)}</strong></td>
               </tr>
             ))}
           </tbody>

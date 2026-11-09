@@ -273,7 +273,11 @@ export interface BillBar {
   key: string;
   /** At least one card has not closed this month yet, so the total is still growing. */
   open: boolean;
-  /** The earliest month still open: what "Em aberto (atual)" on the cards screen starts from. */
+  /**
+   * The month of the next bill to pay, which the "Ciclo atual" button of the Faturas widget and the Cartões page shows: the earliest
+   * month with a bill still to pay (see `holdsCurrent`). A month whose bills have all closed stays current until they are paid, even
+   * past the due day; only then does the month still open take over.
+   */
   current: boolean;
   total: Cents;
   paid: Cents;
@@ -289,6 +293,17 @@ export interface BillsView extends Stamped {
 }
 
 /**
+ * Whether a bill keeps its due month as the current cycle. A bill with something left to pay does, before and after its due day: the
+ * owner may pay on the due day or late, and the month is still the one to look at. A bill whose payment cannot be told (still open,
+ * or closed with payments the app cannot see) does until its due day has passed. A paid bill, or one with nothing to pay, does not.
+ * `today` is a local day.
+ */
+export function holdsCurrent(bill: Pick<Cycle, 'status' | 'outstanding' | 'dueDate'>, today: string): boolean {
+  if (bill.outstanding > 0) return true;
+  return (bill.status === 'open' || bill.status === 'unknown') && bill.dueDate >= today;
+}
+
+/**
  * One bar per due month with all visible cards added. Cards close on different days, so a month can hold bills that are
  * out and cards still adding to theirs; the bar shows both and says how many of each.
  */
@@ -298,6 +313,8 @@ export function cardBills(store: Store, now: Date, opts: ViewOptions = {}, month
   const transactions = effectiveTransactions(store, opts, accounts);
   const today = localDay(now.toISOString());
   const byKey = new Map<string, BillBar>();
+  // Due months with a bill still to pay; the earliest of them shown is the current cycle.
+  const toPay = new Set<string>();
   const barOf = (key: string): BillBar => {
     const bar = byKey.get(key) ?? { key, open: false, current: false, total: 0, paid: 0, outstanding: 0, openCards: 0, closedCards: 0, status: 'paid' as BillBar['status'] };
     byKey.set(key, bar);
@@ -305,7 +322,9 @@ export function cardBills(store: Store, now: Date, opts: ViewOptions = {}, month
   };
   for (const account of cardAccounts) {
     for (const c of cyclesFor(store, account, transactions, today)) {
-      if (c.status === 'open' || c.billTotal === null) continue;
+      if (c.status === 'open') continue;
+      if (holdsCurrent(c, today)) toPay.add(c.key);
+      if (c.billTotal === null) continue;
       const bar = barOf(c.key);
       bar.total += c.billTotal;
       bar.paid += c.paid;
@@ -323,10 +342,12 @@ export function cardBills(store: Store, now: Date, opts: ViewOptions = {}, month
     bar.total += part.total;
     bar.openCards += part.cards;
     bar.open = true;
+    // A bill still open is not due yet: it is always one to pay.
+    toPay.add(key);
     if (bar.status !== 'overdue') bar.status = 'open';
   }
   const bars = [...byKey.values()].filter((b) => b.total > 0).sort((a, b) => a.key.localeCompare(b.key)).slice(-months);
-  const current = bars.find((b) => b.open);
+  const current = bars.find((b) => toPay.has(b.key));
   if (current) current.current = true;
   return { ...stamp(cardAccounts, now), bars };
 }
