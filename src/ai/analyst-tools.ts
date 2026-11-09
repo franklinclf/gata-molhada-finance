@@ -1,21 +1,75 @@
+import { merchantOf } from '../core/merchant.ts';
 import { localDay } from '../core/time.ts';
-import { budgetsFor } from '../api/budgets.ts';
-import { explore } from '../api/explorer.ts';
+import { budgetsFor, suggestBudgets } from '../api/budgets.ts';
+import { categoryParents } from '../api/category-groups.ts';
+import { explore, type ExplorerQuery, type ExplorerRow } from '../api/explorer.ts';
 import { forecast } from '../api/forecast.ts';
 import { listGoals } from '../api/goals.ts';
+import { unregisteredIncome } from '../api/income.ts';
+import { listCategories } from '../api/mutations.ts';
 import { netWorth } from '../api/networth.ts';
 import { outlook } from '../api/outlook.ts';
 import { detectRecurring } from '../api/recurring.ts';
+import { suggestRules } from '../api/rule-suggestions.ts';
+import { listRules } from '../api/rules.ts';
+import { visibleAccounts } from '../api/scope.ts';
 import { categoryTrend } from '../api/trends.ts';
 import * as views from '../api/views.ts';
 import type { Store } from '../store/store.ts';
 
-/** What the model may ask for. Every tool only reads, and every number is computed here, not by the model. */
+/** A transaction the model was shown, as the code finds it again: its id in this run and one source record, which outlives a rebuild. */
+export interface TxTarget {
+  id: string;
+  sourceId: string;
+  externalId: string;
+}
+
+/**
+ * Short handles ("t1", "f2") for what the model was shown in this run. The code maps them back to the real ids, so a write
+ * step can only point at something the model saw in this run, and a handle from an earlier run, or an invented one, finds nothing.
+ */
+export class RefBook {
+  readonly #values = new Map<string, unknown>();
+  readonly #refOf = new Map<string, string>();
+
+  issue(prefix: 't' | 'f', key: string, make: () => unknown): string {
+    const known = this.#refOf.get(`${prefix}|${key}`);
+    if (known !== undefined) return known;
+    const ref = `${prefix}${this.#refOf.size + 1}`;
+    this.#refOf.set(`${prefix}|${key}`, ref);
+    this.#values.set(ref, make());
+    return ref;
+  }
+
+  get<T>(ref: string, prefix: 't' | 'f'): T | undefined {
+    return ref.startsWith(prefix) ? (this.#values.get(ref) as T | undefined) : undefined;
+  }
+
+  transaction(store: Store, id: string): string {
+    return this.issue('t', id, (): TxTarget => {
+      // A transaction typed in by hand has no source record: its id is the record.
+      if (id.startsWith('man_')) return { id, sourceId: 'manual', externalId: id };
+      const first = store.listTransactionLinks(id)[0];
+      return { id, sourceId: first?.sourceId ?? '', externalId: first?.externalId ?? '' };
+    });
+  }
+
+  finding(findingId: string): string {
+    return this.issue('f', findingId, () => findingId);
+  }
+}
+
+/** What a run keeps for its tools. Absent when a tool is called on its own (a test, a script). */
+export interface ToolContext {
+  refs: RefBook;
+}
+
+/** What the model may ask for. A read tool only reads, and every number is computed here, not by the model. */
 export interface Tool {
   name: string;
   /** One line for the prompt, with the arguments. */
   help: string;
-  run: (store: Store, now: Date, args: Record<string, unknown>) => unknown;
+  run: (store: Store, now: Date, args: Record<string, unknown>, ctx?: ToolContext) => unknown;
 }
 
 const reais = (cents: number): number => Math.round(cents) / 100;
@@ -57,6 +111,54 @@ function range(args: Record<string, unknown>, today: string): { from: string; to
   if (from > to) throw new ToolError('from must not be after to');
   return { from, to };
 }
+
+const accountLabel = (a: { institution: string; last4: string | null; name: string }): string => `${a.institution}${a.last4 ? ` ${a.last4}` : ` ${a.name}`}`;
+const folded = (text: string): string => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const texts = (value: unknown, max: number): string[] => (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim().slice(0, 60)).slice(0, max);
+
+/** The accounts a name can mean: the label the tools show ("Banco 1234"), the account name, or the institution alone. */
+function accountIdsFor(store: Store, names: string[]): string[] {
+  const accounts = visibleAccounts(store);
+  const ids = new Set<string>();
+  for (const name of names) {
+    const wanted = folded(name);
+    const hits = accounts.filter((a) => [accountLabel(a), `${a.institution} ${a.last4 ?? ''}`, a.name, a.institution].some((label) => folded(label) === wanted));
+    if (hits.length === 0) throw new ToolError(`no account is called "${name}"; use the accounts tool for the names`);
+    for (const a of hits) ids.add(a.id);
+  }
+  return [...ids];
+}
+
+/** The filters the transaction tools share, read from the model's arguments. A value that is not valid is left out, as `transactions` always did. */
+export function readFilter(store: Store, args: Record<string, unknown>, today: string, base: { defaultFrom: string | undefined; kind: 'all' | 'expense' | 'income' }): Pick<ExplorerQuery, 'from' | 'to' | 'kind' | 'q' | 'merchant' | 'categories' | 'min' | 'max' | 'accountIds' | 'recurrence'> {
+  const from = day(args, 'from', base.defaultFrom ?? '');
+  const to = day(args, 'to', today);
+  if (from !== '' && from > to) throw new ToolError('from must not be after to');
+  const kind = args.kind === 'income' ? 'income' : args.kind === 'expense' ? 'expense' : args.kind === 'all' ? 'all' : base.kind;
+  const cents = (key: string) => (typeof args[key] === 'number' && Number.isFinite(args[key]) && (args[key] as number) >= 0 ? Math.round((args[key] as number) * 100) : undefined);
+  const categories = [...texts(args.category, 1), ...texts(args.categories, 10)];
+  const accountNames = texts(args.accounts, 10);
+  return {
+    from: from === '' ? undefined : from, to, kind,
+    q: typeof args.q === 'string' && args.q.trim() ? args.q.trim().slice(0, 60) : undefined,
+    merchant: typeof args.merchant === 'string' && args.merchant.trim() ? args.merchant.trim().slice(0, 60) : undefined,
+    categories: categories.length > 0 ? categories : undefined,
+    min: cents('min'), max: cents('max'),
+    accountIds: accountNames.length > 0 ? accountIdsFor(store, accountNames) : undefined,
+    recurrence: args.recurrence === 'subscription' || args.recurrence === 'recurring' || args.recurrence === 'any' ? args.recurrence : undefined,
+  };
+}
+
+/** Every transaction a filter matches, one row each (a refund is not folded into its purchase), planned installments left out. */
+export function matchingRows(store: Store, now: Date, filter: ReturnType<typeof readFilter>, extra: Partial<ExplorerQuery> = {}): ExplorerRow[] {
+  const result = explore(store, { ...filter, sort: 'date_desc', limit: 100_000, offset: 0, spendingOnly: filter.kind === 'expense', hideOwnTransfers: false, includeExcluded: false, foldRefunds: false, ...extra }, now);
+  return result.items.filter((t) => t.estimated !== true);
+}
+
+const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const DIMENSIONS = ['category', 'group', 'merchant', 'month', 'account', 'institution', 'weekday'] as const;
+type Dimension = (typeof DIMENSIONS)[number];
+const MAX_GROUPS = 30;
 
 export const TOOLS: Tool[] = [
   {
@@ -108,25 +210,79 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'transactions',
-    help: 'transactions {from?, to?, q?, category?, merchant?, kind?: expense|income, min?, max? (reais, valor absoluto), limit?<=25} : lista de transações e a soma de todas as que combinam.',
-    run: (store, now, args) => {
+    help: 'transactions {from?, to?, q?, category?, merchant?, kind?: expense|income, min?, max? (reais, valor absoluto), accounts?: [nomes], recurrence?: subscription|recurring|any, limit?<=25} : lista de transações e a soma de todas as que combinam. Cada linha traz um ref (t1, t2...) que as ferramentas de alteração aceitam nesta conversa.',
+    run: (store, now, args, ctx) => {
       const today = localDay(now.toISOString());
       const r = range(args, today);
-      const kind = args.kind === 'income' ? 'income' : args.kind === 'expense' ? 'expense' : 'all';
-      const cents = (key: string) => (typeof args[key] === 'number' && Number.isFinite(args[key]) && (args[key] as number) >= 0 ? Math.round((args[key] as number) * 100) : undefined);
-      const result = explore(store, {
-        from: r.from, to: r.to, kind, sort: 'amount_desc', limit: limit(args, 15, 25), offset: 0,
-        q: typeof args.q === 'string' && args.q.trim() ? args.q.trim().slice(0, 60) : undefined,
-        merchant: typeof args.merchant === 'string' && args.merchant.trim() ? args.merchant.trim().slice(0, 60) : undefined,
-        categories: typeof args.category === 'string' && args.category.trim() ? [args.category.trim().slice(0, 60)] : undefined,
-        min: cents('min'), max: cents('max'), spendingOnly: kind === 'expense', hideOwnTransfers: false, includeExcluded: false,
-      }, now);
+      const filter = readFilter(store, args, today, { defaultFrom: r.from, kind: 'all' });
+      const result = explore(store, { ...filter, from: r.from, to: r.to, sort: 'amount_desc', limit: limit(args, 15, 25), offset: 0, spendingOnly: filter.kind === 'expense', hideOwnTransfers: false, includeExcluded: false }, now);
       return {
         de: r.from, ate: r.to,
         quantidadeTotal: result.total,
         somaEntradas: reais(result.sums.income), somaSaidas: reais(result.sums.expense),
-        transacoes: result.items.map((t) => ({ data: localDay(t.occurredAt), descricao: clip(t.description), valor: reais(t.amount), categoria: t.category, conta: `${t.account.institution}${t.account.last4 ? ` ${t.account.last4}` : ''}`, status: t.status, parcela: t.installment ? `${t.installment.number}/${t.installment.total}` : null, moedaOriginal: t.foreign ? `${t.foreign.currency} ${(t.foreign.amount / 100).toFixed(2)}` : undefined })),
+        // A planned installment is not a transaction yet, so it gets no ref.
+        transacoes: result.items.map((t) => ({ ref: t.estimated || !ctx ? undefined : ctx.refs.transaction(store, t.id), data: localDay(t.occurredAt), descricao: clip(t.description), valor: reais(t.amount), categoria: t.category, conta: `${t.account.institution}${t.account.last4 ? ` ${t.account.last4}` : ''}`, status: t.status, parcela: t.installment ? `${t.installment.number}/${t.installment.total}` : null, moedaOriginal: t.foreign ? `${t.foreign.currency} ${(t.foreign.amount / 100).toFixed(2)}` : undefined })),
         observacao: result.total > result.items.length ? `mostrando as ${result.items.length} de maior valor; as somas valem para todas as ${result.total}` : undefined,
+      };
+    },
+  },
+  {
+    name: 'aggregate',
+    help: 'aggregate {from?, to?, groupBy: [1 ou 2 de category|group|merchant|month|account|institution|weekday], metric?: sum|count|avg|max (ordena), order?: value|key, kind?: expense|income|all (padrão expense: compras já descontados os estornos, como em spending), q?, category?, categories?: [..], merchant?, min?, max?, accounts?: [nomes], recurrence?: subscription|recurring|any, limit?<=30} : agrupa as transações do período e devolve soma, quantidade, média e maior valor de cada grupo, mais o total de todas. Use para perguntas que cruzam dimensões (por exemplo categoria por mês).',
+    run: (store, now, args) => {
+      const today = localDay(now.toISOString());
+      const r = range(args, today);
+      const raw = Array.isArray(args.groupBy) ? args.groupBy : args.groupBy === undefined ? [] : [args.groupBy];
+      const dims = raw.filter((d): d is Dimension => (DIMENSIONS as readonly unknown[]).includes(d));
+      if (dims.length < 1 || dims.length > 2 || dims.length !== raw.length || new Set(dims).size !== dims.length) throw new ToolError(`groupBy must be one or two different of: ${DIMENSIONS.join(', ')}`);
+      const metric = args.metric === 'count' || args.metric === 'avg' || args.metric === 'max' ? args.metric : 'sum';
+      const filter = readFilter(store, args, today, { defaultFrom: r.from, kind: 'expense' });
+      // Expenses are net of refunds, like spending and the Gastos screen: the credits that give money back join the rows and subtract.
+      const net = filter.kind === 'expense';
+      const rows = matchingRows(store, now, { ...filter, kind: net ? 'all' : filter.kind, from: r.from, to: r.to }, net ? { netSpending: true } : {});
+      const parents = categoryParents(store);
+      const keyOf = (t: ExplorerRow, dim: Dimension): string => {
+        switch (dim) {
+          case 'category': return t.category ?? 'Sem categoria';
+          case 'group': return t.category === null ? 'Sem categoria' : (parents.get(t.category) ?? t.category);
+          case 'merchant': return merchantOf(t);
+          case 'month': return localDay(t.occurredAt).slice(0, 7);
+          case 'account': return accountLabel(t.account);
+          case 'institution': return t.account.institution;
+          case 'weekday': return WEEKDAYS[new Date(`${localDay(t.occurredAt)}T00:00:00Z`).getUTCDay()]!;
+        }
+      };
+      // An expense is shown as a positive amount; with both kinds the sign is kept (money out is negative).
+      const valueOf = (t: ExplorerRow): number => (net ? -t.amount : t.amount);
+      const groups = new Map<string, { keys: string[]; sum: number; count: number; max: number }>();
+      let total = 0;
+      let counted = 0;
+      for (const t of rows) {
+        const keys = dims.map((d) => keyOf(t, d));
+        const id = keys.join('\u0000');
+        const value = valueOf(t);
+        const g = groups.get(id) ?? { keys, sum: 0, count: 0, max: Number.NEGATIVE_INFINITY };
+        g.sum += value;
+        // A refund lowers the sum but is not a purchase: it is not counted, and it is not the biggest.
+        if (!(net && t.amount > 0)) {
+          g.count += 1;
+          counted += 1;
+          g.max = Math.max(g.max, value);
+        }
+        groups.set(id, g);
+        total += value;
+      }
+      const mean = (g: { sum: number; count: number }): number => (g.count === 0 ? 0 : g.sum / g.count);
+      const score = (g: { sum: number; count: number; max: number }): number => (metric === 'count' ? g.count : metric === 'avg' ? mean(g) : metric === 'max' ? g.max : g.sum);
+      // Months read best in order; anything else reads best from the biggest.
+      const byKey = args.order === 'key' || (args.order !== 'value' && dims.includes('month'));
+      const ordered = [...groups.values()].sort((a, b) => (byKey ? a.keys.join(' ').localeCompare(b.keys.join(' ')) : score(b) - score(a) || a.keys.join(' ').localeCompare(b.keys.join(' '))));
+      const shown = ordered.slice(0, limit(args, 15, MAX_GROUPS));
+      return {
+        de: r.from, ate: r.to, agrupadoPor: dims, ordenadoPor: byKey ? 'chave' : metric, tipo: filter.kind,
+        quantidadeTotal: counted, somaTotal: reais(total),
+        grupos: shown.map((g) => ({ chave: g.keys, soma: reais(g.sum), quantidade: g.count, media: reais(mean(g)), maior: reais(Number.isFinite(g.max) ? g.max : 0) })),
+        observacao: [net ? 'os estornos de compras já foram descontados das somas (mesmo valor das ferramentas spending e da tela Gastos); quantidade e média contam só as compras' : null, ordered.length > shown.length ? `mostrando ${shown.length} de ${ordered.length} grupos; o total vale para todos` : null].filter((x) => x !== null).join('; ') || undefined,
       };
     },
   },
@@ -217,5 +373,52 @@ export const TOOLS: Tool[] = [
     },
   },
 ];
+
+const SUGGESTION_KINDS = ['rules', 'budgets', 'duplicates', 'categories', 'income'] as const;
+const SHOWN = 10;
+
+TOOLS.push(
+  {
+    name: 'suggestions',
+    help: 'suggestions {kind?: rules|budgets|duplicates|categories|income (padrão: todas), month?} : o que o app sugere e ainda não foi resolvido: regras por estabelecimento, orçamentos pela média, possíveis lançamentos duplicados (com ref f1, f2...), categorias que a IA sugeriu e rendas detectadas sem cadastro.',
+    run: (store, now, args, ctx) => {
+      const today = localDay(now.toISOString());
+      const wanted = SUGGESTION_KINDS.includes(args.kind as never) ? [args.kind as (typeof SUGGESTION_KINDS)[number]] : [...SUGGESTION_KINDS];
+      const out: Record<string, unknown> = {};
+      if (wanted.includes('rules')) out.regras = suggestRules(store).slice(0, SHOWN).map((s) => ({ estabelecimento: s.merchant, categoria: s.category, transacoes: s.count, divergentes: s.differing }));
+      if (wanted.includes('budgets')) {
+        const m = month(args, today);
+        out.orcamentos = { mes: m, linhas: suggestBudgets(store, m, 3, now).filter((s) => !s.hasBudget).slice(0, 12).map((s) => ({ categoria: s.name, sugerido: reais(s.amount), mesesNaMedia: s.months })) };
+      }
+      if (wanted.includes('duplicates')) out.possiveisDuplicatas = store.listFindings().slice(0, SHOWN).map((f) => ({ ref: ctx?.refs.finding(f.id), resumo: f.summary, valor: typeof f.details.amount === 'number' ? reais(f.details.amount) : undefined }));
+      if (wanted.includes('categories')) {
+        const open = [...store.listAiCategories().values()].filter((e) => e.status === 'suggested').sort((a, b) => a.sample.localeCompare(b.sample));
+        out.categoriasSugeridasPelaIA = open.slice(0, SHOWN).map((e) => ({ descricao: e.sample, categoria: e.category, confianca: e.confidence }));
+      }
+      if (wanted.includes('income')) out.rendasSemCadastro = unregisteredIncome(store, now).slice(0, SHOWN).map((r) => ({ nome: r.name, valor: reais(r.amount), diaDoMes: r.dayOfMonth }));
+      return out;
+    },
+  },
+  {
+    name: 'categories',
+    help: 'categories {} : nomes das categorias que existem, com o grupo e o número de transações. Use um destes nomes ao mudar categorias; Pagamento de fatura, Transferência entre minhas contas e Investimentos definem o papel da transação.',
+    run: (store) => ({ categorias: listCategories(store).slice(0, 60).map((c) => ({ nome: c.name, grupo: c.parent, transacoes: c.count, criadaPeloDono: c.custom })) }),
+  },
+  {
+    name: 'accounts',
+    help: 'accounts {} : contas e cartões visíveis, com tipo e final. O campo conta é o nome que os filtros aceitam em accounts.',
+    run: (store) => ({ contas: visibleAccounts(store).map((a) => ({ conta: accountLabel(a), nome: a.name, instituicao: a.institution, tipo: a.kind === 'credit_card' ? 'cartão de crédito' : a.kind === 'savings' ? 'poupança' : 'conta corrente', final: a.last4 })) }),
+  },
+  {
+    name: 'rules',
+    help: 'rules {} : regras de categoria cadastradas, com o nome, a categoria que aplicam, se estão ativas e quantas transações combinam.',
+    run: (store) => ({ regras: listRules(store).slice(0, 40).map((r) => ({ nome: r.name, categoria: r.actions.category, ativa: r.active, combinam: r.matches })) }),
+  },
+  {
+    name: 'income_items',
+    help: 'income_items {} : rendas que o dono cadastrou (nome, valor, dia do mês, período).',
+    run: (store) => ({ rendas: store.listIncome().map((i) => ({ nome: i.name, valor: reais(i.amount), diaDoMes: i.dayOfMonth, desde: i.fromMonth, ate: i.untilMonth })) }),
+  },
+);
 
 export const toolByName = new Map(TOOLS.map((t) => [t.name, t]));

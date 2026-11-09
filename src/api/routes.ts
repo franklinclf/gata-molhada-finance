@@ -1,3 +1,4 @@
+import { confirmChange, declineChange, messagesWithChanges, undoChange, type ChangeResult } from '../ai/analyst-actions.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
@@ -156,12 +157,21 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const convoId = numericId(parts[3]);
         if (parts.length !== 4 || !Number.isInteger(convoId)) return null;
         if (!store.listChatConversations().some((c) => c.id === convoId)) return { status: 404, body: { error: 'not_found' } };
-        if (method === 'GET') return { status: 200, body: { items: store.listChatMessages(convoId) } };
+        if (method === 'GET') return { status: 200, body: { items: messagesWithChanges(store, now, convoId) } };
         if (method === 'DELETE') {
           store.deleteChatConversation(convoId);
           return { status: 200, body: { ok: true } };
         }
         return methodNotAllowed();
+      }
+      // Undo, confirm and cancel need no model: they are quick store calls, so they never wait for a question being answered.
+      if (resourceIs(parts, 'changes')) {
+        const changeId = numericId(parts[3]);
+        const action = parts[4];
+        if (parts.length !== 5 || !Number.isInteger(changeId) || (action !== 'undo' && action !== 'confirm' && action !== 'decline')) return null;
+        if (method !== 'POST') return methodNotAllowed();
+        const result: ChangeResult = action === 'undo' ? undoChange(store, now, changeId) : action === 'confirm' ? confirmChange(store, now, changeId) : declineChange(store, now, changeId);
+        return result.ok ? { status: 200, body: { change: result.change } } : { status: result.status, body: { error: result.error, message: result.message } };
       }
       return null;
     }

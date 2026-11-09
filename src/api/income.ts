@@ -1,6 +1,7 @@
 import type { IncomeItem, Store } from '../store/store.ts';
 import { NON_BUSINESS_RULES, type NonBusinessRule } from '../core/business-days.ts';
 import { cleanCategoryName } from './mutations.ts';
+import { detectRecurring, type RecurringItem } from './recurring.ts';
 
 export type IncomeResult<T = Record<string, never>> = { ok: true; value: T } | { ok: false; status: number; error: string };
 
@@ -46,4 +47,12 @@ export function deleteIncome(store: Store, id: number): IncomeResult {
 /** What the registered items bring in a month (YYYY-MM). */
 export function incomeIn(items: readonly IncomeItem[], month: string): number {
   return items.filter((i) => (i.fromMonth === null || i.fromMonth <= month) && (i.untilMonth === null || i.untilMonth >= month)).reduce((s, i) => s + i.amount, 0);
+}
+
+/** Monthly money in that the app detected in the bank accounts and no registered item covers (about the same amount, within 5 days of the same day). */
+export function unregisteredIncome(store: Store, now: Date): RecurringItem[] {
+  const items = store.listIncome();
+  return detectRecurring(store, now)
+    .filter((r) => r.direction === 'in' && r.account === 'bank' && r.regular && !r.stale)
+    .filter((r) => !items.some((i) => Math.abs(i.amount - r.amount) <= r.amount * 0.1 && Math.abs(i.dayOfMonth - r.dayOfMonth) <= 5));
 }

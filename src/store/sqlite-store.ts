@@ -6,7 +6,7 @@ import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, Limit
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
 import type { NonBusinessRule } from '../core/business-days.ts';
-import type { BillEdit, IncomeItem, BudgetRow, BudgetScope, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride } from './store.ts';
+import type { BillEdit, IncomeItem, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, RecordChoice, ReversalRow } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -182,6 +182,29 @@ interface FindingRow {
   last_seen_at: string;
   resolved_at: string | null;
 }
+
+interface ChangeRow {
+  id: number;
+  conversation_id: number;
+  message_id: number | null;
+  tool: string;
+  label: string;
+  count: number;
+  args_json: string;
+  before_json: string | null;
+  after_json: string | null;
+  status: ChangeStatus;
+  destructive: number;
+  undoable: number;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+const changeOf = (r: ChangeRow): ChatChange => ({
+  id: r.id, conversationId: r.conversation_id, messageId: r.message_id, tool: r.tool, label: r.label, count: r.count,
+  args: JSON.parse(r.args_json) as unknown, before: r.before_json === null ? null : (JSON.parse(r.before_json) as unknown), after: r.after_json === null ? null : (JSON.parse(r.after_json) as unknown),
+  status: r.status, destructive: r.destructive === 1, undoable: r.undoable === 1, createdAt: r.created_at, resolvedAt: r.resolved_at,
+});
 
 export function openSqliteStore(path: string, migrationsDir: string): Store {
   if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
@@ -754,6 +777,25 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return new Map(rows.map((r) => [r.id, { status: r.status, cycleKey: r.cycle_key }]));
     },
 
+    recordChoice(sourceId: string, externalId: string): RecordChoice {
+      const category = db.prepare('SELECT category FROM category_overrides WHERE source_id = ? AND external_id = ?').get(sourceId, externalId) as { category: string } | undefined;
+      const ignored = db.prepare('SELECT 1 AS yes FROM ignored_records WHERE source_id = ? AND external_id = ?').get(sourceId, externalId);
+      return { category: category?.category ?? null, ignored: ignored !== undefined };
+    },
+
+    setRecordChoice(sourceId: string, externalId: string, patch: Partial<RecordChoice>, now: string): void {
+      inTransaction(() => {
+        if ('category' in patch) {
+          if (patch.category === null || patch.category === undefined) db.prepare('DELETE FROM category_overrides WHERE source_id = ? AND external_id = ?').run(sourceId, externalId);
+          else db.prepare('INSERT INTO category_overrides (source_id, external_id, category, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET category = excluded.category, updated_at = excluded.updated_at').run(sourceId, externalId, patch.category, now);
+        }
+        if ('ignored' in patch) {
+          if (patch.ignored) db.prepare('INSERT OR IGNORE INTO ignored_records (source_id, external_id, ignored_at) VALUES (?, ?, ?)').run(sourceId, externalId, now);
+          else db.prepare('DELETE FROM ignored_records WHERE source_id = ? AND external_id = ?').run(sourceId, externalId);
+        }
+      });
+    },
+
     setTransactionOverride(transactionId: string, patch: Partial<TransactionOverride>, now: string): void {
       inTransaction(() => {
         const links = db.prepare('SELECT source_id, external_id FROM transaction_links WHERE transaction_id = ?').all(transactionId) as Array<{ source_id: string; external_id: string }>;
@@ -805,6 +847,19 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         )
         .all() as Array<{ charge_id: string; refund_id: string; linked: number }>;
       return rows.map((r) => ({ chargeId: r.charge_id, refundId: r.refund_id, linked: r.linked === 1 }));
+    },
+
+    listReversalRows(records: Array<{ sourceId: string; externalId: string }>): ReversalRow[] {
+      const rows = db.prepare('SELECT charge_source, charge_external, refund_source, refund_external, linked FROM reversal_links ORDER BY charge_source, charge_external, refund_source, refund_external').all() as Array<{ charge_source: string; charge_external: string; refund_source: string; refund_external: string; linked: number }>;
+      const wanted = new Set(records.map((r) => `${r.sourceId}|${r.externalId}`));
+      return rows
+        .filter((r) => wanted.has(`${r.charge_source}|${r.charge_external}`) || wanted.has(`${r.refund_source}|${r.refund_external}`))
+        .map((r) => ({ chargeSource: r.charge_source, chargeExternal: r.charge_external, refundSource: r.refund_source, refundExternal: r.refund_external, linked: r.linked === 1 }));
+    },
+
+    setReversalRow(row: Omit<ReversalRow, 'linked'>, linked: boolean | null, now: string): void {
+      if (linked === null) db.prepare('DELETE FROM reversal_links WHERE charge_source = ? AND charge_external = ? AND refund_source = ? AND refund_external = ?').run(row.chargeSource, row.chargeExternal, row.refundSource, row.refundExternal);
+      else db.prepare('INSERT INTO reversal_links (charge_source, charge_external, refund_source, refund_external, linked, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(charge_source, charge_external, refund_source, refund_external) DO UPDATE SET linked = excluded.linked, updated_at = excluded.updated_at').run(row.chargeSource, row.chargeExternal, row.refundSource, row.refundExternal, linked ? 1 : 0, now);
     },
 
     setReversalLink(chargeId: string, refundId: string, linked: boolean | null, now: string): boolean {
@@ -869,6 +924,7 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
 
     deleteChatConversation(id: number): void {
       inTransaction(() => {
+        db.prepare('DELETE FROM ai_changes WHERE conversation_id = ?').run(id);
         db.prepare('DELETE FROM chat_messages WHERE conversation_id = ?').run(id);
         db.prepare('DELETE FROM chat_conversations WHERE id = ?').run(id);
       });
@@ -883,6 +939,35 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       const info = db.prepare('INSERT INTO chat_messages (conversation_id, role, content, steps, model, cost_usd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(m.conversationId, m.role, m.content, m.steps ? JSON.stringify(m.steps) : null, m.model, m.costUsd, m.createdAt);
       db.prepare('UPDATE chat_conversations SET updated_at = ? WHERE id = ?').run(m.createdAt, m.conversationId);
       return Number(info.lastInsertRowid);
+    },
+
+    addChatChange(c: Omit<ChatChange, 'id'>): number {
+      const info = db.prepare('INSERT INTO ai_changes (conversation_id, message_id, tool, label, count, args_json, before_json, after_json, status, destructive, undoable, created_at, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+        c.conversationId, c.messageId, c.tool, c.label, c.count, JSON.stringify(c.args ?? null), c.before === undefined ? null : JSON.stringify(c.before), c.after === undefined ? null : JSON.stringify(c.after), c.status, c.destructive ? 1 : 0, c.undoable ? 1 : 0, c.createdAt, c.resolvedAt,
+      );
+      return Number(info.lastInsertRowid);
+    },
+
+    listChatChanges(conversationId: number): ChatChange[] {
+      return (db.prepare('SELECT * FROM ai_changes WHERE conversation_id = ? ORDER BY id').all(conversationId) as unknown as ChangeRow[]).map(changeOf);
+    },
+
+    getChatChange(id: number): ChatChange | null {
+      const row = db.prepare('SELECT * FROM ai_changes WHERE id = ?').get(id) as unknown as ChangeRow | undefined;
+      return row ? changeOf(row) : null;
+    },
+
+    updateChatChange(id: number, patch: { status: ChangeStatus; resolvedAt: string | null; after?: unknown; args?: unknown; label?: string; count?: number; before?: unknown }): void {
+      const json = (v: unknown) => JSON.stringify(v ?? null);
+      db.prepare('UPDATE ai_changes SET status = ?, resolved_at = ?, after_json = CASE WHEN ? THEN ? ELSE after_json END, before_json = CASE WHEN ? THEN ? ELSE before_json END, args_json = CASE WHEN ? THEN ? ELSE args_json END, label = COALESCE(?, label), count = COALESCE(?, count) WHERE id = ?').run(
+        patch.status, patch.resolvedAt, 'after' in patch ? 1 : 0, json(patch.after), 'before' in patch ? 1 : 0, json(patch.before), 'args' in patch ? 1 : 0, json(patch.args), patch.label ?? null, patch.count ?? null, id,
+      );
+    },
+
+    linkChatChanges(ids: number[], messageId: number): void {
+      inTransaction(() => {
+        for (const id of ids) db.prepare('UPDATE ai_changes SET message_id = ? WHERE id = ?').run(messageId, id);
+      });
     },
 
     listGoals(): Goal[] {

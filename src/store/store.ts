@@ -57,6 +57,44 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export type ChangeStatus = 'applied' | 'undone' | 'pending' | 'declined' | 'expired' | 'conflict';
+
+/** One change the analyst made to the owner's data, or proposed and left waiting for a tap. `before` and `after` are the values around the change, as JSON. */
+export interface ChatChange {
+  id: number;
+  conversationId: number;
+  /** The assistant answer that lists this change. Null until the answer is saved. */
+  messageId: number | null;
+  tool: string;
+  /** What changes, in words for the owner. */
+  label: string;
+  count: number;
+  /** The arguments as the code resolved them, to plan a pending change again. */
+  args: unknown;
+  before: unknown;
+  after: unknown;
+  status: ChangeStatus;
+  destructive: boolean;
+  undoable: boolean;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
+/** What the owner chose on one source record, read before a change so it can be put back exactly. */
+export interface RecordChoice {
+  category: string | null;
+  ignored: boolean;
+}
+
+/** A reversal choice as it is stored: on source records, not on canonical ids. */
+export interface ReversalRow {
+  chargeSource: string;
+  chargeExternal: string;
+  refundSource: string;
+  refundExternal: string;
+  linked: boolean;
+}
+
 export type BudgetScope = 'category' | 'group';
 export interface BudgetRow {
   scope: BudgetScope;
@@ -331,6 +369,15 @@ export interface Store {
   deleteChatConversation(id: number): void;
   listChatMessages(conversationId: number): ChatMessage[];
   addChatMessage(m: Omit<ChatMessage, 'id'>): number;
+  /** Saves a change of the analyst and returns its id. */
+  addChatChange(change: Omit<ChatChange, 'id'>): number;
+  /** The changes of a conversation, oldest first. */
+  listChatChanges(conversationId: number): ChatChange[];
+  getChatChange(id: number): ChatChange | null;
+  /** Moves a change to a new status. `after` is replaced only when given. */
+  updateChatChange(id: number, patch: { status: ChangeStatus; resolvedAt: string | null; after?: unknown; args?: unknown; label?: string; count?: number; before?: unknown }): void;
+  /** Ties changes made while an answer was being built to the saved answer. */
+  linkChatChanges(ids: number[], messageId: number): void;
   listGoals(): Goal[];
   saveGoal(goal: Omit<Goal, 'id'> & { id?: number }): Goal;
   deleteGoal(id: number): void;
@@ -412,6 +459,10 @@ export interface Store {
   setInstallmentOverride(transactionId: string, installment: { number: number; total: number } | null, now: string): void;
   /** What the owner says about each transaction: its status (pending or posted) and the card bill (due month) it belongs to. */
   listTransactionOverrides(): Map<string, TransactionOverride>;
+  /** The category choice and the set-aside flag of one source record. */
+  recordChoice(sourceId: string, externalId: string): RecordChoice;
+  /** Sets the given fields of one source record; a null category clears the choice. */
+  setRecordChoice(sourceId: string, externalId: string, patch: Partial<RecordChoice>, now: string): void;
   /** Sets the given fields and leaves the others alone; `null` clears a field. */
   setTransactionOverride(transactionId: string, patch: Partial<TransactionOverride>, now: string): void;
   /** Edits the owner made to card bills, by `accountId|cycleKey`. */
@@ -424,6 +475,10 @@ export interface Store {
   setBillEdit(accountId: string, cycleKey: string, edit: BillEdit | null, now: string): void;
   /** The owner's word on which credit returned which purchase (linked), or that a guessed pair is wrong (not linked). */
   listReversalLinks(): Array<{ chargeId: string; refundId: string; linked: boolean }>;
+  /** The reversal choices that involve any of these source records, as stored. */
+  listReversalRows(records: Array<{ sourceId: string; externalId: string }>): ReversalRow[];
+  /** Writes (or with null removes) one stored reversal choice, whatever else is linked. */
+  setReversalRow(row: Omit<ReversalRow, 'linked'>, linked: boolean | null, now: string): void;
   /** Links a purchase and its refund, marks the guess as wrong (false), or forgets the choice (null). False when a side has no source record (typed in by hand). */
   setReversalLink(chargeId: string, refundId: string, linked: boolean | null, now: string): boolean;
   /** Restores pending transactions that a card bill proved real: they count again. */
