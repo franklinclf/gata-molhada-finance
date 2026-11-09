@@ -220,6 +220,9 @@ function screenResponses(store: Store, now: Date, pick: { detailId: string | nul
   const call = (path: string, query = '') => apiRoute('GET', path, new URLSearchParams(query), store, now, '')?.body;
   const cardsView = call('/api/cards') as { cycles: string[] };
   const pastCycle = cardsView.cycles[1] ?? null;
+  // The Faturas widget and the Cartões page open on the current cycle, a due month: its answer is saved too, or the photo shows the open one.
+  const billsView = call('/api/cards/bills') as { bars: Array<{ key: string; current: boolean }> };
+  const currentCycle = billsView.bars.find((b) => b.current)?.key ?? null;
   const range = monthRange(now);
   const before = previousMonth(range.from);
   const conversations = call('/api/chat/conversations') as { items: Array<{ id: number }> };
@@ -232,12 +235,13 @@ function screenResponses(store: Store, now: Date, pick: { detailId: string | nul
     '/api/balances': call('/api/balances'),
     '/api/cards': cardsView,
     ...(pastCycle ? { [`/api/cards?cycle=${pastCycle}`]: call('/api/cards', `cycle=${pastCycle}`) } : {}),
+    ...(currentCycle ? { [`/api/cards?cycle=${currentCycle}`]: call('/api/cards', `cycle=${currentCycle}`) } : {}),
     '/api/income': call('/api/income'),
     '/api/version': { version: 'dev', startedAt: at, canDeploy: true },
     '/api/reset': { available: true, running: false, mode: null, step: null, startedAt: null, finishedAt: null, result: null },
     '/api/rules/suggestions': call('/api/rules/suggestions'),
     '/api/budgets/suggestions': call('/api/budgets/suggestions'),
-    '/api/cards/bills': call('/api/cards/bills'),
+    '/api/cards/bills': billsView,
     '/api/cards/forecast': call('/api/cards/forecast'),
     '/api/installments': call('/api/installments'),
     '/api/cashflow': call('/api/cashflow', `from=${range.from}&to=${range.to}`),

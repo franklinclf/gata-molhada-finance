@@ -6,7 +6,8 @@ import { Go, TxRow } from '../ui.tsx';
 import { useLoad } from '../hooks.ts';
 import { navigate, patchParams, type Route } from '../router.ts';
 import { Loading } from '../ui.tsx';
-import { cellMoney, recurringWhen } from './page-logic.ts';
+import { cellMoney } from './page-logic.ts';
+import { RecurringList } from '../RecurringList.tsx';
 
 const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const addMonths = (month: string, n: number): string => {
@@ -53,22 +54,6 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
   const current = localDay(now.toISOString()).slice(0, 7);
   const month = route.params.get('month') ?? current;
   const { data, error, loading, reload } = useLoad(() => api.calendar(month), [month]);
-  // The item just removed from the list, so one tap can bring it back.
-  const [removed, setRemoved] = useState<{ key: string; name: string; label: 'subscription' | 'recurring' | null } | null>(null);
-  // An item the owner marked only leaves the list when the mark says so; ignoring it would be overridden by the mark.
-  const remove = async (r: { key: string; name: string; manual: boolean; label: 'subscription' | 'recurring' | null }) => {
-    if (r.manual) await api.markRecurring(r.key, 'none');
-    else await api.ignoreRecurring(r.key, true);
-    setRemoved({ key: r.key, name: r.name, label: r.manual ? (r.label === 'subscription' ? 'subscription' : 'recurring') : null });
-    reload();
-  };
-  const restore = async () => {
-    if (!removed) return;
-    if (removed.label) await api.markRecurring(removed.key, removed.label);
-    else await api.ignoreRecurring(removed.key, false);
-    setRemoved(null);
-    reload();
-  };
   // One tap selects a day; a second tap on another day selects the days between; a tap on a selected single day clears it.
   const [picked, setPicked] = useState<{ from: string; to: string } | null>(null);
   const tap = (day: string) => {
@@ -127,41 +112,7 @@ export function CalendarPage({ route, now, hidden }: { route: Route; now: Date; 
       <section class="panel">
         <h2>Contas e entradas que se repetem</h2>
         <div class="muted">Achadas nas suas transações: pelo menos três, em três meses diferentes, com cerca de um mês entre elas e valor parecido. As que você marcou como recorrentes ou assinatura aparecem desde a primeira cobrança, por isso algumas têm menos de três.</div>
-        {removed && (
-          <div class="note">
-            “{removed.name}” saiu da lista. <button class="link" onClick={() => void restore()}>Desfazer</button>
-          </div>
-        )}
-        {data.recurring.length === 0 ? (
-          <div class="empty">Nenhuma ainda.</div>
-        ) : (
-          <ul class="rows tall">
-            {data.recurring.map((r) => (
-              <li key={`${r.key}|${r.dayOfMonth}`} class="recurring-row">
-                <div class="grow">
-                  <div class="clip">
-                    {r.name} {r.label === 'subscription' && <span class="badge info">assinatura</span>} {r.manual && <span class="badge muted">marcada por você</span>} {r.kind === 'variable' && <span class="badge muted">valor varia</span>} {r.account === 'card' && <span class="badge muted">no cartão</span>} {r.late && <span class="badge bad">atrasado</span>} {r.stale && <span class="badge muted">parou de cobrar</span>} {!r.regular && !r.stale && <span class="badge muted">sem periodicidade clara</span>}
-                  </div>
-                  <div class="muted">
-                    {r.regular && !r.stale ? recurringWhen(r, data.today) : `${r.occurrences} ${r.occurrences === 1 ? 'vez' : 'vezes'} · última ${dayMonth(r.lastDay)}`}
-                  </div>
-                  {r.direction === 'in' && (
-                    <Go page="accounts" params={{ renda: '1', nome: r.name, valor: String(r.amount), dia: String(r.dayOfMonth) }}>
-                      Corrigir dia ou valor
-                    </Go>
-                  )}
-                </div>
-                <strong class={r.direction === 'in' ? 'good-text' : ''}>
-                  {r.direction === 'in' ? '+' : '−'}
-                  {brl(r.amount, hidden)}
-                </strong>
-                <button class="small" title="Não é recorrente: sai desta lista e do calendário" onClick={() => void remove(r)}>
-                  Remover da lista
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <RecurringList items={data.recurring} today={data.today} hidden={hidden} onChanged={reload} />
       </section>
     </div>
   );

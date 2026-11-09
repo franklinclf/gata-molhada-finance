@@ -235,6 +235,12 @@ export interface BillEdit {
 }
 
 /** A regular income the owner typed in. It repeats every month from `fromMonth` to `untilMonth` (both optional, YYYY-MM). */
+export interface RecurringOverride {
+  name: string | null;
+  amount: number | null;
+  dayOfMonth: number | null;
+}
+
 export interface IncomeItem {
   id: number;
   name: string;
@@ -419,6 +425,10 @@ export interface Store {
   listRecurringMarks(): Map<string, 'subscription' | 'recurring'>;
   setRecurringMark(key: string, label: 'subscription' | 'recurring' | null, now: string): void;
   setRecurringIgnored(key: string, ignored: boolean, now: string): void;
+  /** The owner's corrections to a detected expense (name, amount in cents, day of the month); a null field keeps what was detected. */
+  listRecurringOverrides(): Map<string, RecurringOverride>;
+  /** Saves the corrections of a key, or removes them when `override` is null. */
+  setRecurringOverride(key: string, override: RecurringOverride | null, now: string): void;
   listManualTransactions(): ManualTransaction[];
   /** Saves a manual transaction: without an id it is created. Returns the saved one. */
   saveManualTransaction(t: Omit<ManualTransaction, 'id'> & { id?: number }, now: string): ManualTransaction;

@@ -18,10 +18,10 @@ test('a positive share that rounds to nothing reads "<1%", never "0%"', () => {
   assert.equal(shareLabel(1.33), '133%');
 });
 
-test('a month is drawn day by day, with empty days kept and only some days labelled', () => {
+test('a month is drawn day by day, with empty days kept, each labelled with its day', () => {
   const columns = flowColumns([{ day: '2026-11-03', inflow: 500, outflow: 200 }], '2026-11-01', '2026-11-06', true);
   assert.deepEqual(columns.map((c) => c.key), ['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06']);
-  assert.deepEqual(columns.map((c) => c.label), ['1', '', '', '', '5', '']);
+  assert.deepEqual(columns.map((c) => c.label), ['1', '2', '3', '4', '5', '6']);
   assert.deepEqual([columns[2]!.inflow, columns[2]!.outflow, columns[1]!.inflow], [500, 200, 0]);
 });
 

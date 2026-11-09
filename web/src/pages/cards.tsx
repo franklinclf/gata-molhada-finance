@@ -5,8 +5,10 @@ import { Bars, Meter, StackedBars } from '../charts.tsx';
 import { brl, dayMonth, localDay, monthLong, monthName } from '../format.ts';
 import { cardName } from '../names.ts';
 import { useLoad, useStoredFlag } from '../hooks.ts';
-import { navigate, patchParams, type Route } from '../router.ts';
-import { Button, Chip } from '../ds.tsx';
+import { hrefFor, navigate, patchParams, type Route } from '../router.ts';
+import { Button, ButtonLink, Chip } from '../ds.tsx';
+import { Info } from '../Info.tsx';
+import { paidNotes, SETTLE_LABEL, SETTLE_VALUE, statusCell, totalCell, type CellNote } from '../bill-history.ts';
 import { ManualForm } from '../ManualForm.tsx';
 import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
@@ -14,7 +16,7 @@ import { Select } from '../Select.tsx';
 import { BillEditor } from '../BillEditor.tsx';
 import { BillImportPanel } from '../BillImport.tsx';
 import { IncomePanel } from '../IncomePanel.tsx';
-import { choiceOf, CURRENT_CYCLE, currentLabel, cycleCaption, otherCycles, resolveCycle } from './page-logic.ts';
+import { choiceOf, CURRENT_CYCLE, CURRENT_TIP, currentLabel, cycleCaption, cycleOption, OPEN_TIP, otherCycles, resolveCycle } from './page-logic.ts';
 import { patchParams as openParams } from '../router.ts';
 
 const brlText = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
@@ -346,11 +348,12 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
   // A bill of zero with nothing in it (a card that was never used) is noise: the count says how many are left out.
   const cycles = data.cycles.filter((c) => !(c.status === 'empty' && c.charges === 0 && c.credits === 0));
   const hiddenCount = data.cycles.length - cycles.length;
+  // Each cell keeps a few words and the figures on one line; the long explanation is in the "i" (Info), and the actions stay as buttons.
   return (
     <div class="scroll-x">
     {message && <div class="error">{message}</div>}
     {hiddenCount > 0 && <div class="muted">{hiddenCount} {hiddenCount === 1 ? 'fatura vazia' : 'faturas vazias'} (sem compras e de valor zero) não {hiddenCount === 1 ? 'aparece' : 'aparecem'} aqui.</div>}
-    <table class="table">
+    <table class="table history">
       <thead>
         <tr>
           <th>Vencimento</th>
@@ -358,59 +361,56 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
           <th>Fatura</th>
           <th>Paga</th>
           <th>Situação</th>
-          <th></th>
+          <th><span class="sr-only">Ações</span></th>
         </tr>
       </thead>
       <tbody>
-        {cycles.flatMap((c) => [
+        {cycles.flatMap((c) => {
+          const total = totalCell(c, hidden);
+          const status = statusCell(c, hidden);
+          return [
           <tr key={c.key}>
-            <td>
+            <td class="num">
               <Go page="transactions" params={{ accountId, cycle: c.key }}>
                 {fullDay(c.dueDate)}
               </Go>
             </td>
-            <td>
+            <td class="num">
               {dayMonth(c.from)} a {dayMonth(c.to)}
             </td>
-            <td>{c.billTotal === null ? `${brl(c.charges - c.credits, hidden)} lançado` : brl(c.billTotal, hidden)}</td>
-            <td>
+            <td class="num">
+              <CellLine note={total} plain />
+            </td>
+            <td class="num">
               {c.billTotal === null ? '' : brl(c.paid, hidden)}
-              {c.overpaid > 0 && <div class="bad-text">pago a mais {brl(c.overpaid, hidden)}</div>}
-              {c.latePaid && <div class="muted">{brl(c.latePaid.amount, hidden)} pagos com atraso em {dayMonth(c.latePaid.day)}</div>}
+              {paidNotes(c, hidden).map((note) => (
+                <div key={note.text}>
+                  <CellLine note={note} />
+                </div>
+              ))}
             </td>
             <td>
-              <StatusBadge status={c.status} />
-              {c.adjusted && (
-                <div class="muted">
-                  {c.adjusted.by === 'auto'
-                    ? `${brl(c.adjusted.amount, hidden)} desta fatura não foi pago e provavelmente rolou para a fatura seguinte (o banco soma o que sobrou no próximo extrato, com juros), que foi paga por inteiro. Não conto de novo como devido.`
-                    : `${brl(c.adjusted.amount, hidden)} da fatura não foi cobrado (você marcou como quitada)`}{' '}
-                  {c.adjusted.by === 'auto' && (
-                    <button class="link" onClick={() => void settle(c.key, true)}>
-                      Marcar como quitada
-                    </button>
-                  )}{' '}
-                  <button class="link" onClick={() => void settle(c.key, c.adjusted?.by === 'auto' ? false : null)}>
-                    {c.adjusted.by === 'auto' ? 'Ainda devo' : 'Desfazer'}
-                  </button>
+              <div class="cell-line">
+                <StatusBadge status={c.status} />
+                {status.notes.map((note) => (
+                  <CellLine key={note.text ?? note.tip} note={note} />
+                ))}
+              </div>
+              {status.actions.length > 0 && (
+                <div class="cell-actions">
+                  {status.actions.map((action) => (
+                    <Button key={action} size="sm" onClick={() => void settle(c.key, SETTLE_VALUE[action])}>
+                      {SETTLE_LABEL[action]}
+                    </Button>
+                  ))}
                 </div>
               )}
-              {!c.adjusted && c.outstanding > 0 && (
-                <div class="muted">
-                  Falta {brl(c.outstanding, hidden)}.{' '}
-                  <button class="link" onClick={() => void settle(c.key, true)}>
-                    Marcar como quitada
-                  </button>
-                </div>
-              )}
-              {c.status === 'unknown' && c.billTotal !== null && <div class="muted">Este cartão não tem lançamentos suficientes antes desta fatura para saber se foi paga. Se foi, marque em Editar.</div>}
-              {c.edited && <div class="muted">editada por você</div>}
             </td>
             <td>
               {c.status !== 'open' && (
-                <button class="link" onClick={() => setEditing(editing === c.key ? null : c.key)}>
+                <Button size="sm" variant="ghost" aria-expanded={editing === c.key} onClick={() => setEditing(editing === c.key ? null : c.key)}>
                   {editing === c.key ? 'Fechar' : 'Editar'}
-                </button>
+                </Button>
               )}
             </td>
           </tr>,
@@ -423,10 +423,27 @@ function History({ accountId, hidden }: { accountId: string; hidden: boolean }) 
                 </tr>,
               ]
             : []),
-        ])}
+          ];
+        })}
       </tbody>
     </table>
     </div>
+  );
+}
+
+/** A few words of a table cell, kept on one line, with the "i" that holds the long explanation. */
+function CellLine({ note, plain = false }: { note: CellNote; /** The figure of the cell itself, in the normal text colour. */ plain?: boolean }) {
+  if (note.text === null) return note.tip ? <Info tip={note.tip} /> : null;
+  return (
+    <span class={note.bad ? 'nowrap bad-text' : plain ? 'nowrap' : 'nowrap muted'}>
+      {note.text}
+      {note.tip && (
+        <>
+          {' '}
+          <Info tip={note.tip} />
+        </>
+      )}
+    </span>
   );
 }
 
@@ -460,8 +477,12 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
   const c = card.cycle;
   const late = card.nextDueDate !== null && card.nextDueDate < today;
   const owed = isOpen ? owedAboveIssuer(card) : null;
+  // A bill with no listed purchase would open an empty list, so the card says why there is nothing to see instead of offering it.
+  const nothingListed = c !== null && c.charges === 0 && c.credits === 0;
+  // With the history or the editor open the card takes the whole row: the table gets room, and the closed cards keep their buttons level.
   return (
-    <section class="panel">
+    <section class={history || editing ? 'panel card-block expanded' : 'panel card-block'}>
+      <div class="card-main">
       <div class="row-head">
         <h2>
           {cardName(card.institution, card.name)}
@@ -542,26 +563,30 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
           </div>
         </>
       )}
-      <div class="links">
-        {/* A bill with no listed purchase would open an empty list, so the link says why there is nothing to see. */}
-        {c && c.charges === 0 && c.credits === 0 ? (
-          <span class="muted">Sem compras listadas nesta fatura{card.plannedInstallments > 0 ? `; ${brl(card.plannedInstallments, hidden)} são parcelas que o banco ainda não listou` : ''}</span>
-        ) : (
-          <Go page="transactions" params={{ accountId: card.id, cycle: c ? (cycle === 'open' ? 'open' : c.key) : undefined }}>
-            Ver transações da fatura
-          </Go>
+      {nothingListed && <div class="muted">Sem compras listadas nesta fatura{card.plannedInstallments > 0 ? `; ${brl(card.plannedInstallments, hidden)} são parcelas que o banco ainda não listou` : ''}</div>}
+      <div class="card-actions">
+        {!nothingListed && (
+          <ButtonLink size="sm" href={hrefFor('transactions', { accountId: card.id, cycle: c ? (cycle === 'open' ? 'open' : c.key) : undefined })} title="Ver as transações desta fatura">
+            Ver transações
+          </ButtonLink>
         )}
+        {/* Short labels, so the three fit in one row on the narrowest card of the grid. */}
         {c && c.status !== 'open' && (
-          <button class="link" onClick={() => setEditing(!editing)}>
-            {editing ? 'Fechar edição' : 'Editar esta fatura'}
-          </button>
+          <Button size="sm" aria-expanded={editing} onClick={() => setEditing(!editing)}>
+            {editing ? 'Fechar edição' : 'Editar fatura'}
+          </Button>
         )}
-        <button class="link" onClick={() => setHistory(!history)}>
-          {history ? 'Ocultar histórico' : 'Histórico de faturas'}
-        </button>
+        <Button size="sm" aria-expanded={history} title="Histórico de faturas deste cartão" onClick={() => setHistory(!history)}>
+          {history ? 'Ocultar histórico' : 'Histórico'}
+        </Button>
       </div>
-      {editing && c && <BillEditor accountId={card.id} cycle={c} onDone={() => setEditing(false)} />}
-      {history && <History accountId={card.id} hidden={hidden} />}
+      </div>
+      {(editing || history) && (
+        <div class="card-detail">
+          {editing && c && <BillEditor accountId={card.id} cycle={c} onDone={() => setEditing(false)} />}
+          {history && <History accountId={card.id} hidden={hidden} />}
+        </div>
+      )}
     </section>
   );
 }
@@ -623,16 +648,20 @@ function ForecastTab({ hidden, installments, route }: { hidden: boolean; install
           <tbody>
             {data.months.map((m) => (
               <tr key={m.key} onClick={() => setOpen(open === m.key ? null : m.key)} class="clickable-row">
-                <td>
+                <td class="num">
                   {monthName(m.key)}
-                  {m.open ? ' (em aberto)' : ''}
+                  {m.open && <div class="muted">em aberto</div>}
                 </td>
-                <td>{brl(m.installments, hidden)}</td>
-                <td>{brl(m.recurring, hidden)}</td>
-                {guess && <td>{brl(m.variable, hidden)}</td>}
-                <td>
+                <td class="num">{brl(m.installments, hidden)}</td>
+                <td class="num">{brl(m.recurring, hidden)}</td>
+                {guess && <td class="num">{brl(m.variable, hidden)}</td>}
+                <td class="num">
                   <strong>{brl(totalOf(m), hidden)}</strong>
-                  {m.known > 0 && <div class="muted">já tem {brl(m.known, hidden)}</div>}
+                  {m.known > 0 && (
+                    <div class="muted">
+                      já tem {brl(m.known, hidden)} <Info tip="O que já é real neste mês: as faturas que o banco publicou e o que as faturas abertas já somam." label="Sobre o que o mês já tem" />
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -846,7 +875,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
               label: monthName(b.key).slice(0, 3),
               value: b.total,
               color: b.status === 'open' ? 'var(--accent)' : b.status === 'paid' ? 'var(--good)' : b.status === 'overdue' ? 'var(--bad)' : b.status === 'unknown' ? 'var(--muted)' : 'var(--warn)',
-              tip: `Venc. ${monthName(b.key)}\n${hidden ? '••••' : brl(b.total)}${b.open ? ` · ${b.openCards} em aberto${b.closedCards > 0 ? `, ${b.closedCards} já fechada${b.closedCards === 1 ? '' : 's'}` : ''}` : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
+              tip: `Venc. ${monthName(b.key)}${b.current ? ' · ciclo atual' : ''}\n${hidden ? '••••' : brl(b.total)}${b.open ? ` · ${b.openCards} em aberto${b.closedCards > 0 ? `, ${b.closedCards} já fechada${b.closedCards === 1 ? '' : 's'}` : ''}` : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
             }))}
           />
           <div class="legend">
@@ -861,10 +890,10 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
       {tab === 'cards' && (
         <div class="filters">
           <div class="seg" role="group" aria-label="Faturas em exibição">
-            <button class={choice === CURRENT_CYCLE ? 'tab on' : 'tab'} aria-pressed={choice === CURRENT_CYCLE} onClick={() => patchParams({ cycle: null })}>
+            <button class={choice === CURRENT_CYCLE ? 'tab on' : 'tab'} aria-pressed={choice === CURRENT_CYCLE} onClick={() => patchParams({ cycle: null })} data-tip={CURRENT_TIP}>
               {currentLabel(currentBill)}
             </button>
-            <button class={choice === 'open' ? 'tab on' : 'tab'} aria-pressed={choice === 'open'} onClick={() => patchParams({ cycle: 'open' })}>
+            <button class={choice === 'open' ? 'tab on' : 'tab'} aria-pressed={choice === 'open'} onClick={() => patchParams({ cycle: 'open' })} data-tip={OPEN_TIP}>
               Em aberto
             </button>
           </div>
@@ -872,7 +901,7 @@ export function CardsPage({ route, hidden, now }: { route: Route; now: Date; hid
             ariaLabel="Outros ciclos"
             value={/^\d{4}-\d{2}$/.test(choice) ? choice : ''}
             placeholder="Outros ciclos"
-            options={otherCycles(data?.cycles ?? [], currentBill, choice).map((c) => ({ value: c, label: `Faturas com vencimento em ${monthName(c)}` }))}
+            options={otherCycles(data?.cycles ?? [], currentBill, choice, bills.data?.bars).map(cycleOption)}
             onChange={(value) => value !== '' && patchParams({ cycle: choiceOf(value, currentBill) === CURRENT_CYCLE ? null : value })}
           />
         </div>

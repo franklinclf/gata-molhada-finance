@@ -6,7 +6,7 @@ import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, Limit
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
 import type { NonBusinessRule } from '../core/business-days.ts';
-import type { BillEdit, BillImport, BillImportAccount, IncomeItem, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, TransactionName, RecordChoice, ReversalRow } from './store.ts';
+import type { BillEdit, BillImport, BillImportAccount, IncomeItem, RecurringOverride, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, TransactionName, RecordChoice, ReversalRow } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -1026,6 +1026,16 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     setRecurringIgnored(key: string, ignored: boolean, now: string): void {
       if (ignored) db.prepare('INSERT OR IGNORE INTO recurring_ignored (key, created_at) VALUES (?, ?)').run(key, now);
       else db.prepare('DELETE FROM recurring_ignored WHERE key = ?').run(key);
+    },
+
+    listRecurringOverrides(): Map<string, RecurringOverride> {
+      const rows = db.prepare('SELECT key, name, amount, day_of_month FROM recurring_overrides').all() as Array<{ key: string; name: string | null; amount: number | null; day_of_month: number | null }>;
+      return new Map(rows.map((r) => [r.key, { name: r.name, amount: r.amount, dayOfMonth: r.day_of_month }]));
+    },
+
+    setRecurringOverride(key: string, override: RecurringOverride | null, now: string): void {
+      if (override === null) db.prepare('DELETE FROM recurring_overrides WHERE key = ?').run(key);
+      else db.prepare('INSERT INTO recurring_overrides (key, name, amount, day_of_month, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (key) DO UPDATE SET name = excluded.name, amount = excluded.amount, day_of_month = excluded.day_of_month, updated_at = excluded.updated_at').run(key, override.name, override.amount, override.dayOfMonth, now);
     },
 
     listManualTransactions(): ManualTransaction[] {

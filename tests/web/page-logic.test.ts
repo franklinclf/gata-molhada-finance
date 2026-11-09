@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { billPaymentNote, cellMoney, choiceOf, countNote, currentLabel, cycleCaption, endpoints, estimatedNote, otherCycles, resolveCycle, internalNote, localStamp, recurringWhen, splitZero, tileSums, times, trendChange, whenAhead } from '../../web/src/pages/page-logic.ts';
+import { billPaymentNote, cellMoney, choiceOf, countNote, currentLabel, cycleCaption, cycleOption, endpoints, estimatedNote, otherCycles, resolveCycle, internalNote, localStamp, recurringWhen, splitZero, tileSums, times, trendChange, whenAhead } from '../../web/src/pages/page-logic.ts';
 
 const NOW = new Date('2026-11-08T15:00:00Z');
 
@@ -112,6 +112,37 @@ test('the dropdown lists the other cycles, newest first, with no "Em aberto" and
   // A month picked on the chart is listed even when no bill of it is closed yet.
   assert.deepEqual(otherCycles(['2026-10'], '2026-11', '2026-12'), ['2026-12', '2026-10']);
   assert.deepEqual(otherCycles(['2026-10'], '2026-11', 'open'), ['2026-10']);
+});
+
+/** Bars as /api/cards/bills sends them on three days of one story: November closed and unpaid, then paid, or past due and unpaid. */
+const bar = (key: string, status: string, current: boolean, open = false) => ({ key, status, current, open });
+const NOV_CLOSED_UNPAID = [bar('2026-10', 'paid', false), bar('2026-11', 'unpaid', true), bar('2026-12', 'open', false, true)];
+const NOV_PAID = [bar('2026-10', 'paid', false), bar('2026-11', 'paid', false), bar('2026-12', 'open', true, true)];
+const NOV_PAST_DUE = [bar('2026-10', 'paid', false), bar('2026-11', 'overdue', true), bar('2026-12', 'open', false, true)];
+const CLOSED = ['2026-11', '2026-10'];
+
+test('current cycle: a closed bill not paid yet is the current cycle, and the open month moves to "Outros ciclos"', () => {
+  assert.equal(resolveCycle('current', NOV_CLOSED_UNPAID), '2026-11');
+  assert.equal(currentLabel(resolveCycle('current', NOV_CLOSED_UNPAID)), 'Ciclo atual (nov)');
+  assert.deepEqual(otherCycles(CLOSED, '2026-11', 'current', NOV_CLOSED_UNPAID).map((c) => cycleOption(c).label), ['Venc. dez/2026', 'Venc. out/2026']);
+  // A click on the open month's bar picks that month, not the current button.
+  assert.equal(choiceOf('2026-12', '2026-11'), '2026-12');
+});
+
+test('current cycle: after the payment the open month is current and the paid one is listed with the others', () => {
+  assert.equal(resolveCycle('current', NOV_PAID), '2026-12');
+  assert.equal(currentLabel('2026-12'), 'Ciclo atual (dez)');
+  assert.deepEqual(otherCycles(CLOSED, '2026-12', 'current', NOV_PAID), ['2026-11', '2026-10']);
+});
+
+test('current cycle: a bill past its due day and unpaid keeps the current cycle', () => {
+  assert.equal(resolveCycle('current', NOV_PAST_DUE), '2026-11');
+  assert.equal(choiceOf('2026-11', resolveCycle('current', NOV_PAST_DUE)), 'current');
+  assert.ok(!otherCycles(CLOSED, '2026-11', 'current', NOV_PAST_DUE).includes('2026-11'));
+});
+
+test('the dropdown options are short: "Venc." and the month', () => {
+  assert.deepEqual(cycleOption('2026-12'), { value: '2026-12', label: 'Venc. dez/2026' });
 });
 
 test('the caption says what each view counts', () => {

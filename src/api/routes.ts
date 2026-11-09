@@ -11,7 +11,7 @@ import { ESTIMATED_PREFIX, estimatedDetail, installments } from './installments.
 import { createGoal, deleteGoal, listGoals, updateGoal, type GoalResult } from './goals.ts';
 import { calendar } from './calendar.ts';
 import { outlook } from './outlook.ts';
-import { detectRecurring, ignoreRecurring, markRecurring } from './recurring.ts';
+import { detectRecurring, ignoredRecurring, ignoreRecurring, markRecurring, overrideRecurring } from './recurring.ts';
 import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
 import { compareMonths, isMonth } from './compare.ts';
 import { categoryTrend } from './trends.ts';
@@ -213,6 +213,12 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const input = parseBody(body);
         if (!input || !('label' in input)) return badRequest('body must be { key, label } with subscription, recurring, none or null');
         return fromMutation(markRecurring(store, input.key, input.label, now));
+      }
+      if (parts.length === 3 && id === 'ignored') return method === 'GET' ? { status: 200, body: { items: ignoredRecurring(store, now, opts) } } : methodNotAllowed();
+      if (parts.length === 3 && id === 'override') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? fromMutation(overrideRecurring(store, input, now)) : badRequest('body must be { key, name?, amount?, dayOfMonth? }');
       }
       if (parts.length === 3 && id === 'ignore') {
         if (method !== 'POST') return methodNotAllowed();

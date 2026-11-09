@@ -6,7 +6,7 @@ import { addDays, addMonthsToDay, cyclesFor, isCardPayment } from '../../src/api
 import { effectiveTransactions } from '../../src/api/scope.ts';
 import { runReconciliation } from '../../src/reconcile/run.ts';
 import { account as sourceAccount, tx as sourceTx } from '../support/builders.ts';
-import { cardBills, cards } from '../../src/api/views.ts';
+import { cardBills, cards, holdsCurrent } from '../../src/api/views.ts';
 import { editBill } from '../../src/api/mutations.ts';
 import { billCheck } from '../../src/api/bill-check.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -171,6 +171,46 @@ test('bill bars: one per due month with the cards added, then the open cycle', (
   assert.deepEqual(v.bars.map((b) => [b.key, b.status, b.total, b.outstanding]), [['2026-09', 'paid', 80000, 0], ['2026-10', 'paid', 68000, 0], ['2026-11', 'open', 28090, 0]]);
   const unpaid = setup({ payments: false });
   assert.deepEqual(cardBills(unpaid.store, NOW).bars.map((b) => [b.key, b.status]), [['2026-09', 'overdue'], ['2026-10', 'overdue'], ['2026-11', 'open']]);
+});
+
+/** The September bill is paid; the October one (due 15/10) is closed and paid only when `paidOn` is given. */
+function octoberUnpaid(paidOn?: string) {
+  const { store } = setup({ payments: false });
+  const list = [tx('start', 'card1', '2026-08-01', -100), tx('buy-sep', 'card1', '2026-09-02', -80000), tx('buy-oct', 'card1', '2026-10-02', -68000), tx('buy-open', 'card1', '2026-10-10', -600), tx('pay-sep', 'card1', '2026-09-15', 80000, 'Pagamento de cartão de crédito')];
+  if (paidOn) list.push(tx('pay-oct', 'card1', paidOn, 68000, 'Pagamento de cartão de crédito'));
+  store.replaceCanonicalTransactions(list, [], NOW.toISOString());
+  return store;
+}
+const currentOn = (store: ReturnType<typeof octoberUnpaid>, day: string) => cardBills(store, new Date(`${day}T15:00:00Z`)).bars.filter((b) => b.current).map((b) => b.key);
+
+test('current cycle: a closed bill not paid yet stays the current cycle until its due day, while the next month is still open', () => {
+  const store = octoberUnpaid();
+  const bars = cardBills(store, new Date('2026-10-12T15:00:00Z')).bars;
+  assert.deepEqual(bars.map((b) => [b.key, b.status, b.open]), [['2026-09', 'paid', false], ['2026-10', 'unpaid', false], ['2026-11', 'open', true]]);
+  assert.deepEqual(currentOn(store, '2026-10-12'), ['2026-10'], 'the open November cycle is not current while October is still to pay');
+  assert.deepEqual(currentOn(store, '2026-10-15'), ['2026-10'], 'on the due day itself, unpaid, October is still current');
+});
+
+test('current cycle: once the closed bill is paid, the open cycle becomes current', () => {
+  assert.deepEqual(currentOn(octoberUnpaid('2026-10-15'), '2026-10-15'), ['2026-11'], 'paid on the due day');
+  assert.deepEqual(currentOn(octoberUnpaid('2026-10-11'), '2026-10-12'), ['2026-11'], 'paid before the due day: nothing is left to pay in October');
+});
+
+test('current cycle: a bill past its due day and still unpaid is still the current cycle', () => {
+  const store = octoberUnpaid();
+  const oct = cardBills(store, NOW).bars.find((b) => b.key === '2026-10')!;
+  assert.deepEqual([oct.status, oct.current], ['overdue', true]);
+  assert.deepEqual(currentOn(store, '2026-10-27'), ['2026-10']);
+});
+
+test('current cycle: a bill whose payment cannot be seen holds the month until its due day, a paid one does not', () => {
+  assert.equal(holdsCurrent({ status: 'unknown', outstanding: 0, dueDate: '2026-11-15' }, '2026-11-15'), true);
+  assert.equal(holdsCurrent({ status: 'unknown', outstanding: 0, dueDate: '2026-11-15' }, '2026-11-16'), false);
+  assert.equal(holdsCurrent({ status: 'open', outstanding: 0, dueDate: '2026-12-15' }, '2026-11-16'), true);
+  assert.equal(holdsCurrent({ status: 'paid', outstanding: 0, dueDate: '2026-11-15' }, '2026-11-10'), false);
+  assert.equal(holdsCurrent({ status: 'rolled', outstanding: 0, dueDate: '2026-11-15' }, '2026-11-10'), false);
+  assert.equal(holdsCurrent({ status: 'partial', outstanding: 5000, dueDate: '2026-11-15' }, '2026-11-10'), true);
+  assert.equal(holdsCurrent({ status: 'overdue', outstanding: 5000, dueDate: '2026-11-15' }, '2026-12-01'), true);
 });
 
 test('a leftover on an old bill is written off when every later bill was paid in full, and the user can overrule it', () => {

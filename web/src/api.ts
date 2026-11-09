@@ -209,6 +209,10 @@ export const api = {
   recurring: () => request<{ items: RecurringItem[] }>('/api/recurring'),
   markRecurring: (key: string, label: 'subscription' | 'recurring' | 'none' | null) =>
     request<{ ok: true }>('/api/recurring/mark', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, label }) }),
+  ignoredRecurring: () => request<{ items: RecurringItem[] }>('/api/recurring/ignored'),
+  /** Corrects the name, expected amount (cents) and day of a detected expense; null fields go back to the detected value. */
+  overrideRecurring: (key: string, edit: { name: string | null; amount: number | null; dayOfMonth: number | null }) =>
+    request<{ ok: true }>('/api/recurring/override', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, ...edit }) }),
   ignoreRecurring: (key: string, ignored: boolean) =>
     request<{ ok: true }>('/api/recurring/ignore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key, ignored }) }),
   spendingCompare: (month?: string) => request<CompareView>(`/api/spending/compare${query({ month })}`),
