@@ -77,7 +77,7 @@ export interface TransactionLink {
   sourceId: SourceId;
   externalId: string;
   transactionId: string;
-  /** 0 = first record of the group; 1 = same instant; 2 = same day; 3 = installment; 4 = same amount within 36 hours; 9 = joined by the user. */
+  /** 0 = first record of the group; 1 = same instant; 2 = same day; 3 = installment; 4 = same amount within 36 hours; 5 = same amount on the same bill; 9 = joined by the user. */
   matchPass: number;
 }
 

@@ -98,6 +98,29 @@ function billsOf(store: Store, account: CanonicalAccount): BillInfo[] {
     .sort((a, b) => a.closing.localeCompare(b.closing));
 }
 
+/**
+ * Every source's bills, less the ones a better-ranked source already gives for the same card and due month (the rule
+ * billsOf uses: Pluggy's bill wins over the PDF of the same statement). Two copies of one bill would otherwise be two
+ * bills for boleto matching and closing days. Bills of the best source of a month are all kept, as they come.
+ */
+export function publishedSourceBills(store: Store): StoredSourceBill[] {
+  const cardOf = new Map<string, string>();
+  for (const a of store.listCanonicalAccounts()) if (a.kind === 'credit_card') for (const r of a.refs) cardOf.set(`${r.sourceId}|${r.externalId}`, a.id);
+  const owner = new Map<string, string>();
+  const kept: StoredSourceBill[] = [];
+  for (const sourceId of sourcePriority(store)) {
+    for (const bill of store.listSourceBills(sourceId)) {
+      const card = cardOf.get(`${sourceId}|${bill.accountExternalId}`);
+      const key = card === undefined ? null : `${card}|${bill.dueDate.slice(0, 7)}`;
+      const first = key === null ? undefined : owner.get(key);
+      if (first !== undefined && first !== sourceId) continue;
+      if (key !== null) owner.set(key, sourceId);
+      kept.push(bill);
+    }
+  }
+  return kept;
+}
+
 const SAME_PAYMENT_DAYS = 3;
 /** Days after an expected closing during which a missing bill is read as "not published yet", not as a closed month. */
 const PUBLISH_GRACE_DAYS = 7;

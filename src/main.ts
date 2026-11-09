@@ -26,7 +26,7 @@ import { Observer } from './scheduler/observer.ts';
 import { createResetter } from './sync/reset.ts';
 import { reconcileAfterSync } from './scheduler/reconcile-after-sync.ts';
 import { openSqliteStore } from './store/sqlite-store.ts';
-import { buildAdapters } from './sync/adapters.ts';
+import { activeSourceIds, buildAdapters } from './sync/adapters.ts';
 import { loadAdapterEnv } from './sync/config.ts';
 
 const migrationsDir = fileURLToPath(new URL('../migrations', import.meta.url));
@@ -60,7 +60,8 @@ if (authConfig && !relyingParty) console.warn('PUBLIC_ORIGIN is not set to an ht
 const auth = new AuthService(store, authConfig, () => new Date(), {}, relyingParty);
 const adapters = buildAdapters(loadAdapterEnv(process.env), { store, http: retryingClient(fetchHttpClient()) });
 // A source with no adapter any more (the Pierre integration was removed) keeps its saved records but stops reporting freshness.
-const retired = store.retireSourcesExcept(adapters.map((a) => a.id));
+// PDF statements have no adapter either, and stay active (`activeSourceIds`).
+const retired = store.retireSourcesExcept(activeSourceIds(adapters));
 if (retired.length > 0) console.log(`retired sources, kept as saved history: ${retired.join(', ')}`);
 /** How many before-reset copies stay in the backups folder. */
 const KEEP_RESET_COPIES = 3;

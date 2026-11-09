@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { formatBRL } from '../core/money.ts';
+import { MANUAL_IMPORT_SOURCES } from '../core/sources.ts';
 import type { AccountKind, SourceAccount, SourceId } from '../core/types.ts';
 import { institutionKey, normalizeName } from './names.ts';
 import type { AccountRef, CanonicalAccount, LimitGroup } from '../core/canonical.ts';
@@ -84,6 +85,29 @@ interface Placement {
   member: SourceAccount;
 }
 
+/**
+ * A card account of one source that the owner tied to a card account of another (a PDF statement's card to the Pluggy
+ * card). It joins that card's cluster before any scoring, because sibling cards of one bank can share days and amounts
+ * and a score could pick the wrong one. One source can pin several accounts to one card (two cards on one statement).
+ */
+export interface AccountPin {
+  sourceId: SourceId;
+  externalId: string;
+  targetSourceId: SourceId;
+  targetExternalId: string;
+}
+
+function pinnedPlacement(clusters: Cluster[], group: SourceAccount[], sourceId: SourceId, pins: readonly AccountPin[]): Placement | null {
+  for (const member of group) {
+    const pin = pins.find((p) => p.sourceId === sourceId && p.externalId === member.externalId);
+    if (!pin) continue;
+    const isTarget = (s: SourceId, a: SourceAccount) => s === pin.targetSourceId && a.externalId === pin.targetExternalId;
+    const cluster = clusters.find((c) => c.kind === member.kind && (c.members.some((m) => isTarget(m.sourceId, m.account)) || c.duplicates.some((d) => isTarget(d.sourceId, d.account))));
+    if (cluster) return { cluster, member };
+  }
+  return null;
+}
+
 function bestPlacement(clusters: Cluster[], group: SourceAccount[], sourceId: SourceId, keys: Map<string, Keys>): Placement | null {
   let best: { placement: Placement; score: number; sameInstitution: boolean } | null = null;
   const twins = group.length > 1;
@@ -138,14 +162,14 @@ function pickRepresentative(view: SourceView, group: SourceAccount[]): SourceAcc
   return ranked[0] as SourceAccount;
 }
 
-export function reconcileAccounts(views: SourceView[]): AccountReconciliation {
+export function reconcileAccounts(views: SourceView[], pins: readonly AccountPin[] = []): AccountReconciliation {
   const ordered = [...views].sort((a, b) => a.priority - b.priority || a.sourceId.localeCompare(b.sourceId));
   const clusters: Cluster[] = [];
 
   for (const view of ordered) {
     const keys = keysByAccount(view);
     for (const group of groupDuplicates(view.accounts)) {
-      const placement = bestPlacement(clusters, group, view.sourceId, keys);
+      const placement = pinnedPlacement(clusters, group, view.sourceId, pins) ?? bestPlacement(clusters, group, view.sourceId, keys);
       if (placement) {
         addMember(placement.cluster, view, placement.member, group, keys);
         continue;
@@ -222,10 +246,11 @@ export function reconcileAccounts(views: SourceView[]): AccountReconciliation {
     for (const d of cluster.duplicates) {
       notes.push(`${label}: ignored a duplicate copy in ${d.sourceId} (listed under ${d.account.institution})`);
     }
-    if (cluster.institutionKey !== 'manual' && cluster.members.length < ordered.length) {
+    if (cluster.institutionKey !== 'manual') {
       const present = new Set(cluster.members.map((m) => m.sourceId));
-      const missing = ordered.filter((v) => !present.has(v.sourceId)).map((v) => v.sourceId);
-      notes.push(`${label}: not found in ${missing.join(', ')}`);
+      // A statement uploaded by hand covers the cards the owner chose, so a card it lacks is not news.
+      const missing = ordered.filter((v) => !present.has(v.sourceId) && !MANUAL_IMPORT_SOURCES.includes(v.sourceId)).map((v) => v.sourceId);
+      if (missing.length > 0) notes.push(`${label}: not found in ${missing.join(', ')}`);
     }
     const balances = new Set(cluster.members.map((m) => m.account.balance));
     if (balances.size > 1) {

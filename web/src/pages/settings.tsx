@@ -14,6 +14,7 @@ import { Button, ButtonLink } from '../ds.tsx';
 import { allPalettes, chooseAccent, choosePalette, colorsOf, customPalettes, deleteCustomPalette, savedAccent, savedPalette, saveCustomPalette, type CustomColors, type CustomPalette } from '../theme.ts';
 import { RulesTab } from './rules.tsx';
 import { StatusPage } from './status.tsx';
+import { BillImportPanel } from '../BillImport.tsx';
 
 const KIND: Record<string, string> = { checking: 'Conta corrente', savings: 'Poupança', credit_card: 'Cartão de crédito' };
 
@@ -647,7 +648,7 @@ function ResetPanel() {
   );
 }
 
-function DataTab() {
+function DataTab({ hidden }: { hidden: boolean }) {
   const [passphrase, setPassphrase] = useState('');
   const [again, setAgain] = useState('');
   const [busy, setBusy] = useState(false);
@@ -726,6 +727,7 @@ function DataTab() {
         )}
       </section>
       <ResetPanel />
+      <BillImportPanel hidden={hidden} />
       <section class="panel">
         <h2>Backup</h2>
         <p class="muted">
@@ -914,7 +916,7 @@ export function SettingsPage({ route, hidden, now }: { route: Route; hidden: boo
           Segurança
         </button>
       </div>
-      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'data' ? <><StatusPage now={now} hidden={hidden} embedded /><DataTab /></> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : tab === 'appearance' ? <AppearanceTab /> : <AccountsTab hidden={hidden} />}
+      {tab === 'categories' ? <CategoriesTab hidden={hidden} /> : tab === 'rules' ? <RulesTab hidden={hidden} /> : tab === 'data' ? <><StatusPage now={now} hidden={hidden} embedded /><DataTab hidden={hidden} /></> : tab === 'ai' ? <AiTab hidden={hidden} /> : tab === 'security' ? <SecurityTab now={now} /> : tab === 'appearance' ? <AppearanceTab /> : <AccountsTab hidden={hidden} />}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, Limit
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
 import type { NonBusinessRule } from '../core/business-days.ts';
-import type { BillEdit, IncomeItem, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, RecordChoice, ReversalRow } from './store.ts';
+import type { BillEdit, BillImport, BillImportAccount, IncomeItem, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, RecordChoice, ReversalRow } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -1230,6 +1230,60 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         }
       });
       return { removed: gone.length, skipped: false };
+    },
+
+    deleteSourceBillRecords(sourceId: SourceId, billId: string): { transactions: number; bills: number } {
+      let transactions = 0;
+      let bills = 0;
+      inTransaction(() => {
+        transactions = Number(db.prepare('DELETE FROM source_transactions WHERE source_id = ? AND bill_id = ?').run(sourceId, billId).changes);
+        bills = Number(db.prepare('DELETE FROM source_bills WHERE source_id = ? AND external_id = ?').run(sourceId, billId).changes);
+      });
+      return { transactions, bills };
+    },
+
+    deleteEmptySourceAccounts(sourceId: SourceId): number {
+      return Number(
+        db
+          .prepare(
+            `DELETE FROM source_accounts WHERE source_id = ?
+               AND NOT EXISTS (SELECT 1 FROM source_transactions t WHERE t.source_id = source_accounts.source_id AND t.account_external_id = source_accounts.external_id)
+               AND NOT EXISTS (SELECT 1 FROM source_bills b WHERE b.source_id = source_accounts.source_id AND b.account_external_id = source_accounts.external_id)`,
+          )
+          .run(sourceId).changes,
+      );
+    },
+
+    listBillImportAccounts(): BillImportAccount[] {
+      const rows = db.prepare('SELECT * FROM bill_import_accounts ORDER BY pdf_account_external_id').all() as Array<{ pdf_account_external_id: string; target_source_id: string; target_source_account_external_id: string }>;
+      return rows.map((r) => ({ pdfAccountExternalId: r.pdf_account_external_id, targetSourceId: r.target_source_id, targetExternalId: r.target_source_account_external_id }));
+    },
+
+    setBillImportAccount(pin: BillImportAccount, now: string): void {
+      db.prepare(
+        `INSERT INTO bill_import_accounts (pdf_account_external_id, target_source_id, target_source_account_external_id, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (pdf_account_external_id) DO UPDATE SET target_source_id = excluded.target_source_id, target_source_account_external_id = excluded.target_source_account_external_id, updated_at = excluded.updated_at`,
+      ).run(pin.pdfAccountExternalId, pin.targetSourceId, pin.targetExternalId, now);
+    },
+
+    listBillImports(): BillImport[] {
+      const rows = db.prepare('SELECT * FROM bill_imports ORDER BY applied_at DESC, id DESC').all() as Array<{ id: number; file_hash: string; bill_id: string; issuer: string; due_date: string; closing_date: string | null; total: number; card_finals: string; line_count: number; method: string; removed_manual: string; status: string; applied_at: string; resolved_at: string | null }>;
+      return rows.map((r) => ({
+        id: r.id, fileHash: r.file_hash, billId: r.bill_id, issuer: r.issuer, dueDate: r.due_date, closingDate: r.closing_date, total: r.total,
+        cardFinals: JSON.parse(r.card_finals) as string[], lineCount: r.line_count, method: r.method === 'vision' ? 'vision' : 'text',
+        removedManual: JSON.parse(r.removed_manual) as BillImport['removedManual'], status: r.status as BillImport['status'], appliedAt: r.applied_at, resolvedAt: r.resolved_at,
+      }));
+    },
+
+    addBillImport(row: Omit<BillImport, 'id' | 'status' | 'resolvedAt'>): number {
+      const result = db
+        .prepare('INSERT INTO bill_imports (file_hash, bill_id, issuer, due_date, closing_date, total, card_finals, line_count, method, removed_manual, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(row.fileHash, row.billId, row.issuer, row.dueDate, row.closingDate, row.total, JSON.stringify(row.cardFinals), row.lineCount, row.method, JSON.stringify(row.removedManual), row.appliedAt);
+      return Number(result.lastInsertRowid);
+    },
+
+    setBillImportStatus(id: number, status: BillImport['status'], at: string): void {
+      db.prepare('UPDATE bill_imports SET status = ?, resolved_at = ? WHERE id = ?').run(status, at, id);
     },
 
     listCycleOverrides(): Map<string, boolean> {

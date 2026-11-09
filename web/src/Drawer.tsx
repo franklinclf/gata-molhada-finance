@@ -4,7 +4,7 @@ import { api } from './api.ts';
 import { ApiError } from './api.ts';
 import type { CategoryRow, TransactionDetail } from './api.ts';
 import { brl, dayMonth, foreignMoney, localDay, monthName } from './format.ts';
-import { accountName, cardName } from './names.ts';
+import { accountName, cardName, inSource, sourceLabel, theSource } from './names.ts';
 import { useLoad } from './hooks.ts';
 import { navigate, patchParams } from './router.ts';
 import { CopyButton } from './copy.tsx';
@@ -313,7 +313,7 @@ function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: 
   return (
     <>
       <div class="muted">
-        {d.transaction.sourceIds.length > 1 ? `Vista no ${d.transaction.sourceIds.join(' e no ')}.` : `Só o ${d.transaction.sourceIds[0]} tem esta transação. Isso é normal e não afeta os totais.`}
+        {d.transaction.sourceIds.length > 1 ? `Vista ${d.transaction.sourceIds.map(inSource).join(' e ')}.` : `Só ${theSource(d.transaction.sourceIds[0] ?? '')} tem esta transação. Isso é normal e não afeta os totais.`}
       </div>
       <div class="links">
         {d.joinedByHand && (
@@ -377,7 +377,7 @@ function Mapping({ id, hidden, d, onChange }: { id: string; hidden: boolean; d: 
                   <div class="grow">
                     <div class="clip">{c.description}</div>
                     <div class="muted">
-                      {dayMonth(localDay(c.occurredAt))} · {c.sourceIds.join(', ')} · {c.daysApart === 0 ? 'mesmo dia' : `${c.daysApart} dia(s) de diferença`}
+                      {dayMonth(localDay(c.occurredAt))} · {c.sourceIds.map(sourceLabel).join(', ')} · {c.daysApart === 0 ? 'mesmo dia' : `${c.daysApart} dia(s) de diferença`}
                       {c.amount === d.transaction.amount ? ' · mesmo valor' : ''}
                     </div>
                   </div>
@@ -656,11 +656,11 @@ function RecordDrawer({ id, hidden }: { id: string; hidden: boolean }) {
 
             {!manual && (
               <details>
-                <summary>Fontes e vínculos ({d.transaction.sourceIds.join(', ')})</summary>
+                <summary>Fontes e vínculos ({d.transaction.sourceIds.map(sourceLabel).join(', ')})</summary>
                 <Mapping id={id} hidden={hidden} d={d} onChange={(closes) => closes && patchParams({ tx: null })} />
                 {d.sources.map((s) => (
                   <div class="source" key={`${s.sourceId}${s.externalId}`}>
-                    <strong>{s.sourceId}</strong>
+                    <strong>{sourceLabel(s.sourceId)}</strong>
                     {s.record ? (
                       <dl class="facts">
                         {s.record.descriptionRaw && s.record.descriptionRaw !== s.record.description && (

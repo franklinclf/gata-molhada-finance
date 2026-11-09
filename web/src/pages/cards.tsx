@@ -12,6 +12,7 @@ import { MonthBars, PurchaseRow } from '../installments.tsx';
 import { Go, Loading, StatusBadge } from '../ui.tsx';
 import { Select } from '../Select.tsx';
 import { BillEditor } from '../BillEditor.tsx';
+import { BillImportPanel } from '../BillImport.tsx';
 import { IncomePanel } from '../IncomePanel.tsx';
 import { choiceOf, CURRENT_CYCLE, currentLabel, cycleCaption, otherCycles, resolveCycle } from './page-logic.ts';
 import { patchParams as openParams } from '../router.ts';
@@ -172,6 +173,7 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
   };
   return (
     <>
+      <BillImportPanel hidden={hidden} />
       <p class="muted">
         Compara o total de cada fatura fechada que o banco publicou com a soma das compras da fatura. Quando uma compra perto do fechamento explica a diferença dos dois lados, a sugestão é movê-la para a fatura vizinha. O que nenhuma compra explica é algo que o banco não mandou (use “Lançar a diferença”) ou que ele não cobra (ignore a transação). Uma fatura que você sabe que está fora do lugar pode ser dispensada.
       </p>

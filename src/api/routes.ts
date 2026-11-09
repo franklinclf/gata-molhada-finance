@@ -21,6 +21,7 @@ import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rul
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck, setBillCheckDismissed } from './bill-check.ts';
+import { applyBillFile, listBillImports, previewBillFile, undoBillImport, type ImportResult } from './bill-import.ts';
 import { bulkEdit, addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, removeGroup, renameCategory, saveGroup, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
@@ -338,6 +339,25 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       const cycle = params.get('cycle') ?? 'open';
       if (!CYCLE.test(cycle)) return badRequest('cycle must be open or a month like 2026-10');
       return { status: 200, body: views.cards(store, now, opts, cycle) };
+    }
+    case 'bill-files': {
+      // The upload itself (POST /api/bill-files, a PDF body) is handled in app.ts, which has the bytes.
+      const asResult = <T,>(r: ImportResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error, message: r.message } });
+      if (parts.length === 2) return method === 'GET' ? { status: 200, body: { items: listBillImports(store) } } : methodNotAllowed();
+      if (parts.length === 3 && (id === 'preview' || id === 'apply')) {
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input) return badRequest('body must be { fileHash, accountId?, targets?, removeManual? }');
+        return id === 'preview' ? asResult(previewBillFile(store, input, now)) : asResult(applyBillFile(store, input, now));
+      }
+      if (parts.length === 3 && id === 'vision') {
+        if (method !== 'POST') return methodNotAllowed();
+        return { status: 501, body: { error: 'not_implemented', message: 'A leitura de fatura só de imagem pela IA ainda não está disponível. Baixe a fatura mensal em PDF (a que tem texto) e envie esse arquivo.' } };
+      }
+      const importId = numericId(id);
+      if (parts.length !== 3 || !Number.isInteger(importId)) return null;
+      if (method !== 'DELETE') return methodNotAllowed();
+      return asResult(undoBillImport(store, importId, now));
     }
     case 'bill-check':
       if (parts.length === 3 && id === 'dismiss') {

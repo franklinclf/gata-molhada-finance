@@ -122,6 +122,32 @@ interface Candidate {
   value: Cents;
 }
 
+/** Installments of a card the bank has not listed yet but bills in the cycle: they count in what the app adds up for it. */
+function plannedInstallments(plan: ReturnType<typeof installments>, accountId: string, key: string): Cents {
+  return plan.purchases.filter((p) => p.accountId === accountId).reduce((s, p) => s + p.slots.filter((x) => x.cycle === key && x.inferred && x.status !== 'future').length * p.amount, 0);
+}
+
+export interface BillGap {
+  billTotal: Cents;
+  ours: Cents;
+  /** ours - billTotal, as in Conferir. */
+  gap: Cents;
+}
+
+/**
+ * Conferir's numbers for one bill of one card: the published total, what the app adds up for the cycle and the gap
+ * (before any suggested move). Null when the bill has no published total, is still open, or Conferir does not judge it.
+ */
+export function billGapOf(store: Store, now: Date, accountId: string, cycleKey: string): BillGap | null {
+  const account = store.listCanonicalAccounts().find((a) => a.id === accountId && a.kind === 'credit_card');
+  if (!account) return null;
+  const live = effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).filter((t) => !t.excluded);
+  const cycle = cyclesFor(store, account, live, localDay(now.toISOString())).find((c) => c.key === cycleKey);
+  if (!cycle || cycle.billTotal === null || cycle.status === 'open' || cycle.status === 'unknown' || cycle.status === 'empty' || cycle.from < DATA_START) return null;
+  const ours = cycle.charges - cycle.credits + plannedInstallments(installments(store, now), accountId, cycleKey);
+  return { billTotal: cycle.billTotal, ours, gap: ours - cycle.billTotal };
+}
+
 /**
  * Smallest group (up to MAX_MOVES) whose values add up to `target`. When several groups of that size do, the one closest
  * to the closing day (`anchor`) wins, because that is where bank and card disagree about the day; a tie gives up.
@@ -157,7 +183,7 @@ export function billCheck(store: Store, now: Date): BillCheckView {
   const today = localDay(now.toISOString());
   // Installments the bank has not listed yet but will bill: they explain part of what a bill has over the charges.
   const plan = installments(store, now);
-  const plannedIn = (accountId: string, key: string) => plan.purchases.filter((p) => p.accountId === accountId).reduce((s, p) => s + p.slots.filter((x) => x.cycle === key && x.inferred && x.status !== 'future').length * p.amount, 0);
+  const plannedIn = (accountId: string, key: string) => plannedInstallments(plan, accountId, key);
   // Installments the bank never listed that the app counted in a closed bill next to this one: a gap equal to one of them points at it.
   const unlistedFor = (accountId: string, key: string, amount: Cents): UnlistedInstallment[] => {
     const near = new Set([-1, 0, 1].map((n) => addMonthsToDay(`${key}-01`, n).slice(0, 7)));

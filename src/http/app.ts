@@ -3,6 +3,7 @@ import type { AssertionInput, RegistrationInput } from '../auth/webauthn.ts';
 import { transactionsCsv, type CsvStyle } from '../api/export.ts';
 import { explore } from '../api/explorer.ts';
 import { apiRoute, parseExplorer } from '../api/routes.ts';
+import { readBillFile } from '../api/bill-import.ts';
 import { localDay } from '../core/time.ts';
 import type { AnalystReply } from '../ai/analyst.ts';
 import type { AiRunReply, AiRunScope } from '../ai/job.ts';
@@ -18,6 +19,8 @@ export interface AppRequest {
   search?: string;
   headers: Record<string, string | undefined>;
   body: string;
+  /** The raw body of a file upload. Only the routes that take a file get it (see LARGE_BODIES in server.ts); their `body` is empty. */
+  bytes?: Uint8Array;
 }
 
 export interface AppDeps extends RouterDeps {
@@ -217,8 +220,16 @@ export function handle(request: AppRequest, deps: AppDeps): RouteResult {
 
   if (pathname.startsWith('/api/')) {
     if (!authenticated) return done(json(401, { error: 'unauthorized' }));
-    if ((method === 'POST' || method === 'PUT') && !(request.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+    // A statement upload is the one body that is not JSON. application/pdf is not a type a cross-site form can send either.
+    const upload = method === 'POST' && pathname === '/api/bill-files';
+    const contentType = (request.headers['content-type'] ?? '').toLowerCase();
+    if ((method === 'POST' || method === 'PUT') && !contentType.startsWith(upload ? 'application/pdf' : 'application/json')) {
       return done(json(415, { error: 'unsupported_media_type' }));
+    }
+    if (upload) {
+      // The file name in ?name= is for display in the browser only: it is not read, stored or logged here. The body arrives as bytes (see LARGE_BODIES in server.ts).
+      const result = readBillFile(deps.store, request.bytes ?? new Uint8Array(), deps.now());
+      return done(result.ok ? json(200, result.value) : json(result.status, { error: result.error, message: result.message }));
     }
 
     // ---------- security: passkeys and trusted devices ----------

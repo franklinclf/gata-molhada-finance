@@ -221,3 +221,31 @@ test('two accounts with the same kind and name in one institution still get dist
   assert.equal(result.accounts.length, 2);
   assert.notEqual(result.accounts[0]?.id, result.accounts[1]?.id);
 });
+
+test('a pinned account joins the card it names, before any overlap scoring, and two can share one card', () => {
+  const sibling = (externalId: string, last4: string) => card({ externalId, institution: 'Banco Exemplo', name: 'Cartao Exemplo', last4 });
+  // The statement's charges look like card A's (same days and amounts), but the owner said they are card B's.
+  const pdfTx = history('pdf-1', 'f').map((t) => ({ ...t, accountExternalId: 'pdf-1' }));
+  const result = reconcileAccounts(
+    [
+      view('pluggy', 0, { accounts: [sibling('g-a', '1111'), sibling('g-b', '2222')], transactions: history('g-a', 'ga') }),
+      view('pdf', 1, { accounts: [sibling('pdf-1', '2222'), sibling('pdf-2', '3333')], transactions: pdfTx }),
+    ],
+    [
+      { sourceId: 'pdf', externalId: 'pdf-1', targetSourceId: 'pluggy', targetExternalId: 'g-b' },
+      { sourceId: 'pdf', externalId: 'pdf-2', targetSourceId: 'pluggy', targetExternalId: 'g-b' },
+    ],
+  );
+  const holder = (externalId: string) => result.accounts.find((a) => a.refs.some((r) => r.externalId === externalId))?.id;
+  assert.equal(holder('pdf-1'), holder('g-b'));
+  assert.equal(holder('pdf-2'), holder('g-b'));
+  assert.notEqual(holder('pdf-1'), holder('g-a'));
+  assert.equal(result.accounts.length, 2);
+  assert.ok(!result.notes.some((n) => n.includes('not found in pdf')));
+  // Without the pin, overlap scoring puts the statement on card A.
+  const unpinned = reconcileAccounts([
+    view('pluggy', 0, { accounts: [sibling('g-a', '1111'), sibling('g-b', '2222')], transactions: history('g-a', 'ga') }),
+    view('pdf', 1, { accounts: [sibling('pdf-1', '2222')], transactions: pdfTx }),
+  ]);
+  assert.equal(unpinned.accounts.find((a) => a.refs.some((r) => r.externalId === 'pdf-1'))?.refs.some((r) => r.externalId === 'g-a'), true);
+});
