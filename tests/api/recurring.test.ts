@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { calendar } from '../../src/api/calendar.ts';
 import { scheduledDays } from '../../src/api/projection.ts';
-import { dayInMonth, detectRecurring, ignoreRecurring, markRecurring } from '../../src/api/recurring.ts';
+import { dayInMonth, detectRecurring, ignoredRecurring, ignoreRecurring, markRecurring, overrideRecurring } from '../../src/api/recurring.ts';
 import { apiRoute } from '../../src/api/routes.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
@@ -225,4 +225,53 @@ test('scheduled days follow the rule, also when a moved day leaves its month', (
   assert.deepEqual(scheduledDays('2026-11-01', 1, '2026-10-01', '2026-12-31').map((d) => d.day), ['2026-11-01', '2026-12-01']);
   // The next business day: 31/10/2026 is a Saturday and 2/11 a holiday, so it goes to 3/11.
   assert.deepEqual(scheduledDays('2026-11-03', 31, '2026-11-01', '2026-11-29', 'next').map((d) => [d.day, d.natural]), [['2026-11-03', '2026-10-31']]);
+});
+
+test('an ignored item can be listed and brought back, and it leaves the list while ignored', () => {
+  const store = seeded(monthly('Ginastica', [-9000, -9000, -9000, -9000, -9000, -9000]));
+  assert.equal(ignoredRecurring(store, NOW).length, 0);
+  const put = (path: string, body: unknown, method = 'POST') => apiRoute(method, path, new URLSearchParams(), store, NOW, JSON.stringify(body));
+  assert.equal(put('/api/recurring/ignore', { key: 'out|ginastica', ignored: true })?.status, 200);
+  assert.equal(detectRecurring(store, NOW).length, 0);
+  const hidden = apiRoute('GET', '/api/recurring/ignored', new URLSearchParams(), store, NOW)?.body as { items: Array<{ key: string; name: string }> };
+  assert.deepEqual(hidden.items.map((i) => [i.key, i.name]), [['out|ginastica', 'Ginastica']]);
+  assert.equal(put('/api/recurring/ignore', { key: 'out|ginastica', ignored: false })?.status, 200);
+  assert.equal(detectRecurring(store, NOW).length, 1);
+  assert.equal(ignoredRecurring(store, NOW).length, 0);
+  assert.equal(apiRoute('POST', '/api/recurring/ignored', new URLSearchParams(), store, NOW)?.status, 405);
+});
+
+test('a corrected expense shows the owner name, amount and day, and the next date follows the day', () => {
+  const store = seeded(monthly('Netflix', [-4490, -4490, -4490, -4490, -4490, -4490]));
+  assert.deepEqual(overrideRecurring(store, { key: 'out|netflix', name: 'Streaming da casa', amount: 5000, dayOfMonth: 12 }, NOW), { ok: true });
+  const [item] = detectRecurring(store, NOW);
+  assert.deepEqual([item?.name, item?.amount, item?.dayOfMonth, item?.nextDay, item?.edited], ['Streaming da casa', 5000, 12, '2026-11-12', true]);
+  assert.equal(item?.key, 'out|netflix');
+  // Only one field: the others stay as detected.
+  overrideRecurring(store, { key: 'out|netflix', amount: 6000 }, NOW);
+  const [partial] = detectRecurring(store, NOW);
+  assert.deepEqual([partial?.name, partial?.amount, partial?.dayOfMonth], ['Netflix', 6000, 5]);
+  // Everything empty removes the correction.
+  overrideRecurring(store, { key: 'out|netflix', name: '', amount: null }, NOW);
+  const [back] = detectRecurring(store, NOW);
+  assert.deepEqual([back?.name, back?.amount, back?.edited], ['Netflix', 4490, false]);
+});
+
+test('a correction is validated and only fits an expense', () => {
+  const store = seeded(monthly('Netflix', [-4490, -4490, -4490, -4490, -4490, -4490]));
+  const bad = (input: Record<string, unknown>) => overrideRecurring(store, input, NOW);
+  assert.equal(bad({ key: 'in|empresa', amount: 100 }).ok, false);
+  assert.equal(bad({ key: 'nope' }).ok, false);
+  assert.equal(bad({ key: 'out|netflix', amount: 0 }).ok, false);
+  assert.equal(bad({ key: 'out|netflix', amount: 10.5 }).ok, false);
+  assert.equal(bad({ key: 'out|netflix', amount: '50' }).ok, false);
+  assert.equal(bad({ key: 'out|netflix', dayOfMonth: 32 }).ok, false);
+  assert.equal(bad({ key: 'out|netflix', dayOfMonth: 0 }).ok, false);
+  assert.equal(bad({ key: 'out|netflix', name: 'x'.repeat(61) }).ok, false);
+  assert.equal(store.listRecurringOverrides().size, 0);
+  const route = (body: unknown, method = 'PUT') => apiRoute(method, '/api/recurring/override', new URLSearchParams(), store, NOW, JSON.stringify(body))?.status;
+  assert.equal(route({ key: 'out|netflix', dayOfMonth: 40 }), 400);
+  assert.equal(route({ key: 'out|netflix', dayOfMonth: 20 }), 200);
+  assert.equal(route({ key: 'out|netflix' }, 'POST'), 405);
+  assert.equal(store.listRecurringOverrides().get('out|netflix')?.dayOfMonth, 20);
 });
