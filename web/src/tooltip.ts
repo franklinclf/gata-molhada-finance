@@ -1,6 +1,23 @@
+/** Room kept between a floating box and the edge of the window, and between the box and what it explains. */
+const EDGE = 8;
+const GAP = 6;
+
+/**
+ * Where a floating explanation goes for the element it explains: under it, starting at its left edge, moved left when it would
+ * leave the window, and above it when there is no room below and more room above. All values in px of the window.
+ */
+export function placeTip(anchor: { left: number; top: number; bottom: number }, tip: { width: number; height: number }, view: { width: number; height: number }): { left: number; top: number } {
+  const left = Math.max(EDGE, Math.min(anchor.left, view.width - tip.width - EDGE));
+  const below = view.height - anchor.bottom - GAP - EDGE;
+  const above = anchor.top - GAP - EDGE;
+  const top = tip.height > below && above > below ? Math.max(EDGE, anchor.top - GAP - tip.height) : anchor.bottom + GAP;
+  return { left, top };
+}
+
 /**
  * One floating tooltip for the whole app. Any element with a data-tip attribute shows it on hover, and text that is cut
- * off by an ellipsis (class "clip") shows its full text. Nothing happens on touch screens, where there is no hover.
+ * off by an ellipsis (class "clip") shows its full text. Nothing happens on touch screens, where there is no hover: an
+ * explanation that matters there uses the Info component (Info.tsx), which also opens on focus and on a tap.
  */
 export function installTooltip(): void {
   if (typeof document === 'undefined' || !matchMedia('(hover: hover)').matches) return;

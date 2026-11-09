@@ -3,7 +3,7 @@ import { api } from '../api.ts';
 import { Bars, Meter, Ring } from '../charts.tsx';
 import { brl, dayMonth, localDay, monthName } from '../format.ts';
 import { cardName } from '../names.ts';
-import { choiceOf, CURRENT_CYCLE, currentLabel, cycleCaption, otherCycles, resolveCycle } from '../pages/page-logic.ts';
+import { choiceOf, CURRENT_CYCLE, CURRENT_TIP, currentLabel, cycleCaption, cycleOption, OPEN_TIP, otherCycles, resolveCycle } from '../pages/page-logic.ts';
 import { Select } from '../Select.tsx';
 import { chartHeight } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
@@ -27,7 +27,7 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
   const all = useLoad(() => (cycle === undefined || cycle === 'open' ? Promise.resolve(null) : api.cards('open')), [cycle], 120_000);
   const today = localDay(now.toISOString());
   // The dropdown lists the other cycles (the current one and "Em aberto" have their buttons); a month picked on the chart is listed too.
-  const options = otherCycles(data?.cycles ?? [], currentKey, choice).map((c) => ({ value: c, label: `Venc. ${monthName(c)}` }));
+  const options = otherCycles(data?.cycles ?? [], currentKey, choice, bills.data?.bars).map(cycleOption);
   const byMonth = cycle !== 'open';
   const caption = cycle === undefined ? '' : cycleCaption(cycle, today);
   const used = data && data.totals.creditLimit > 0 ? data.totals.used / data.totals.creditLimit : 0;
@@ -57,10 +57,10 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
         data && (
           <>
             <div class="seg" role="group" aria-label="Faturas em exibição">
-              <button class={choice === CURRENT_CYCLE ? 'tab on' : 'tab'} aria-pressed={choice === CURRENT_CYCLE} onClick={() => setChoice(CURRENT_CYCLE)} data-tip="Faturas que vencem no mês atual">
+              <button class={choice === CURRENT_CYCLE ? 'tab on' : 'tab'} aria-pressed={choice === CURRENT_CYCLE} onClick={() => setChoice(CURRENT_CYCLE)} data-tip={CURRENT_TIP}>
                 {currentLabel(currentKey)}
               </button>
-              <button class={choice === 'open' ? 'tab on' : 'tab'} aria-pressed={choice === 'open'} onClick={() => setChoice('open')} data-tip="Tudo que falta pagar: faturas fechadas não pagas e a fatura aberta de cada cartão">
+              <button class={choice === 'open' ? 'tab on' : 'tab'} aria-pressed={choice === 'open'} onClick={() => setChoice('open')} data-tip={OPEN_TIP}>
                 Em aberto
               </button>
             </div>
@@ -85,7 +85,7 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
                     label: monthName(b.key).slice(0, 3),
                     value: b.total,
                     color: barColor(b.status),
-                    tip: `Venc. ${monthName(b.key)}\n${hidden ? '••••' : brl(b.total)}${b.open ? ` · ${b.openCards} em aberto${b.closedCards > 0 ? `, ${b.closedCards} já fechada${b.closedCards === 1 ? '' : 's'}` : ''}` : ''}`,
+                    tip: `Venc. ${monthName(b.key)}${b.current ? ' · ciclo atual' : ''}\n${hidden ? '••••' : brl(b.total)}${b.open ? ` · ${b.openCards} em aberto${b.closedCards > 0 ? `, ${b.closedCards} já fechada${b.closedCards === 1 ? '' : 's'}` : ''}` : b.outstanding > 0 ? ` · falta ${hidden ? '••••' : brl(b.outstanding)}` : ' · paga'}`,
                   }))}
                 />
                 <div class="legend">
@@ -168,8 +168,13 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
                 <>
                   <dt>Em faturas fechadas não pagas</dt>
                   <dd>{brl(closedUnpaid, hidden)}</dd>
-                  <dt>Em fatura aberta</dt>
-                  <dd>{brl(data.totals.toPay - closedUnpaid, hidden)}</dd>
+                  {/* A month whose bills have all closed (the current cycle until they are paid) has no open part to show. */}
+                  {data.totals.toPay - closedUnpaid > 0 && (
+                    <>
+                      <dt>Em fatura aberta</dt>
+                      <dd>{brl(data.totals.toPay - closedUnpaid, hidden)}</dd>
+                    </>
+                  )}
                 </>
               )}
               {cycle === 'open' && data.totals.futureInstallments > 0 && (
