@@ -494,6 +494,13 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 .chat-text { white-space: pre-wrap; line-height: 1.45; user-select: text; -webkit-user-select: text; }
 .chat-steps { margin-top: 6px; font-size: 12px; color: var(--muted); }
 .chat-steps ul { margin: 4px 0 0; padding-left: 18px; }
+.chat-changes { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--track); font-size: 13px; }
+.chat-changes-title { font-weight: 600; margin-bottom: 4px; }
+.chat-changes ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.chat-changes li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.chat-changes li.pending { padding: 6px 8px; border: 1px solid var(--accent); border-radius: 10px; }
+.chat-change-label { flex: 1 1 14em; min-width: 0; }
+.chat-change-actions { display: inline-flex; align-items: center; gap: 10px; }
 .chat-form { display: flex; gap: 8px; }
 @media (max-width: 760px) { .chat { grid-template-columns: minmax(0, 1fr); } .chat-list .rows { max-height: 120px; overflow-y: auto; } .chat-main { min-height: 50vh; } .chat-msg { max-width: 96%; } }
 .nav-more { position: relative; }

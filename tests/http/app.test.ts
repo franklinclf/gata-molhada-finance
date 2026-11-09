@@ -162,7 +162,7 @@ test('the chat needs a session, answers through a deferred result, and takes one
   const gate = new Promise<void>((resolve) => (release = resolve));
   const analyst: NonNullable<AppDeps['analyst']> = async (input) => {
     await gate;
-    return { conversationId: 1, answer: `eco: ${input.question}`, steps: [], model: 'm', costUsd: 0, stoppedBy: null };
+    return { conversationId: 1, answer: `eco: ${input.question}`, steps: [], model: 'm', costUsd: 0, stoppedBy: null, messageId: 1, changes: [] };
   };
   const armed: AppDeps = { ...deps, analyst };
   assert.equal(handle(post('/api/chat', { question: 'oi' }), armed).status, 401);

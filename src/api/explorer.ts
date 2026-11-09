@@ -53,6 +53,8 @@ export interface ExplorerQuery {
   includeExcluded?: boolean;
   /** Show charges dated after today (planned installments). Left out unless a cycle or an end day is chosen. */
   future?: boolean;
+  /** List a refund on its own row even when its purchase is in the result. The Transactions screen folds it into the purchase; a caller that counts every row turns this off. Default true. */
+  foldRefunds?: boolean;
 }
 
 export interface ExplorerRow extends EffectiveTransaction {
@@ -193,7 +195,7 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
 
   // A refund is shown on the row of its purchase when both are in the result; the sums above still count both.
   const inResult = new Set(matching.map((t) => t.id));
-  const shown = matching.filter((t) => !(t.reversal?.side === 'refund' && inResult.has(t.reversal.otherId)));
+  const shown = query.foldRefunds === false ? matching : matching.filter((t) => !(t.reversal?.side === 'refund' && inResult.has(t.reversal.otherId)));
   const items = shown.slice(query.offset, query.offset + query.limit).map((t) => {
     const a = byId.get(t.accountId)!;
     return { ...t, account: { institution: a.institution, name: a.name, last4: a.last4, kind: a.kind } };
