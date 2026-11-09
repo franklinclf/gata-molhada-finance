@@ -6,7 +6,7 @@ import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, Limit
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
 import type { NonBusinessRule } from '../core/business-days.ts';
-import type { BillEdit, BillImport, BillImportAccount, IncomeItem, RecurringOverride, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, RecordChoice, ReversalRow } from './store.ts';
+import type { BillEdit, BillImport, BillImportAccount, IncomeItem, RecurringOverride, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, TransactionName, RecordChoice, ReversalRow } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -228,6 +228,12 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
     } finally {
       depth--;
     }
+  }
+
+  /** Writes or, with null, removes the name the owner gave one source record. */
+  function writeName(sourceId: string, externalId: string, name: string | null, now: string): void {
+    if (name === null) db.prepare('DELETE FROM transaction_names WHERE source_id = ? AND external_id = ?').run(sourceId, externalId);
+    else db.prepare('INSERT INTO transaction_names (source_id, external_id, name, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(source_id, external_id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at').run(sourceId, externalId, name, now);
   }
 
   return {
@@ -777,10 +783,25 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
       return new Map(rows.map((r) => [r.id, { status: r.status, cycleKey: r.cycle_key }]));
     },
 
+    listTransactionNames(): Map<string, TransactionName> {
+      const rows = db
+        .prepare('SELECT l.transaction_id AS id, o.name AS name, o.updated_at AS updated_at FROM transaction_links l JOIN transaction_names o ON o.source_id = l.source_id AND o.external_id = l.external_id ORDER BY o.updated_at')
+        .all() as Array<{ id: string; name: string; updated_at: string }>;
+      return new Map(rows.map((r) => [r.id, { name: r.name, updatedAt: r.updated_at }]));
+    },
+
+    setTransactionName(transactionId: string, name: string | null, now: string): void {
+      inTransaction(() => {
+        const links = db.prepare('SELECT source_id, external_id FROM transaction_links WHERE transaction_id = ?').all(transactionId) as Array<{ source_id: string; external_id: string }>;
+        for (const l of links) writeName(l.source_id, l.external_id, name, now);
+      });
+    },
+
     recordChoice(sourceId: string, externalId: string): RecordChoice {
       const category = db.prepare('SELECT category FROM category_overrides WHERE source_id = ? AND external_id = ?').get(sourceId, externalId) as { category: string } | undefined;
       const ignored = db.prepare('SELECT 1 AS yes FROM ignored_records WHERE source_id = ? AND external_id = ?').get(sourceId, externalId);
-      return { category: category?.category ?? null, ignored: ignored !== undefined };
+      const name = db.prepare('SELECT name FROM transaction_names WHERE source_id = ? AND external_id = ?').get(sourceId, externalId) as { name: string } | undefined;
+      return { category: category?.category ?? null, ignored: ignored !== undefined, name: name?.name ?? null };
     },
 
     setRecordChoice(sourceId: string, externalId: string, patch: Partial<RecordChoice>, now: string): void {
@@ -793,6 +814,7 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
           if (patch.ignored) db.prepare('INSERT OR IGNORE INTO ignored_records (source_id, external_id, ignored_at) VALUES (?, ?, ?)').run(sourceId, externalId, now);
           else db.prepare('DELETE FROM ignored_records WHERE source_id = ? AND external_id = ?').run(sourceId, externalId);
         }
+        if ('name' in patch) writeName(sourceId, externalId, patch.name ?? null, now);
       });
     },
 
@@ -1394,6 +1416,7 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         { table: 'category_overrides', where: 'source_id = ?', args: [sourceId] },
         { table: 'installment_overrides', where: 'source_id = ?', args: [sourceId] },
         { table: 'transaction_overrides', where: 'source_id = ?', args: [sourceId] },
+        { table: 'transaction_names', where: 'source_id = ?', args: [sourceId] },
       ];
 
       // The record another source holds for the same canonical transaction, if there is one.
@@ -1401,13 +1424,14 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
         db
           .prepare('SELECT b.source_id AS source_id, b.external_id AS external_id FROM transaction_links a JOIN transaction_links b ON b.transaction_id = a.transaction_id AND b.source_id != a.source_id WHERE a.source_id = ? AND a.external_id = ? ORDER BY b.source_id LIMIT 1')
           .get(sourceId, externalId) as { source_id: string; external_id: string } | undefined;
-      type Choice = { external_id: string; category?: string; number?: number; total?: number; updated_at: string };
+      type Choice = { external_id: string; category?: string; number?: number; total?: number; name?: string; updated_at: string };
       const withTwin = (table: string) => (db.prepare(`SELECT * FROM ${table} WHERE source_id = ?`).all(sourceId) as unknown as Choice[]).flatMap((choice) => {
         const twin = twinOf(choice.external_id);
         return twin ? [{ choice, twin }] : [];
       });
       const categoryChoices = withTwin('category_overrides');
       const installmentChoices = withTwin('installment_overrides');
+      const nameChoices = withTwin('transaction_names');
 
       const removed: Record<string, number> = {};
       for (const { table, where, args } of tables) removed[table] = (db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`).get(...args) as { n: number }).n;
@@ -1420,10 +1444,13 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
           for (const { choice, twin } of installmentChoices) {
             db.prepare('INSERT OR IGNORE INTO installment_overrides (source_id, external_id, number, total, updated_at) VALUES (?, ?, ?, ?, ?)').run(twin.source_id, twin.external_id, choice.number!, choice.total!, choice.updated_at);
           }
+          for (const { choice, twin } of nameChoices) {
+            db.prepare('INSERT OR IGNORE INTO transaction_names (source_id, external_id, name, updated_at) VALUES (?, ?, ?, ?)').run(twin.source_id, twin.external_id, choice.name!, choice.updated_at);
+          }
           for (const { table, where, args } of tables) db.prepare(`DELETE FROM ${table} WHERE ${where}`).run(...args);
         });
       }
-      return { sourceId, applied: apply, removed, moved: { categoryOverrides: categoryChoices.length, installmentOverrides: installmentChoices.length } };
+      return { sourceId, applied: apply, removed, moved: { categoryOverrides: categoryChoices.length, installmentOverrides: installmentChoices.length, names: nameChoices.length } };
     },
 
     pruneSnapshots(sourceId: SourceId, keepReads: number, gapMs: number): number {

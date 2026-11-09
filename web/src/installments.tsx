@@ -42,7 +42,9 @@ export function PurchaseRow({ p, hidden, detailed = false }: { p: InstallmentPur
     <li class="purchase">
       <button class="row-btn" onClick={() => setOpen(!open)} aria-expanded={open}>
         <div class="grow">
-          <div class="clip">{p.description}</div>
+          <div class="clip" data-tip={p.customName !== null ? `${p.customName}\nBanco: ${p.description}` : undefined}>
+            {p.customName ?? p.description}
+          </div>
           <SlotStrip p={p} hidden={hidden} />
           <div class="muted clip">
             {p.card} · {p.finished ? `quitada (${p.total}x)` : `${p.paid} de ${p.total} pagas${next ? ` · próxima na fatura de ${monthName(next.cycle)}` : ''}`}
@@ -70,6 +72,7 @@ export function PurchaseRow({ p, hidden, detailed = false }: { p: InstallmentPur
               {p.slots.map((s) => (
                 <tr key={s.number}>
                   <td class="num">
+                    {p.customName !== null ? `${p.customName} ` : ''}
                     {s.number}/{p.total}
                   </td>
                   <td class="num">

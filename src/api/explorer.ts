@@ -28,7 +28,7 @@ export interface ExplorerQuery {
   /** Category names. The empty string stands for "no category". */
   categories?: string[];
   kind: 'all' | 'expense' | 'income';
-  /** Text searched in the description, the raw description and the category. */
+  /** Text searched in the name shown (the owner's own name when there is one), the bank description, the raw description and the category. */
   q?: string;
   /** A merchant name as the spending view shows it (see `merchantName`). */
   merchant?: string;

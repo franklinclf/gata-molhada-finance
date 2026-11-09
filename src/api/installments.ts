@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto';
 import { dayNumber } from '../core/dates.ts';
 import type { Cents } from '../core/money.ts';
-import { normalizeName } from '../core/names.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { addMonthsToDay, cyclesFor, type Cycle } from './cycles.ts';
 import { effectiveTransactions, visibleAccounts, type EffectiveTransaction, type ViewOptions } from './scope.ts';
 import { stamp, type Stamped } from './stamp.ts';
-import { titleOf } from '../core/title.ts';
+import { namedTitle, titleOf } from '../core/title.ts';
+import { groupSeries, seriesDescription, seriesText } from './series.ts';
 
 /**
  * paid: its bill was paid (or it is older than the data we hold). billed: the bill closed and is not paid yet.
@@ -30,7 +30,12 @@ export interface InstallmentPurchase {
   id: string;
   accountId: string;
   card: string;
+  /** The bank text of the purchase, without the installment number. */
   description: string;
+  /** The name the owner gave the purchase, shown instead of `description`; null when it has none. */
+  customName: string | null;
+  /** Ids of the charges seen for this purchase. */
+  memberIds: string[];
   /** Category of the charges seen for this purchase (the most common one), which the estimated installments take. */
   category: string | null;
   total: number;
@@ -67,19 +72,12 @@ export interface InstallmentsView extends Stamped {
   purchases: InstallmentPurchase[];
 }
 
-/** Some issuers write the installment into the description ("Store 5/6"), which would make every installment look like another purchase. */
-export function seriesDescription(description: string): string {
-  return description.replace(/\s*\d{1,2}\s*\/\s*\d{1,2}\s*$/, '').trim();
-}
+export { seriesDescription };
 
-/** Texts shorter than this are too generic to say that a longer one is the same purchase. */
-const MIN_PREFIX = 8;
 /** Days between an installment charge and the credit of the same amount that cancels it. */
 const REFUND_DAYS = 3;
 /** Days after a refunded installment with no later number charged that show the purchase was cancelled (two bills have closed since). */
 const STOPPED_AFTER_DAYS = 75;
-
-const seriesText = (description: string) => normalizeName(seriesDescription(description));
 
 /** A refund text that holds the purchase text ("estorno magalu tv" for "magalu tv"), or the other way round. Very short texts say nothing. */
 const namesSeries = (refund: string, series: string) => Math.min(refund.length, series.length) >= 4 && (refund.includes(series) || series.includes(refund));
@@ -157,30 +155,7 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}, lo
   const today = localDay(now.toISOString());
 
   const refunded = refundedCharges(transactions, today);
-  const series = new Map<string, EffectiveTransaction[]>();
-  const shapes = new Map<string, { accountId: string; text: string; total: number; amount: Cents }>();
-  for (const t of transactions) {
-    if (!t.installment || t.excluded || t.installment.total < 2 || t.amount >= 0 || refunded.has(t.id)) continue;
-    // 3 x 100,00 can be billed 33,34 / 33,33 / 33,33: amounts within one cent per instalment are the same purchase.
-    const tolerance = t.installment.total;
-    const text = seriesText(t.description);
-    const same = (s: { accountId: string; total: number; amount: Cents }) => s.accountId === t.accountId && s.total === tolerance && Math.abs(s.amount - -t.amount) <= tolerance;
-    let key: string | undefined;
-    for (const [k, s] of shapes) if (same(s) && s.text === text) key = k;
-    // A bank can change the text halfway (Nubank adds the store name to "Parcelamento de Compra"): a series whose text starts
-    // like this one, with the same count and amount and without this number yet, is the same purchase.
-    if (key === undefined) {
-      for (const [k, s] of shapes) {
-        const prefix = s.text.length >= MIN_PREFIX && text.length >= MIN_PREFIX && (s.text.startsWith(text) || text.startsWith(s.text));
-        if (same(s) && prefix && !series.get(k)!.some((o) => o.installment!.number === t.installment!.number)) key = k;
-      }
-    }
-    if (key === undefined) {
-      key = `${t.accountId}|${seriesDescription(t.description)}|${tolerance}|${-t.amount}`;
-      shapes.set(key, { accountId: t.accountId, text, total: tolerance, amount: -t.amount });
-    }
-    series.set(key, [...(series.get(key) ?? []), t]);
-  }
+  const series = groupSeries(transactions, refunded);
   // The first installment sometimes comes as a plain charge, with no "1/3" on it: a charge with the series' text and amount
   // in the bill where a missing number falls is that installment, not something else to plan.
   const plain = transactions.filter((t) => !t.installment && !t.excluded && t.amount < 0 && t.role === null && !refunded.has(t.id));
@@ -254,6 +229,8 @@ export function installments(store: Store, now: Date, opts: ViewOptions = {}, lo
         accountId: account.id,
         card: `${account.institution}${account.last4 ? ` •••• ${account.last4}` : ` ${account.name}`}`,
         description: seriesDescription(first.description),
+        customName: list.find((t) => t.customName !== null)?.customName ?? null,
+        memberIds: list.map((t) => t.id),
         category: commonCategory(list),
         total,
         amount,
@@ -358,8 +335,9 @@ export function estimatedTransactions(store: Store, now: Date, opts: ViewOptions
           mcc: null,
           operation: null,
           foreign: null,
-          // The standard name of the purchase, with the number kept so the list tells the installments apart.
-          title: `${titleOf({ description: p.description, amount: -p.amount, role: null, operation: null, counterparty: null })} ${slot.number}/${p.total}`,
+          // The owner's name of the purchase or its standard one, with the number kept so the list tells the installments apart.
+          title: p.customName !== null ? namedTitle(p.customName, { number: slot.number, total: p.total }) : `${titleOf({ description: p.description, amount: -p.amount, role: null, operation: null, counterparty: null })} ${slot.number}/${p.total}`,
+          customName: p.customName,
           billCycle: slot.cycle,
           reversal: null,
           billByBank: false,
@@ -373,11 +351,17 @@ export function estimatedTransactions(store: Store, now: Date, opts: ViewOptions
   return rows;
 }
 
+/** The purchase an estimated transaction (by its id) is an installment of, or null when there is none. */
+export function purchaseOfEstimated(store: Store, id: string, now: Date): InstallmentPurchase | null {
+  if (!id.startsWith(ESTIMATED_PREFIX)) return null;
+  return installments(store, now, { includeHidden: true }).purchases.find((p) => id.startsWith(`${ESTIMATED_PREFIX}${p.id}_`)) ?? null;
+}
+
 /** What the screen says about one estimated transaction (opened from the list): the row, its purchase and where it falls. */
 export interface EstimatedDetail {
   transaction: EffectiveTransaction;
   account: { id: string; institution: string; name: string; last4: string | null };
-  purchase: { description: string; total: number; amount: Cents; slots: InstallmentSlot[] };
+  purchase: { description: string; customName: string | null; total: number; amount: Cents; slots: InstallmentSlot[] };
   /** Number of this installment among the purchase's installments. */
   number: number;
   /** The bill it is charged in. */
@@ -396,7 +380,7 @@ export function estimatedDetail(store: Store, id: string, now: Date): EstimatedD
   return {
     transaction,
     account: { id: account.id, institution: account.institution, name: account.name, last4: account.last4 },
-    purchase: { description: purchase.description, total: purchase.total, amount: purchase.amount, slots: purchase.slots },
+    purchase: { description: purchase.description, customName: purchase.customName, total: purchase.total, amount: purchase.amount, slots: purchase.slots },
     number: transaction.installment!.number,
     cycle: cycle ? { key: cycle.key, dueDate: cycle.dueDate, status: cycle.status } : null,
   };

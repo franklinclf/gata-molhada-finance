@@ -5,7 +5,7 @@ import { categoryParents } from '../api/category-groups.ts';
 import { resolveBudget, setBudget } from '../api/budgets.ts';
 import { deleteIncome, saveIncome } from '../api/income.ts';
 import { isManualId, manualNumber } from '../api/manual.ts';
-import { bulkEdit, dismissSuggestion, joinTransactions, listCategories, setReversal } from '../api/mutations.ts';
+import { bulkEdit, cleanTransactionName, dismissSuggestion, joinTransactions, listCategories, nameTargets, setReversal, setTransactionName } from '../api/mutations.ts';
 import { createRule, deleteRule, previewRule } from '../api/rules.ts';
 import { effectiveTransactions } from '../api/scope.ts';
 import type { ChangeStatus, ChatChange, ChatMessage, IncomeItem, Store } from '../store/store.ts';
@@ -115,6 +115,7 @@ interface RecordRef {
 interface RecordState extends RecordRef {
   category: string | null;
   ignored: boolean;
+  name: string | null;
 }
 
 const recordsOf = (store: Store, id: string): RecordRef[] =>
@@ -123,7 +124,7 @@ const recordsOf = (store: Store, id: string): RecordRef[] =>
 function readStates(store: Store, records: RecordRef[]): RecordState[] {
   const manuals = new Map(store.listManualTransactions().map((m) => [m.id, m]));
   return records.map((r) =>
-    r.sourceId === 'manual' ? { ...r, category: manuals.get(manualNumber(r.externalId))?.category ?? null, ignored: false } : { ...r, ...store.recordChoice(r.sourceId, r.externalId) },
+    r.sourceId === 'manual' ? { ...r, category: manuals.get(manualNumber(r.externalId))?.category ?? null, ignored: false, name: null } : { ...r, ...store.recordChoice(r.sourceId, r.externalId) },
   );
 }
 
@@ -220,7 +221,7 @@ function pick(store: Store, now: Date, args: Record<string, unknown>, ctx: Actio
 }
 
 /** Puts the choices of the records back, unless one of them is not as the change left it. Records that are gone are skipped. */
-function undoRecords(store: Store, now: Date, before: RecordState[], after: RecordState[], fields: Array<'category' | 'ignored'>): UndoOutcome {
+function undoRecords(store: Store, now: Date, before: RecordState[], after: RecordState[], fields: Array<'category' | 'ignored' | 'name'>): UndoOutcome {
   const present = (r: RecordRef): boolean => idOfRecord(store, r) !== null;
   const current = readStates(store, after);
   for (let i = 0; i < after.length; i++) {
@@ -383,7 +384,7 @@ function undoReversal(store: Store, now: Date, change: ChatChange): UndoOutcome 
   return 'ok';
 }
 
-function oneTransaction(store: Store, ctx: ActionContext, args: Record<string, unknown>, key: string): { id: string; amount: number; reversal: boolean } {
+function oneTransaction(store: Store, ctx: ActionContext, args: Record<string, unknown>, key: string, manual = 'a transaction typed in by hand cannot be paired'): { id: string; amount: number; reversal: boolean } {
   let id: string | null;
   if (ctx.stored) id = idOfRecord(store, asObject(args[`${key}Target`], `${key}Target`) as unknown as RecordRef);
   else {
@@ -395,7 +396,7 @@ function oneTransaction(store: Store, ctx: ActionContext, args: Record<string, u
   }
   const t = id === null ? undefined : effectiveTransactions(store, { includeHidden: true, includeExcluded: true }).find((x) => x.id === id);
   if (!t) throw new ToolError('a transaction is not there any more; ask for the transactions again');
-  if (isManualId(t.id)) throw new ToolError('a transaction typed in by hand cannot be paired');
+  if (isManualId(t.id)) throw new ToolError(manual);
   return { id: t.id, amount: t.amount, reversal: t.reversal !== null };
 }
 
@@ -633,20 +634,47 @@ const deleteIncomeTool: WriteTool = {
   },
 };
 
-export const WRITE_TOOLS: WriteTool[] = [setCategory, setIgnored, createRuleTool, deleteRuleTool, linkReversal, unlinkReversal, resolveFinding, setBudgetTool, upsertIncome, deleteIncomeTool];
+const setNameTool: WriteTool = {
+  name: 'set_name',
+  help: 'set_name {tx: ref, name: texto de até 60 letras ou null} : dá um nome personalizado a uma transação; o texto do banco continua guardado e as regras e categorias seguem lendo ele. Numa compra parcelada o nome vale para todas as parcelas e o app põe o contador (2/5) sozinho, então não escreva o número. null tira o nome.',
+  plan(store, now, args, ctx) {
+    const { id } = oneTransaction(store, ctx, args, 'tx', 'a transaction typed in by hand is edited on its own screen');
+    if (!('name' in args)) throw new ToolError('name must be text, or null to remove the name');
+    const clean = cleanTransactionName(args.name);
+    if (!clean.ok) throw new ToolError(clean.error);
+    const targets = nameTargets(store, id, now);
+    if ('error' in targets) throw new ToolError(targets.error.error);
+    const records = targets.ids.flatMap((t) => recordsOf(store, t));
+    if (readStates(store, records).every((r) => r.name === clean.name)) throw new ToolError(clean.name === null ? 'that transaction has no name to remove' : 'that transaction already has this name');
+    const what = targets.series ? `a compra parcelada (${plural(targets.ids.length, 'parcela', 'parcelas')})` : 'a transação';
+    return {
+      label: clean.name === null ? `Tirar o nome personalizado de ${what}` : `Nome "${clean.name}" para ${what}`,
+      count: targets.ids.length, destructive: false, undoable: true,
+      stored: { name: clean.name, txTarget: targetOf(store, id) },
+      apply: () => {
+        const before = readStates(store, records);
+        failed(setTransactionName(store, id, clean.name, now));
+        return { before, after: readStates(store, records) };
+      },
+    };
+  },
+  undo: (store, now, change) => undoRecords(store, now, change.before as RecordState[], change.after as RecordState[], ['name']),
+};
+
+export const WRITE_TOOLS: WriteTool[] = [setCategory, setIgnored, createRuleTool, deleteRuleTool, linkReversal, unlinkReversal, resolveFinding, setBudgetTool, upsertIncome, deleteIncomeTool, setNameTool];
 export const writeToolByName = new Map(WRITE_TOOLS.map((t) => [t.name, t]));
 
 // ---------- when the model may change data ----------
 
 /** Forms that can only be a request, wherever they stand in the question: the formal imperative ("mude", "corrija"). */
 const IMPERATIVE =
-  'corrij(a|am)|mud(e|em)|tro(que|quem)|categoriz(e|em)|reclassifiqu(e|em)|classifiqu(e|em)|mar(que|quem)|ignor(e|em)|cri(e|em)|apagu(e|em)|remov(a|am)|exclu(a|am)|defin(a|am)|junt(e|em)|vincul(e|em)|desvincul(e|em)|apliqu(e|em)|desfa(ca|cam)|cadastr(e|em)|adicion(e|em)|atualiz(e|em)|descart(e|em)|alter(e|em)|coloqu(e|em)|mov(a|am)|inclu(a|am)|registr(e|em)|acrescent(e|em)|tir(e|em)|delet(e|em)';
+  'corrij(a|am)|mud(e|em)|tro(que|quem)|categoriz(e|em)|reclassifiqu(e|em)|classifiqu(e|em)|mar(que|quem)|ignor(e|em)|cri(e|em)|apagu(e|em)|remov(a|am)|exclu(a|am)|defin(a|am)|junt(e|em)|vincul(e|em)|desvincul(e|em)|apliqu(e|em)|desfa(ca|cam)|cadastr(e|em)|adicion(e|em)|atualiz(e|em)|descart(e|em)|alter(e|em)|coloqu(e|em)|mov(a|am)|inclu(a|am)|registr(e|em)|acrescent(e|em)|tir(e|em)|delet(e|em)|renomei(e|em)|apelid(e|em)';
 /** The everyday imperative ("muda", "troca"). It is also the plain present ("a regra cria"), or a noun ("ajuste", "marca"), so it counts only where a clause begins. */
 const COLLOQUIAL =
-  'corrige|muda|troca|categoriza|reclassifica|classifica|marca|ignora|cria|apaga|remove|exclui|ajusta|ajuste|define|junta|vincula|desvincula|aplica|desfaz|cadastra|adiciona|atualiza|descarta|altera|coloca|move|inclui|registra|acrescenta|tira|passa|passe|deleta';
+  'corrige|muda|troca|categoriza|reclassifica|classifica|marca|ignora|cria|apaga|remove|exclui|ajusta|ajuste|define|junta|vincula|desvincula|aplica|desfaz|cadastra|adiciona|atualiza|descarta|altera|coloca|move|inclui|registra|acrescenta|tira|passa|passe|deleta|renomeia|apelida';
 /** "mudar", "criar" ... : a plain infinitive is a request only after "pode", "quero" ..., or when it opens the question. */
 const INFINITIVE =
-  'corrigir|mudar|trocar|categorizar|reclassificar|classificar|marcar|ignorar|criar|apagar|remover|excluir|ajustar|definir|juntar|vincular|desvincular|aplicar|desfazer|cadastrar|adicionar|atualizar|descartar|alterar|colocar|mover|incluir|registrar|acrescentar|tirar|passar|deletar';
+  'corrigir|mudar|trocar|categorizar|reclassificar|classificar|marcar|ignorar|criar|apagar|remover|excluir|ajustar|definir|juntar|vincular|desvincular|aplicar|desfazer|cadastrar|adicionar|atualizar|descartar|alterar|colocar|mover|incluir|registrar|acrescentar|tirar|passar|deletar|renomear|apelidar';
 
 const CLAUSE_START = '(?:^|[.!?;,]\\s*|\\b(?:e|entao|agora|depois|tambem|ai|ok|certo|beleza|sim|favor|por favor)\\s+)';
 const FRAME = '(?:pode|podem|poderia|poderiam|consegue|quero|queria|preciso|gostaria de|vamos|favor|por favor|da pra|da para|tem como|e possivel|bora)';

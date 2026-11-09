@@ -84,6 +84,14 @@ export interface ChatChange {
 export interface RecordChoice {
   category: string | null;
   ignored: boolean;
+  /** The name the owner gave the transaction ("Nome personalizado"), or null. */
+  name: string | null;
+}
+
+/** The name the owner gave a transaction, and when, so the newest one wins where several records of a purchase carry one. */
+export interface TransactionName {
+  name: string;
+  updatedAt: string;
 }
 
 /** A reversal choice as it is stored: on source records, not on canonical ids. */
@@ -287,7 +295,7 @@ export interface PurgeReport {
   /** Rows removed (or that would be), by table. */
   removed: Record<string, number>;
   /** Choices moved to another source's record of the same transaction before the removal. */
-  moved: { categoryOverrides: number; installmentOverrides: number };
+  moved: { categoryOverrides: number; installmentOverrides: number; names: number };
 }
 
 export interface Store {
@@ -504,9 +512,13 @@ export interface Store {
   setInstallmentOverride(transactionId: string, installment: { number: number; total: number } | null, now: string): void;
   /** What the owner says about each transaction: its status (pending or posted) and the card bill (due month) it belongs to. */
   listTransactionOverrides(): Map<string, TransactionOverride>;
-  /** The category choice and the set-aside flag of one source record. */
+  /** The name the owner gave each canonical transaction (taken from the newest one among its source records). */
+  listTransactionNames(): Map<string, TransactionName>;
+  /** Sets (or with null clears) the name on every source record of a canonical transaction. */
+  setTransactionName(transactionId: string, name: string | null, now: string): void;
+  /** The category choice, the set-aside flag and the name of one source record. */
   recordChoice(sourceId: string, externalId: string): RecordChoice;
-  /** Sets the given fields of one source record; a null category clears the choice. */
+  /** Sets the given fields of one source record; a null category or name clears the choice. */
   setRecordChoice(sourceId: string, externalId: string, patch: Partial<RecordChoice>, now: string): void;
   /** Sets the given fields and leaves the others alone; `null` clears a field. */
   setTransactionOverride(transactionId: string, patch: Partial<TransactionOverride>, now: string): void;

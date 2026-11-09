@@ -22,7 +22,7 @@ import { createRule, deleteRule, exportRules, importRules, listRules, previewRul
 import { loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck, setBillCheckDismissed } from './bill-check.ts';
 import { applyBillFile, listBillImports, previewBillFile, undoBillImport, type ImportResult } from './bill-import.ts';
-import { bulkEdit, addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, removeGroup, renameCategory, saveGroup, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
+import { bulkEdit, addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, removeGroup, renameCategory, saveGroup, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionName, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 import * as views from './views.ts';
 
@@ -499,6 +499,13 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
         const input = parseBody(body);
         if (!input) return badRequest('body must be { ignored }');
         return fromMutation(setIgnored(store, id, input.ignored, now));
+      }
+      if (parts.length === 4 && id !== undefined && sub === 'name') {
+        if (method !== 'PUT') return methodNotAllowed();
+        const input = parseBody(body);
+        if (!input || !('name' in input)) return badRequest('body must be { name } with text, or null to remove it');
+        const result = setTransactionName(store, id, input.name, now);
+        return result.ok ? { status: 200, body: { ok: true, changed: result.changed ?? 0 } } : fromMutation(result);
       }
       if (parts.length === 4 && id !== undefined && sub === 'category') {
         if (method !== 'PUT') return methodNotAllowed();

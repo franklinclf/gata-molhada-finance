@@ -7,7 +7,8 @@ import type { ForeignAmount, Parties } from '../core/parties.ts';
 import { categoryForMcc } from './mcc.ts';
 import { pairReversals, type Reversal } from './reversals.ts';
 import { categoryFromRules, sortRules, type RuleSubject } from './rules-engine.ts';
-import { titleOf } from '../core/title.ts';
+import { namedTitle, titleOf } from '../core/title.ts';
+import { namesWithSeries } from './series.ts';
 import { merchantOf } from '../core/merchant.ts';
 import { counterpartyOf, evidenceRole, ownerNames, roleOf, slipBillPayments, type Role } from './roles.ts';
 import { publishedSourceBills } from './cycles.ts';
@@ -36,8 +37,10 @@ export interface EffectiveTransaction extends CanonicalTransaction {
   operation: string | null;
   /** The original amount of a purchase made in another currency (the transaction amount is in reais). */
   foreign: ForeignAmount | null;
-  /** The standard name shown on screen ("Pix enviado · Maria", "Pagamento de fatura", "Uber"). `description` stays what the bank wrote. */
+  /** The name shown on screen: the owner's name when there is one (`customName`, with the counter "2/5" on an installment), otherwise the standard one ("Pix enviado · Maria", "Pagamento de fatura", "Uber"). `description` stays what the bank wrote. */
   title: string;
+  /** The name the owner gave it ("Nome personalizado"); for an installment, the name of the whole purchase, without the counter. Rules, the AI and the merchant grouping read `description`, never this. */
+  customName: string | null;
   /** Card bill (due month, YYYY-MM) the transaction belongs to when it is not simply the one its date falls in: the owner moved it, or the issuer placed it. */
   billCycle: string | null;
   /** The purchase and the refund that returned it are one entry: this says which side this is and the other one. */
@@ -221,12 +224,20 @@ export function effectiveTransactions(
       const byBill = word?.status == null && t.status === 'pending' && role === null && bill !== undefined && (billCycle !== null ? bill.months.has(billCycle) : localDay(t.occurredAt) <= bill.lastClosing);
       const status = word?.status ?? (byBill ? 'posted' : t.status);
       const revived = word?.status === 'posted' && t.state === 'stale_pending';
-      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, reversal: null, billCycle, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, statusByBill: byBill, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }) };
+      return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, reversal: null, billCycle, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, statusByBill: byBill, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }), customName: null };
     });
   const mirrored = ownMirrors(built, cardIds);
+  // The names the owner gave. An installment purchase is grouped over every account, like the plan of installments, so the
+  // name of a purchase is the same on every screen.
+  const names = store.listTransactionNames();
+  const nameOf = names.size === 0 ? null : namesWithSeries(built, names);
   const rows = built
     .filter((t) => ids.has(t.accountId) && (options.accountId === undefined || t.accountId === options.accountId))
-    .map((t) => (mirrored.has(t.id) ? { ...t, role: 'own_transfer' as const, category: ROLE_CATEGORY.own_transfer, title: titleOf({ description: t.description, amount: t.amount, role: 'own_transfer', operation: t.operation, counterparty: t.counterparty }) } : t));
+    .map((t) => (mirrored.has(t.id) ? { ...t, role: 'own_transfer' as const, category: ROLE_CATEGORY.own_transfer, title: titleOf({ description: t.description, amount: t.amount, role: 'own_transfer', operation: t.operation, counterparty: t.counterparty }) } : t))
+    .map((t) => {
+      const name = nameOf?.get(t.id);
+      return name === undefined ? t : { ...t, customName: name, title: namedTitle(name, t.installment) };
+    });
   // A refund and the purchase it returned are one entry. The refund takes the category of the purchase (unless the owner chose its own),
   // so the category's total is net of it instead of the credit landing in "Estorno" or in income.
   const pairs = pairReversals(rows, store.listReversalLinks());

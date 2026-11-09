@@ -210,7 +210,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: 'transactions',
-    help: 'transactions {from?, to?, q?, category?, merchant?, kind?: expense|income, min?, max? (reais, valor absoluto), accounts?: [nomes], recurrence?: subscription|recurring|any, limit?<=25} : lista de transações e a soma de todas as que combinam. Cada linha traz um ref (t1, t2...) que as ferramentas de alteração aceitam nesta conversa.',
+    help: 'transactions {from?, to?, q?, category?, merchant?, kind?: expense|income, min?, max? (reais, valor absoluto), accounts?: [nomes], recurrence?: subscription|recurring|any, limit?<=25} : lista de transações e a soma de todas as que combinam. Cada linha traz um ref (t1, t2...) que as ferramentas de alteração aceitam nesta conversa. nome é o nome que o dono deu à transação (numa parcela, com o contador 2/5); ao falar dela, use o nome. descricao é sempre o texto do banco, e q busca nos dois.',
     run: (store, now, args, ctx) => {
       const today = localDay(now.toISOString());
       const r = range(args, today);
@@ -221,7 +221,7 @@ export const TOOLS: Tool[] = [
         quantidadeTotal: result.total,
         somaEntradas: reais(result.sums.income), somaSaidas: reais(result.sums.expense),
         // A planned installment is not a transaction yet, so it gets no ref.
-        transacoes: result.items.map((t) => ({ ref: t.estimated || !ctx ? undefined : ctx.refs.transaction(store, t.id), data: localDay(t.occurredAt), descricao: clip(t.description), valor: reais(t.amount), categoria: t.category, conta: `${t.account.institution}${t.account.last4 ? ` ${t.account.last4}` : ''}`, status: t.status, parcela: t.installment ? `${t.installment.number}/${t.installment.total}` : null, moedaOriginal: t.foreign ? `${t.foreign.currency} ${(t.foreign.amount / 100).toFixed(2)}` : undefined })),
+        transacoes: result.items.map((t) => ({ ref: t.estimated || !ctx ? undefined : ctx.refs.transaction(store, t.id), data: localDay(t.occurredAt), ...(t.customName !== null ? { nome: clip(t.title) } : {}), descricao: clip(t.description), valor: reais(t.amount), categoria: t.category, conta: `${t.account.institution}${t.account.last4 ? ` ${t.account.last4}` : ''}`, status: t.status, parcela: t.installment ? `${t.installment.number}/${t.installment.total}` : null, moedaOriginal: t.foreign ? `${t.foreign.currency} ${(t.foreign.amount / 100).toFixed(2)}` : undefined })),
         observacao: result.total > result.items.length ? `mostrando as ${result.items.length} de maior valor; as somas valem para todas as ${result.total}` : undefined,
       };
     },
