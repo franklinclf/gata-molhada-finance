@@ -20,6 +20,17 @@ export function installTooltip(): void {
 
   const place = (x: number, y: number) => {
     const box = tip.getBoundingClientRect();
+    // Chart columns ask for the tip beside them, vertically inside the chart, so it never covers the figures above or below the chart.
+    const side = current?.closest('[data-tip-at="side"]');
+    if (side) {
+      const col = side.getBoundingClientRect();
+      const chart = (side.parentElement ?? side).getBoundingClientRect();
+      const right = col.right + 8;
+      const left = right + box.width + 8 > window.innerWidth ? col.left - box.width - 8 : right;
+      const top = Math.min(Math.max(8, chart.top + (chart.height - box.height) / 2), window.innerHeight - box.height - 8);
+      tip.style.transform = `translate(${Math.max(8, left)}px, ${top}px)`;
+      return;
+    }
     const left = Math.min(Math.max(8, x + 14), window.innerWidth - box.width - 8);
     const top = y + 18 + box.height > window.innerHeight ? y - box.height - 12 : y + 18;
     tip.style.transform = `translate(${left}px, ${top}px)`;

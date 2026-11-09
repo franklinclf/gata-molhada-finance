@@ -1,5 +1,5 @@
-import { useState } from 'preact/hooks';
-import { lineExtent } from './chart-scale.ts';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { labelPlan, lineExtent } from './chart-scale.ts';
 import { brl, brlCompact, brlShort, dayMonth } from './format.ts';
 
 /** Chart colors come from the palette (--chart-1 is the accent), so slices stay visible on light and dark cards. */
@@ -96,6 +96,18 @@ export interface BarDatum {
 export function Bars({ data, hidden, selected, onSelect, height = 130, valueOnSelected = false }: { data: BarDatum[]; hidden: boolean; selected?: string | null; onSelect?: (key: string) => void; height?: number; /** On narrow screens only the selected bar keeps its value, because twelve columns are too thin for twelve values. */ valueOnSelected?: boolean }) {
   const max = Math.max(1, ...data.map((d) => d.value));
   const Tag = onSelect ? 'button' : 'div';
+  // The labels that fit depend on the width the chart really has, so it is measured and follows the widget when it is resized.
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    setWidth(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return;
+    const watch = new ResizeObserver(() => setWidth(el.clientWidth));
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
   // Bars that share a group (the in and out bars of a month) sit side by side under one label, so the label stays centered under the pair.
   const columns: BarDatum[][] = [];
   for (const d of data) {
@@ -103,19 +115,25 @@ export function Bars({ data, hidden, selected, onSelect, height = 130, valueOnSe
     if (d.group !== undefined && last && last[0]!.group === d.group) last.push(d);
     else columns.push([d]);
   }
+  const longest = Math.max(1, ...columns.map((c) => (c.map((d) => d.label).find((l) => l !== '') ?? '').length));
+  const gap = window.innerWidth < 600 ? 4 : 6;
+  const shownLabel = width > 0 ? labelPlan(columns.length, width, longest * 6.5 + 6, gap) : columns.map(() => true);
   return (
-    <div class={valueOnSelected ? 'bars sel-values' : 'bars'} style={{ height: `${height}px` }} role="group">
-      {columns.map((column) => {
+    <div ref={box} class={valueOnSelected ? 'bars sel-values' : 'bars'} style={{ height: `${height}px` }} role="group">
+      {columns.map((column, index) => {
         const first = column[0]!;
         const id = first.group ?? first.key;
         const on = selected === undefined || selected === null || selected === id;
         const paired = column.length > 1;
         const label = column.map((d) => d.label).find((l) => l !== '') ?? '';
+        // Bars of one column may carry the same text (the in and out bars of a day); it is shown once.
+        const tips = [...new Set(column.map((d) => d.tip ?? `${d.label}: ${brl(d.value)}`))];
         return (
           <Tag
             key={first.key}
             class={onSelect ? (on ? 'bar clickable on' : 'bar clickable') : 'bar'}
-            data-tip={hidden ? label : paired ? column.map((d) => d.tip ?? `${d.label}: ${brl(d.value)}`).join('\n') : (first.tip ?? `${first.label}: ${brl(first.value)}`)}
+            data-tip={hidden ? label : tips.join('\n')}
+            data-tip-at="side"
             onClick={() => onSelect?.(id)}
             aria-pressed={onSelect ? selected === id : undefined}
           >
@@ -126,7 +144,7 @@ export function Bars({ data, hidden, selected, onSelect, height = 130, valueOnSe
                 <span key={d.key} class="bar-fill" style={{ height: `${(d.value / max) * 100}%`, background: d.color ?? 'var(--accent)', opacity: on ? 1 : 0.35 }} />
               ))}
             </span>
-            <span class="bar-label">{label}</span>
+            <span class="bar-label">{shownLabel[index] ? label : '\u00a0'}</span>
           </Tag>
         );
       })}

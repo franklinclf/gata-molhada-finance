@@ -2,7 +2,8 @@ import { previousBusinessDay } from '../core/business-days.ts';
 import { merchantOf } from '../core/merchant.ts';
 import { dayNumber, nextMonth } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
-import type { Store } from '../store/store.ts';
+import type { RecurringOverride, Store } from '../store/store.ts';
+import { cleanCategoryName } from './mutations.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 
 export interface RecurringItem {
@@ -27,6 +28,8 @@ export interface RecurringItem {
   account: 'bank' | 'card';
   /** What the owner called it, or charges of a subscription category: a subscription, another recurring charge, or neither said. */
   label: 'subscription' | 'recurring' | null;
+  /** True when the owner corrected the name, amount or day of this expense (`PUT /api/recurring/override`). */
+  edited: boolean;
   /** True when the owner marked it, so it is listed even before the app has enough charges to detect it. */
   manual: boolean;
   /** The charges come about once a month. False for a marked item whose history says otherwise: its day and next date are not a promise, and it is not projected or counted as a monthly weight. */
@@ -136,8 +139,18 @@ function rentAmount(sorted: Occurrence[], today: string): { amount: number; rest
  * left out, and so are moves the app does not count as spending or income.
  */
 export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {}): RecurringItem[] {
+  return detect(store, now, opts, false);
+}
+
+/** The items the owner said are not recurring, as the app would list them otherwise, so one can be brought back. */
+export function ignoredRecurring(store: Store, now: Date, opts: ViewOptions = {}): RecurringItem[] {
+  return detect(store, now, opts, true);
+}
+
+function detect(store: Store, now: Date, opts: ViewOptions, onlyIgnored: boolean): RecurringItem[] {
   const today = localDay(now.toISOString());
   const ignored = store.listRecurringIgnored();
+  const overrides = store.listRecurringOverrides();
   const cardIds = new Set(store.listCanonicalAccounts().filter((a) => a.kind === 'credit_card').map((a) => a.id));
   const groups = new Map<string, Occurrence[]>();
   for (const t of effectiveTransactions(store, opts)) {
@@ -156,7 +169,7 @@ export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {})
   const gapsOf = (sorted: Occurrence[]) => sorted.slice(1).map((o, i) => o.day - sorted[i]!.day);
   for (const [key, list] of groups) {
     const mark = marks.get(key) ?? null;
-    if (ignored.has(key) && mark === null) continue;
+    if (onlyIgnored ? !(ignored.has(key) && mark === null) : ignored.has(key) && mark === null) continue;
     const merged = mergeSameDay(list);
     const gaps = gapsOf(merged);
     const split = key.startsWith('in|') && gaps.length >= MIN_OCCURRENCES && median(gaps) < SPLIT_BELOW_DAYS ? byDayOfMonth(merged) : [merged];
@@ -164,14 +177,14 @@ export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {})
     // finds two rhythms with more than one credit each, so scattered days are not turned into several items.
     const parts = mark === null || split.filter((c) => c.length >= 2).length >= 2 ? split : [merged];
     for (const sorted of parts) {
-      const item = itemOf(key, sorted, gapsOf(sorted), mark, today);
+      const item = itemOf(key, sorted, gapsOf(sorted), mark, today, overrides.get(key) ?? null);
       if (item) items.push(item);
     }
   }
   return items.sort((a, b) => a.nextDay.localeCompare(b.nextDay) || a.name.localeCompare(b.name));
 }
 
-function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscription' | 'recurring' | null, today: string): RecurringItem | null {
+function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscription' | 'recurring' | null, today: string, override: RecurringOverride | null): RecurringItem | null {
   const amounts = sorted.map((o) => o.amount);
   let amount = median(amounts);
   const near = (band: number) => amounts.filter((a) => Math.abs(a - amount) <= amount * band).length / amounts.length;
@@ -202,7 +215,10 @@ function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscr
   const basis = rest === null ? sorted : sorted.filter((o) => o.month < today.slice(0, 7));
   const anchor = basis.at(-1)!;
   const recent = basis.slice(-3).map(dayOfMonthOf);
-  const dayOfMonth = Math.max(...recent) - Math.min(...recent) > SAME_DAY_SPREAD ? recent.at(-1)! : median(recent);
+  const detectedDay = Math.max(...recent) - Math.min(...recent) > SAME_DAY_SPREAD ? recent.at(-1)! : median(recent);
+  // The owner's corrections apply to expenses only; an income is corrected through the registered income.
+  const edit = key.startsWith('out|') ? override : null;
+  const dayOfMonth = edit?.dayOfMonth ?? detectedDay;
   // The next one is the typical day in the month of the last one, moved a month ahead until it is a real interval after the last one.
   // A credit (a salary, say) on a weekend or holiday comes on the business day before; a payment keeps its day.
   const incoming = key.startsWith('in|');
@@ -217,9 +233,9 @@ function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscr
   const label = mark ?? (category !== null && SUBSCRIPTION_CATEGORIES.has(category) ? 'subscription' : null);
   return {
     key,
-    name: last.name,
+    name: edit?.name ?? last.name,
     direction: key.startsWith('out') ? 'out' : 'in',
-    amount,
+    amount: edit?.amount ?? amount,
     kind,
     dayOfMonth,
     occurrences: sorted.length,
@@ -229,6 +245,7 @@ function itemOf(key: string, sorted: Occurrence[], gaps: number[], mark: 'subscr
     category,
     account: sorted.filter((o) => o.card).length > sorted.length / 2 ? 'card' : 'bank',
     label,
+    edited: edit !== null,
     manual: mark !== null,
     regular,
     rest,
@@ -260,5 +277,27 @@ export function markRecurring(store: Store, key: unknown, label: unknown, now: D
   const at = now.toISOString();
   store.setRecurringMark(key, label === 'subscription' || label === 'recurring' ? label : null, at);
   store.setRecurringIgnored(key, label === 'none', at);
+  return { ok: true };
+}
+
+/**
+ * Corrects what the list shows for a detected expense: its name, expected amount (cents) and day of the month. A field that is
+ * null or missing goes back to what the app detected, and with all three empty the correction is removed. Incomes are not
+ * corrected here: they have their own registration (`/api/income`).
+ */
+export function overrideRecurring(store: Store, input: Record<string, unknown>, now: Date): RecurringResult {
+  const { key } = input;
+  if (typeof key !== 'string' || !/^out\|.{1,120}$/.test(key)) return { ok: false, status: 400, error: 'key must be the key of a detected expense' };
+  const empty = (v: unknown) => v === undefined || v === null || v === '';
+  let name: string | null = null;
+  if (!empty(input.name)) {
+    name = cleanCategoryName(input.name);
+    if (name === null) return { ok: false, status: 400, error: 'name must be text of 1 to 60 characters' };
+  }
+  const amount = empty(input.amount) ? null : input.amount;
+  if (amount !== null && (typeof amount !== 'number' || !Number.isInteger(amount) || amount <= 0 || amount > 1_000_000_000)) return { ok: false, status: 400, error: 'amount must be a whole number of cents above zero' };
+  const day = empty(input.dayOfMonth) ? null : input.dayOfMonth;
+  if (day !== null && (typeof day !== 'number' || !Number.isInteger(day) || day < 1 || day > 31)) return { ok: false, status: 400, error: 'dayOfMonth must be 1 to 31' };
+  store.setRecurringOverride(key, name === null && amount === null && day === null ? null : { name, amount: amount as number | null, dayOfMonth: day as number | null }, now.toISOString());
   return { ok: true };
 }

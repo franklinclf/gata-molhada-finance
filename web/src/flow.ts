@@ -2,7 +2,7 @@ import { dayMonth, monthName } from './format.ts';
 
 export interface FlowColumn {
   key: string;
-  /** Short label under the bars; empty where a label would crowd its neighbours. */
+  /** Short label under the bars. The chart decides which ones fit. */
   label: string;
   tip: string;
   inflow: number;
@@ -10,7 +10,6 @@ export interface FlowColumn {
 }
 
 const DAY = 86_400_000;
-const LABELLED_DAYS = new Set([1, 5, 10, 15, 20, 25, 30]);
 
 /**
  * What went in and out of the accounts as chart columns: one per day for a single month, one per month for longer spans.
@@ -23,7 +22,7 @@ export function flowColumns(days: Array<{ day: string; inflow: number; outflow: 
     for (let t = Date.parse(`${from}T00:00:00Z`); t <= Date.parse(`${to}T00:00:00Z`) && out.length < 62; t += DAY) {
       const day = new Date(t).toISOString().slice(0, 10);
       const entry = byDay.get(day);
-      out.push({ key: day, label: LABELLED_DAYS.has(Number(day.slice(8))) ? String(Number(day.slice(8))) : '', tip: dayMonth(day), inflow: entry?.inflow ?? 0, outflow: entry?.outflow ?? 0 });
+      out.push({ key: day, label: String(Number(day.slice(8))), tip: dayMonth(day), inflow: entry?.inflow ?? 0, outflow: entry?.outflow ?? 0 });
     }
     return out;
   }

@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.ts';
 import { brl, monthName, parseBrl } from './format.ts';
@@ -6,7 +7,7 @@ import { useLoad } from './hooks.ts';
 import { invalidateData } from './invalidate.ts';
 import { Select } from './Select.tsx';
 
-interface Draft {
+export interface Draft {
   id: number | null;
   name: string;
   amount: string;
@@ -15,12 +16,48 @@ interface Draft {
 }
 
 /** What a payment day that is a weekend or holiday does: the choice in the form and the short word in the list. */
-const RULES: Array<{ value: NonBusinessRule; label: string; short: string }> = [
+export const RULES: Array<{ value: NonBusinessRule; label: string; short: string }> = [
   { value: 'previous', label: 'Antecipa para o dia útil anterior', short: 'antecipa' },
   { value: 'next', label: 'Adia para o próximo dia útil', short: 'adia' },
   { value: 'keep', label: 'Mantém o dia', short: 'mantém o dia' },
 ];
-const blank = (): Draft => ({ id: null, name: '', amount: '', day: '', rule: 'previous' });
+export const blank = (): Draft => ({ id: null, name: '', amount: '', day: '', rule: 'previous' });
+
+/** A draft from an amount in cents, as the form shows it. */
+export const draftOf = (r: { id?: number | null; name: string; amount: number; dayOfMonth: number; nonBusinessRule?: NonBusinessRule }): Draft => ({ id: r.id ?? null, name: r.name, amount: (r.amount / 100).toFixed(2).replace('.', ','), day: String(r.dayOfMonth), rule: r.nonBusinessRule ?? 'previous' });
+
+/** The typed fields of the form as what the API takes, or what is wrong with them. */
+export function readDraft(form: Draft): { error: string } | { value: { name: string; amount: number; dayOfMonth: number; nonBusinessRule: NonBusinessRule; fromMonth: null; untilMonth: null } } {
+  const amount = parseBrl(form.amount);
+  if (amount === null) return { error: 'Digite um valor maior que zero.' };
+  const day = Number(form.day);
+  if (!Number.isInteger(day) || day < 1 || day > 31) return { error: 'Digite o dia do mês, de 1 a 31.' };
+  return { value: { name: form.name.trim(), amount, dayOfMonth: day, nonBusinessRule: form.rule, fromMonth: null, untilMonth: null } };
+}
+
+/** The fields of an income: name, value, payment day and what a weekend or holiday does. Shared by the income panel and the list of repeating items in Calendário. */
+export function IncomeForm({ form, setForm, onSubmit, onCancel, children }: { form: Draft; setForm: (draft: Draft) => void; onSubmit: () => void; onCancel: () => void; children?: ComponentChildren }) {
+  return (
+    <form
+      class="recat income-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
+      <input aria-label="Nome da renda" placeholder="Nome (ex.: Salário)" value={form.name} maxLength={60} onInput={(e) => setForm({ ...form, name: (e.currentTarget as HTMLInputElement).value })} />
+      <input aria-label="Valor" inputMode="decimal" placeholder="Valor" value={form.amount} onInput={(e) => setForm({ ...form, amount: (e.currentTarget as HTMLInputElement).value })} />
+      <input aria-label="Dia do mês" type="number" min="1" max="31" placeholder="Dia (1 a 31)" value={form.day} onInput={(e) => setForm({ ...form, day: (e.currentTarget as HTMLInputElement).value })} />
+      <div class="income-rule">
+        <span class="muted">Se cair em fim de semana ou feriado:</span>
+        <Select ariaLabel="Se cair em fim de semana ou feriado" value={form.rule} onChange={(rule) => setForm({ ...form, rule: rule as NonBusinessRule })} options={RULES.map((r) => ({ value: r.value, label: r.label }))} />
+      </div>
+      <button class="primary" disabled={form.name.trim() === ''}>Salvar</button>
+      <button type="button" class="link" onClick={onCancel}>Cancelar</button>
+      {children}
+    </form>
+  );
+}
 
 /**
  * The fixed income the owner registers (one entry per payment day, so a salary paid on the 11th and the 25th is two entries).
@@ -105,28 +142,16 @@ export function IncomePanel({ months, hidden, focus = false, prefill = null }: {
         </div>
       )}
       {form && (
-        <form
-          class="recat income-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const amount = parseBrl(form.amount);
-            if (amount === null) return setMessage('Digite um valor maior que zero.');
-            const day = Number(form.day);
-            if (!Number.isInteger(day) || day < 1 || day > 31) return setMessage('Digite o dia do mês, de 1 a 31.');
-            const name = form.name.trim();
-            void run(() => api.saveIncome(form.id, { name, amount, dayOfMonth: day, nonBusinessRule: form.rule, fromMonth: null, untilMonth: null }), form.id === null ? { name, amount: form.amount, rule: form.rule } : undefined);
+        <IncomeForm
+          form={form}
+          setForm={setForm}
+          onCancel={() => setForm(null)}
+          onSubmit={() => {
+            const read = readDraft(form);
+            if ('error' in read) return setMessage(read.error);
+            void run(() => api.saveIncome(form.id, read.value), form.id === null ? { name: read.value.name, amount: form.amount, rule: form.rule } : undefined);
           }}
-        >
-          <input aria-label="Nome da renda" placeholder="Nome (ex.: Salário)" value={form.name} maxLength={60} onInput={(e) => setForm({ ...form, name: (e.currentTarget as HTMLInputElement).value })} />
-          <input aria-label="Valor" inputMode="decimal" placeholder="Valor" value={form.amount} onInput={(e) => setForm({ ...form, amount: (e.currentTarget as HTMLInputElement).value })} />
-          <input aria-label="Dia do mês" type="number" min="1" max="31" placeholder="Dia (1 a 31)" value={form.day} onInput={(e) => setForm({ ...form, day: (e.currentTarget as HTMLInputElement).value })} />
-          <div class="income-rule">
-            <span class="muted">Se cair em fim de semana ou feriado:</span>
-            <Select ariaLabel="Se cair em fim de semana ou feriado" value={form.rule} onChange={(rule) => setForm({ ...form, rule: rule as NonBusinessRule })} options={RULES.map((r) => ({ value: r.value, label: r.label }))} />
-          </div>
-          <button class="primary" disabled={form.name.trim() === ''}>Salvar</button>
-          <button type="button" class="link" onClick={() => setForm(null)}>Cancelar</button>
-        </form>
+        />
       )}
       {message && <div class="error">{message}</div>}
       {months && items.length > 0 && (
