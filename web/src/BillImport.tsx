@@ -1,5 +1,5 @@
 import { useState } from 'preact/hooks';
-import { api, ApiError, type ApplyResult, type BillPreview, type ImageOnly, type PreviewLine } from './api.ts';
+import { api, ApiError, type AccountPreview, type ApplyResult, type BillPreview, type ImageOnly, type PreviewLine } from './api.ts';
 import { gapText } from './bill-check.ts';
 import { Badge, Button } from './ds.tsx';
 import { brl, dayMonth } from './format.ts';
@@ -13,7 +13,7 @@ const MAX_BYTES = 6 * 1024 * 1024;
 /** The page sent to the AI, as base64 JPEG. */
 const MAX_IMAGE_CHARS = 1.5 * 1024 * 1024;
 
-const ISSUER: Record<string, string> = { bradescard: 'Bradescard', bradesco: 'Bradesco' };
+const ISSUER: Record<string, string> = { bradescard: 'Bradescard', bradesco: 'Bradesco', nubank: 'Nubank', itau: 'Itaú', '99pay': '99Pay' };
 const MATCH: Record<PreviewLine['match'], { label: string; tone: 'muted' | 'good' | 'warn' }> = {
   already_there: { label: 'já existe', tone: 'muted' },
   new: { label: 'nova', tone: 'good' },
@@ -33,6 +33,9 @@ interface Item {
   state: 'waiting' | 'reading' | 'ready' | 'image' | 'error' | 'applying' | 'applied' | 'undone';
   error?: string;
   preview?: BillPreview;
+  /** An account statement (extrato) instead of a card bill. */
+  account?: AccountPreview;
+  accountPick?: string;
   image?: ImageOnly;
   /** The app card picked for each card of the statement (last 4 digits). */
   picks: Record<string, string>;
@@ -68,7 +71,8 @@ export function BillImportPanel({ hidden }: { hidden: boolean }) {
       patch(item.key, { state: 'reading' });
       try {
         const answer = await api.uploadBill(item.file, item.name);
-        if (answer.readable) patch(item.key, { state: 'ready', preview: answer, picks: Object.fromEntries(answer.cards.filter((c) => c.targetId).map((c) => [c.final, c.targetId as string])) });
+        if (answer.readable && answer.statementKind === 'account') patch(item.key, { state: 'ready', account: answer, accountPick: answer.targetId ?? undefined });
+        else if (answer.readable) patch(item.key, { state: 'ready', preview: answer, picks: Object.fromEntries(answer.cards.filter((c) => c.targetId).map((c) => [c.final, c.targetId as string])) });
         else patch(item.key, { state: 'image', image: answer });
       } catch (e) {
         patch(item.key, { state: 'error', error: messageOf(e) });
@@ -80,7 +84,18 @@ export function BillImportPanel({ hidden }: { hidden: boolean }) {
     const picks = { ...item.picks, [final]: accountId };
     patch(item.key, { picks, note: undefined });
     try {
-      patch(item.key, { preview: await api.previewBill({ fileHash: item.preview!.fileHash, targets: picks }), picks, removeManual: [] });
+      const next = await api.previewBill({ fileHash: item.preview!.fileHash, targets: picks });
+      if (next.statementKind === 'card') patch(item.key, { preview: next, picks, removeManual: [] });
+    } catch (e) {
+      patch(item.key, { note: messageOf(e) });
+    }
+  };
+
+  const pickAccount = async (item: Item, accountId: string) => {
+    patch(item.key, { accountPick: accountId, note: undefined });
+    try {
+      const next = await api.previewBill({ fileHash: item.account!.fileHash, accountId });
+      if (next.statementKind === 'account') patch(item.key, { account: next, accountPick: accountId, removeManual: [] });
     } catch (e) {
       patch(item.key, { note: messageOf(e) });
     }
@@ -89,7 +104,9 @@ export function BillImportPanel({ hidden }: { hidden: boolean }) {
   const apply = async (item: Item) => {
     patch(item.key, { state: 'applying', note: undefined });
     try {
-      const applied = await api.applyBill({ fileHash: item.preview!.fileHash, targets: item.picks, removeManual: item.removeManual });
+      const applied = item.account
+        ? await api.applyBill({ fileHash: item.account.fileHash, ...(item.accountPick ? { accountId: item.accountPick } : {}), removeManual: item.removeManual })
+        : await api.applyBill({ fileHash: item.preview!.fileHash, targets: item.picks, removeManual: item.removeManual });
       patch(item.key, { state: 'applied', applied });
       imports.reload();
     } catch (e) {
@@ -125,6 +142,7 @@ export function BillImportPanel({ hidden }: { hidden: boolean }) {
   };
 
   const accounts = (p: BillPreview) => p.accounts.map((a) => ({ value: a.id, label: `${cardName(a.institution, a.name)}${a.last4 ? ` •••• ${a.last4}` : ''}` }));
+  const accountOptions = (a: AccountPreview) => a.accounts.map((x) => ({ value: x.id, label: `${x.institution} ${x.name}`.trim() }));
   const stateText = (item: Item): string => {
     if (item.state === 'waiting') return 'na fila';
     if (item.state === 'reading') return 'lendo…';
@@ -132,7 +150,7 @@ export function BillImportPanel({ hidden }: { hidden: boolean }) {
     if (item.state === 'image') return 'só imagem, sem texto';
     if (item.state === 'applying') return 'aplicando…';
     if (item.state === 'undone') return 'importação desfeita';
-    const lines = item.preview?.lineCount ?? 0;
+    const lines = item.preview?.lineCount ?? item.account?.lineCount ?? 0;
     return `${item.state === 'applied' ? 'aplicada' : 'ok'}, ${lines} ${lines === 1 ? 'lançamento' : 'lançamentos'}`;
   };
 
@@ -141,7 +159,7 @@ export function BillImportPanel({ hidden }: { hidden: boolean }) {
     <section class="panel">
       <h2>Importar fatura em PDF</h2>
       <p class="muted">
-        Envie a fatura mensal em PDF do Bradescard ou do Bradesco (a que tem texto, até 6 MB). O app lê o arquivo aqui mesmo, mostra o que entraria e só grava quando você aplica: as compras que o Meu Pluggy já tem continuam valendo uma vez, e as que faltam passam a contar. Do arquivo ficam só os lançamentos e uma impressão digital (hash); o PDF, seu nome, CPF e endereço não são guardados.
+        Envie a fatura mensal em PDF do Bradescard, do Bradesco, do Nubank ou do Itaú, ou o extrato da conta 99Pay (o PDF que tem texto, até 6 MB). O app lê o arquivo aqui mesmo, mostra o que entraria e só grava quando você aplica: as compras e movimentações que o Meu Pluggy já tem continuam valendo uma vez, e as que faltam passam a contar. Do arquivo ficam só os lançamentos e uma impressão digital (hash); o PDF, seu nome, CPF e endereço não são guardados.
       </p>
       <div class="links">
         <label class="primary small file-pick">
@@ -174,6 +192,74 @@ export function BillImportPanel({ hidden }: { hidden: boolean }) {
                           Ler com IA
                         </Button>
                       </div>
+                    </>
+                  )}
+                  {item.account && item.state !== 'undone' && (
+                    <>
+                      <div>
+                        Extrato {ISSUER[item.account.issuer] ?? item.account.issuer} · de {fullDay(item.account.from)} a {fullDay(item.account.to)} · saldo do período {brl(item.account.total, hidden)}
+                      </div>
+                      <div class="muted">O extrato não traz saldo, então não há conta de conferência: o app avisa das linhas repetidas ou ilegíveis e mostra o que já existe no Meu Pluggy.</div>
+                      {item.account.warnings.map((w) => (
+                        <div class="note" key={w}>
+                          {w}
+                        </div>
+                      ))}
+                      {item.account.previous && <div class="note">Este período já foi importado em {fullDay(item.account.previous.appliedAt.slice(0, 10))}{item.account.previous.sameFile ? ' com este mesmo arquivo' : ''}. Aplicar de novo substitui os lançamentos dele.</div>}
+                      <div class="links">
+                        <span>Conta do app</span>
+                        {item.state === 'applied' ? (
+                          <span class="muted">{accountOptions(item.account).find((a) => a.value === item.accountPick)?.label}</span>
+                        ) : (
+                          <Select ariaLabel="Conta do app para o extrato" value={item.accountPick ?? ''} placeholder="Escolha a conta" options={accountOptions(item.account)} onChange={(value) => value !== '' && void pickAccount(item, value)} />
+                        )}
+                      </div>
+                      <div>
+                        {item.account.counts.new} {item.account.counts.new === 1 ? 'nova' : 'novas'} · {item.account.counts.already_there} já {item.account.counts.already_there === 1 ? 'existente' : 'existentes'} · {item.account.counts.possible_duplicate} {item.account.counts.possible_duplicate === 1 ? 'possível duplicada' : 'possíveis duplicadas'}
+                        {item.account.counts.outside > 0 ? ` · ${item.account.counts.outside} fora do período do app` : ''}
+                      </div>
+                      {item.state !== 'applied' && item.account.manualCandidates.length > 0 && (
+                        <div>
+                          <div class="muted">Transações que você digitou e que este extrato parece trazer. Marque as que devem sair para não contar duas vezes:</div>
+                          {item.account.manualCandidates.map((m) => (
+                            <label class="check" key={m.id}>
+                              <input type="checkbox" checked={item.removeManual.includes(m.id)} onChange={(e) => patch(item.key, { removeManual: (e.currentTarget as HTMLInputElement).checked ? [...item.removeManual, m.id] : item.removeManual.filter((x) => x !== m.id) })} /> {dayMonth(m.day)} · {m.description} · {brl(m.amount, hidden)}
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                      <details>
+                        <summary class="muted">Ver os lançamentos ({item.account.lineCount})</summary>
+                        <ul class="rows">
+                          {item.account.lines.map((l, n) => (
+                            <li key={n}>
+                              <div class="grow clip">
+                                {dayMonth(l.day)} {l.time.slice(0, 5)} · {l.description}
+                                {l.note && <div class="muted">{l.note}</div>}
+                              </div>
+                              <span>{brl(l.amount, hidden)}</span>
+                              <Badge tone={MATCH[l.match].tone}>{MATCH[l.match].label}</Badge>
+                            </li>
+                          ))}
+                        </ul>
+                        {item.account.lineCount > item.account.lines.length && <div class="muted">Mostrando {item.account.lines.length} de {item.account.lineCount}.</div>}
+                      </details>
+                      {item.note && <div class="error">{item.note}</div>}
+                      {item.state === 'applied' && item.applied ? (
+                        <div class="note">
+                          Extrato importado: {item.applied.lines} lançamentos{item.applied.removedManual > 0 ? `, ${item.applied.removedManual} transações digitadas removidas` : ''}.{' '}
+                          <button class="link" onClick={() => void undo(item.applied!.importId, item.key)}>
+                            Desfazer
+                          </button>
+                        </div>
+                      ) : (
+                        <div class="links">
+                          <Button size="sm" variant="primary" disabled={!item.account.ready || item.state === 'applying'} onClick={() => void apply(item)}>
+                            {item.state === 'applying' ? 'Aplicando…' : 'Aplicar'}
+                          </Button>
+                          {!item.account.ready && <span class="muted">Escolha a conta do app para este extrato.</span>}
+                        </div>
+                      )}
                     </>
                   )}
                   {p && item.state !== 'undone' && (
@@ -270,7 +356,10 @@ export function BillImportPanel({ hidden }: { hidden: boolean }) {
             {past.map((i) => (
               <li key={i.id}>
                 <div class="grow">
-                  {ISSUER[i.issuer] ?? i.issuer} · vence {fullDay(i.dueDate)} · {i.cardFinals.map((f) => `•••• ${f}`).join(', ')} · {i.lineCount} lançamentos · total {brl(i.total, hidden)}
+                  {i.issuer === '99pay'
+                    ? `${ISSUER[i.issuer]} · extrato de ${i.closingDate ? fullDay(i.closingDate) : '?'} a ${fullDay(i.dueDate)} · ${i.lineCount} lançamentos · saldo do período `
+                    : `${ISSUER[i.issuer] ?? i.issuer} · vence ${fullDay(i.dueDate)} · ${i.cardFinals.map((f) => `•••• ${f}`).join(', ')} · ${i.lineCount} lançamentos · total `}
+                  {brl(i.total, hidden)}
                   <div class="muted">
                     {STATUS[i.status] ?? i.status} em {fullDay((i.resolvedAt ?? i.appliedAt).slice(0, 10))}
                   </div>
