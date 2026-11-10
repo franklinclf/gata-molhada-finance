@@ -404,13 +404,13 @@ test('a card bill paid from the bank account is not spending, whichever way the 
   store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
   const checking: CanonicalAccount = { ...account('chk'), kind: 'checking', creditLimit: null, availableLimit: null, refs: [] };
   store.replaceCanonicalAccounts([checking], [], NOW.toISOString());
-  const payment = { ...tx('bill', 'chk', '2026-10-16', -210157, 'Taxas de cartão de crédito'), description: 'GASTOS CARTAO DE CREDITO - DOCTO: 3990288' };
+  const payment = { ...tx('bill', 'chk', '2026-10-16', -200000, 'Taxas de cartão de crédito'), description: 'GASTOS CARTAO DE CREDITO - DOCTO: 3990288' };
   store.replaceCanonicalTransactions(
     [payment, tx('lunch', 'chk', '2026-10-16', -5000, 'Restaurantes, bares e lanchonetes')],
     [{ sourceId: 'pierre', externalId: 'p1', transactionId: 'bill', matchPass: 0 }, { sourceId: 'pluggy', externalId: 'g1', transactionId: 'bill', matchPass: 1 }],
     NOW.toISOString(),
   );
-  store.upsertSourceTransactions('pluggy', [{ externalId: 'g1', accountExternalId: 'x', occurredAt: '2026-10-16T15:00:00Z', amount: -210157, description: payment.description, descriptionRaw: null, status: 'posted', installment: null, category: 'Credit card payment' }], NOW.toISOString());
+  store.upsertSourceTransactions('pluggy', [{ externalId: 'g1', accountExternalId: 'x', occurredAt: '2026-10-16T15:00:00Z', amount: -200000, description: payment.description, descriptionRaw: null, status: 'posted', installment: null, category: 'Credit card payment' }], NOW.toISOString());
   const result = spending(store, monthRange(NOW), 'category', NOW);
   assert.equal(result.total, 5000);
 });
@@ -535,21 +535,21 @@ test('the open bill of a card includes installments of earlier purchases that th
 test('the bank text and the card text of one payment on the same day are one payment', () => {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
-  store.upsertSourceBills('pluggy', [{ externalId: 'b-sep', accountExternalId: 'ext-leg', dueDate: '2026-09-15', closingDate: '2026-09-08', total: 210157, minimumPayment: null }, { externalId: 'b-oct', accountExternalId: 'ext-leg', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 10000, minimumPayment: null }], NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-sep', accountExternalId: 'ext-leg', dueDate: '2026-09-15', closingDate: '2026-09-08', total: 200000, minimumPayment: null }, { externalId: 'b-oct', accountExternalId: 'ext-leg', dueDate: '2026-10-15', closingDate: '2026-10-08', total: 10000, minimumPayment: null }], NOW.toISOString());
   const leg = account('leg', { refs: [{ sourceId: 'pluggy', externalId: 'ext-leg', role: 'member' }] });
   // Both pending, same source, same amount and day, different words: Pluggy's "Pagamento recebido" and the bank's own text.
-  const a = { ...tx('a', 'leg', '2026-09-14', 210157, 'Pagamento de cartão de crédito'), description: 'Pagamento recebido', status: 'pending' as const };
-  const b = { ...tx('b', 'leg', '2026-09-14', 210157, 'Pagamento de cartão de crédito'), description: 'PAGTO. POR DEB EM C/C', status: 'pending' as const };
+  const a = { ...tx('a', 'leg', '2026-09-14', 200000, 'Pagamento de cartão de crédito'), description: 'Pagamento recebido', status: 'pending' as const };
+  const b = { ...tx('b', 'leg', '2026-09-14', 200000, 'Pagamento de cartão de crédito'), description: 'PAGTO. POR DEB EM C/C', status: 'pending' as const };
   const links = [a, b].map((p) => ({ sourceId: 'pluggy', externalId: `e-${p.id}`, transactionId: p.id, matchPass: 0 }));
   store.replaceCanonicalAccounts([leg], [], NOW.toISOString());
-  store.replaceCanonicalTransactions([tx('start', 'leg', '2026-08-01', -100), tx('buy', 'leg', '2026-09-02', -210157), a, b], links, NOW.toISOString());
-  assert.equal(cyclesFor(store, leg, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-09')?.paid, 210157);
+  store.replaceCanonicalTransactions([tx('start', 'leg', '2026-08-01', -100), tx('buy', 'leg', '2026-09-02', -200000), a, b], links, NOW.toISOString());
+  assert.equal(cyclesFor(store, leg, effectiveTransactions(store), '2026-10-27').find((c) => c.key === '2026-09')?.paid, 200000);
 });
 
 test('a bill that closed a day or two ago and is not published yet keeps the open cycle until it is, or until the grace passes', () => {
   const store = openSqliteStore(':memory:', MIGRATIONS);
   store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
-  store.upsertSourceBills('pluggy', [{ externalId: 'b-oct', accountExternalId: 'ext-am', dueDate: '2026-10-15', closingDate: '2026-10-01', total: 22128, minimumPayment: null }], NOW.toISOString());
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-oct', accountExternalId: 'ext-am', dueDate: '2026-10-15', closingDate: '2026-10-01', total: 21500, minimumPayment: null }], NOW.toISOString());
   const am = account('am', { refs: [{ sourceId: 'pluggy', externalId: 'ext-am', role: 'member' }] });
   store.replaceCanonicalAccounts([am], [], NOW.toISOString());
   store.replaceCanonicalTransactions([tx('start', 'am', '2026-09-01', -100), tx('buy', 'am', '2026-11-02', -5000)], [], NOW.toISOString());
@@ -591,14 +591,14 @@ test('reconciliation uses a charge older than the data start when its bill is du
   const at = NOW.toISOString();
   store.registerSource({ id: 'pluggy', kind: 'aggregator', capabilities: {} }, at);
   store.upsertSourceAccounts('pluggy', [sourceAccount({ externalId: 'ext-k', kind: 'credit_card' })], at);
-  store.upsertSourceBills('pluggy', [{ externalId: 'b-jun', accountExternalId: 'ext-k', dueDate: '2026-06-15', closingDate: '2026-06-08', total: 27490, minimumPayment: null }], at);
+  store.upsertSourceBills('pluggy', [{ externalId: 'b-jun', accountExternalId: 'ext-k', dueDate: '2026-06-15', closingDate: '2026-06-08', total: 25000, minimumPayment: null }], at);
   const parties = { operation: null, mcc: null, payer: null, receiver: null, billId: 'b-jun' };
   store.upsertSourceTransactions('pluggy', [
-    { ...sourceTx({ externalId: 'old-installment', accountExternalId: 'ext-k', occurredAt: '2025-11-28T12:00:00.000Z', amount: -27490, descriptionRaw: 'ALIPAY 07/12' }), parties },
+    { ...sourceTx({ externalId: 'old-installment', accountExternalId: 'ext-k', occurredAt: '2025-11-28T12:00:00.000Z', amount: -25000, descriptionRaw: 'ALIPAY 07/12' }), parties },
     sourceTx({ externalId: 'old-plain', accountExternalId: 'ext-k', occurredAt: '2025-11-28T12:00:00.000Z', amount: -100, descriptionRaw: 'OLD' }),
   ], at);
   runReconciliation(store, { now: () => NOW });
-  assert.deepEqual(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => t.amount), [-27490]);
+  assert.deepEqual(store.listCanonicalTransactions({ includeExcluded: true }).map((t) => t.amount), [-25000]);
   assert.equal(store.listSourceTransactions('pluggy').length, 2, 'the older record that no bill claims is left out of the canonical data, not deleted');
 });
 
@@ -607,17 +607,17 @@ test('cards that close on different days: one bar per due month shows the closed
   store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
   const bill = (id: string, ext: string, due: string, closing: string, total: number) => ({ externalId: id, accountExternalId: ext, dueDate: due, closingDate: closing, total, minimumPayment: null });
   store.upsertSourceBills('pluggy', [
-    bill('a-oct', 'ext-ca', '2026-10-15', '2026-10-02', 20000), bill('a-nov', 'ext-ca', '2026-11-15', '2026-11-02', 11327),
+    bill('a-oct', 'ext-ca', '2026-10-15', '2026-10-02', 20000), bill('a-nov', 'ext-ca', '2026-11-15', '2026-11-02', 10500),
     bill('b-oct', 'ext-cb', '2026-10-15', '2026-10-08', 30000),
   ], NOW.toISOString());
-  const ca = account('ca', { refs: [{ sourceId: 'pluggy', externalId: 'ext-ca', role: 'member' }], balance: 11327 });
+  const ca = account('ca', { refs: [{ sourceId: 'pluggy', externalId: 'ext-ca', role: 'member' }], balance: 10500 });
   const cb = account('cb', { refs: [{ sourceId: 'pluggy', externalId: 'ext-cb', role: 'member' }], balance: 5000 });
   store.replaceCanonicalAccounts([ca, cb], [], NOW.toISOString());
-  store.replaceCanonicalTransactions([tx('a0', 'ca', '2026-09-20', -20000), tx('a1', 'ca', '2026-10-20', -11327), tx('b0', 'cb', '2026-09-20', -30000), tx('b1', 'cb', '2026-10-20', -5000)], [], NOW.toISOString());
+  store.replaceCanonicalTransactions([tx('a0', 'ca', '2026-09-20', -20000), tx('a1', 'ca', '2026-10-20', -10500), tx('b0', 'cb', '2026-09-20', -30000), tx('b1', 'cb', '2026-10-20', -5000)], [], NOW.toISOString());
   const today = new Date('2026-11-04T15:00:00Z');
   const nov = cardBills(store, today).bars.find((b) => b.key === '2026-11')!;
   assert.deepEqual([nov.open, nov.closedCards, nov.openCards, nov.current], [true, 1, 1, true]);
-  assert.ok(nov.total > 11327, 'the card that has not closed adds its running total to the closed bill');
+  assert.ok(nov.total > 10500, 'the card that has not closed adds its running total to the closed bill');
 });
 
 test('when the newest charges are already on the next bill by the issuer\'s word, the month before has closed even if the estimated closing day has not passed', () => {
