@@ -813,3 +813,40 @@ body.wide .main { max-width: none; }
 .bar-label { display: flex; justify-content: center; overflow: visible; text-overflow: clip; }
 .rows li.recurring-row { flex-wrap: wrap; row-gap: 6px; }
 .recurring-edit { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------- dashboard: tiny widgets, per-environment editing, switch ---------- */
+/* One row tall (a 2 x 1 tile): the title and the key figure, nothing else. */
+.widget.tiny { padding: 8px 12px; gap: 2px; border-radius: 18px; }
+.widget.tiny h2 { font-size: 12px; line-height: 1.2; }
+.widget.tiny header { min-height: 0; }
+.widget.tiny .widget-body { gap: 0; overflow: hidden; }
+.widget.tiny .widget-head { gap: 0; padding-bottom: 0; }
+.widget.tiny .widget-head > :not(.big):not(:has(.big)) { display: none; }
+.widget.tiny .widget-scroll, .widget.tiny .expand, .widget.tiny footer { display: none; }
+.widget.tiny .big { font-size: clamp(14px, 11cqi, 22px); line-height: 1.1; }
+.widget.tiny.empty-state { padding-top: 8px; padding-bottom: 8px; }
+.dash-env { font-size: 13px; color: var(--muted); margin-right: auto; }
+.size-pick { font: inherit; font-size: 12px; max-width: 150px; background: var(--card-2); color: var(--text); border: 0; border-radius: var(--radius-pill); padding: 3px 8px; cursor: pointer; }
+.switch-btn { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 14px; color: var(--text); background: none; border: 0; padding: 6px 8px; cursor: pointer; border-radius: var(--radius-pill); }
+.switch-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch-track { position: relative; width: 36px; height: 20px; border-radius: 10px; background: var(--track); transition: background 0.15s; flex: none; }
+.switch-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text); transition: transform 0.15s; }
+.switch-btn[aria-checked='true'] .switch-track { background: var(--accent); }
+.switch-btn[aria-checked='true'] .switch-thumb { transform: translateX(16px); background: var(--bg); }
+.nav-menu.right { left: auto; right: 0; }
+.tools-menu .nav-menu { min-width: 190px; }
+/* Phone layout: two half columns; a half-width widget sits beside the next one. */
+.stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.stack-cell { grid-column: span 2; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.stack-cell.half { grid-column: span 1; }
+.stack-cell > .widget { flex: 1; }
+.stack-cell.compact .widget { min-height: 0; }
+.stack.editing .stack-cell { outline: 2px dashed var(--track); outline-offset: 2px; border-radius: 24px; }
+.stack-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); padding: 2px 4px; }
+.stack-bar .grow { flex: 1 1 100px; min-width: 0; }
+.stack-bar .icon { padding: 4px 10px; min-height: 32px; }
+.grip { height: 32px; padding-top: 0; padding-bottom: 0; white-space: nowrap; overflow: hidden; }
+.grip > span:first-child { flex: none; }
+.grip-actions { min-width: 0; gap: 4px; }
+.grip .size-pick { min-width: 0; max-width: 120px; text-overflow: ellipsis; }
+.stack-bar .size-pick { max-width: 140px; }

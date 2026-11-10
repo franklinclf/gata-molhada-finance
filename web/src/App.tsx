@@ -15,7 +15,7 @@ import { SettingsPage } from './pages/settings.tsx';
 import { SpendingPage } from './pages/spending.tsx';
 import { NAV, useNavOrder } from './nav.ts';
 import { TransactionsPage } from './pages/transactions.tsx';
-import { hrefFor, useRoute } from './router.ts';
+import { hrefFor, patchParams, useRoute } from './router.ts';
 
 const svg = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': true } as const;
 const Eye = () => (
@@ -28,6 +28,13 @@ const EyeOff = () => (
   <svg {...svg}>
     <path d="M17.9 17.9A10.4 10.4 0 0 1 12 19c-6.5 0-10-7-10-7a17.7 17.7 0 0 1 4.1-5M9.9 5.2A9.8 9.8 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-2.2 3.2M9.9 9.9a3 3 0 0 0 4.2 4.2" />
     <path d="M2 2l20 20" />
+  </svg>
+);
+const Dots = () => (
+  <svg {...svg}>
+    <circle cx="5" cy="12" r="1.2" />
+    <circle cx="12" cy="12" r="1.2" />
+    <circle cx="19" cy="12" r="1.2" />
   </svg>
 );
 const LogOut = () => (
@@ -104,6 +111,7 @@ export function App() {
   const [now, setNow] = useState(() => new Date());
   const [more, setMore] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [tools, setTools] = useState(false);
   const route = useRoute();
   const nav = useNavOrder();
   const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page === 'status' ? 'settings' : route.page;
@@ -140,8 +148,11 @@ export function App() {
 
   // The top bar menu closes on a click anywhere else or on Escape.
   useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(false);
+    if (!menu && !tools) return;
+    const close = () => {
+      setMenu(false);
+      setTools(false);
+    };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
     document.addEventListener('click', close);
     window.addEventListener('keydown', onKey);
@@ -203,7 +214,7 @@ export function App() {
       break;
     case '':
     case 'dashboard':
-      page = <Dashboard hidden={hidden} now={now} />;
+      page = <Dashboard hidden={hidden} now={now} editing={route.params.get('customize') === '1'} setEditing={(on) => patchParams({ customize: on ? '1' : null })} />;
       break;
     default:
       page = (
@@ -247,6 +258,18 @@ export function App() {
           </div>
         </nav>
         <div class="topbar-actions">
+          <div class="nav-more tools-menu">
+            <button class="icon icon-btn" aria-label="Mais ações" title="Mais ações" aria-haspopup="menu" aria-expanded={tools} onClick={(e) => { e.stopPropagation(); setTools(!tools); setMenu(false); }}>
+              <Dots />
+            </button>
+            {tools && (
+              <div class="nav-menu right" role="menu">
+                <a class="navlink" role="menuitem" href={hrefFor('', { customize: '1' })} onClick={() => setTools(false)}>
+                  Personalizar painel
+                </a>
+              </div>
+            )}
+          </div>
           <button class="icon icon-btn" onClick={() => setHidden(!hidden)} aria-pressed={hidden} aria-label={hidden ? 'Mostrar valores' : 'Ocultar valores'} title={hidden ? 'Mostrar valores' : 'Ocultar valores'}>
             {hidden ? <EyeOff /> : <Eye />}
           </button>
@@ -285,6 +308,9 @@ export function App() {
                 {label} <span aria-hidden="true">›</span>
               </a>
             ))}
+            <a class="sheet-item" href={hrefFor('', { customize: '1' })} onClick={() => setMore(false)}>
+              Personalizar painel <span aria-hidden="true">›</span>
+            </a>
             <button class="sheet-item" onClick={() => setHidden(!hidden)}>
               {hidden ? 'Mostrar valores' : 'Ocultar valores'}
             </button>

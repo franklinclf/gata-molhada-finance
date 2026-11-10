@@ -8,6 +8,18 @@ export function Loading({ error }: { error?: string | null }) {
   return error ? <div class="error">Não foi possível carregar: {error}</div> : <div class="empty">Carregando…</div>;
 }
 
+/** An on/off switch with its label. A button, so Space and Enter work; the state is announced through aria-checked. */
+export function Switch({ label, checked, onChange, title }: { label: string; checked: boolean; onChange: (next: boolean) => void; title?: string }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} class="switch-btn" title={title} onClick={() => onChange(!checked)}>
+      <span class="switch-track" aria-hidden="true">
+        <span class="switch-thumb" />
+      </span>
+      {label}
+    </button>
+  );
+}
+
 export function Money({ cents, hidden, signed }: { cents: number; hidden: boolean; signed?: boolean }) {
   const cls = signed ? (cents > 0 ? 'good-text' : cents < 0 ? 'bad-text' : '') : '';
   return <span class={cls}>{brl(cents, hidden)}</span>;

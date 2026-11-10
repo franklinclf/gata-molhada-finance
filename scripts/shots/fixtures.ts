@@ -232,6 +232,8 @@ function screenResponses(store: Store, now: Date, pick: { detailId: string | nul
     '/api/auth/methods': { password: true, passkeys: true },
     '/api/auth/security': { strength: 'password', passkeysAvailable: true, passkeys: [{ id: 'p1', name: 'Mac (Chrome)', createdAt: at, lastUsedAt: at, transports: ['internal'] }], devices: [{ id: 'd1', name: 'Mac (Chrome)', createdAt: at, lastUsedAt: at, expiresAt: addDays(today, 30), current: true }] },
     '/api/layout': call('/api/layout'),
+    '/api/layout?device=desktop': call('/api/layout', 'device=desktop'),
+    '/api/layout?device=mobile': call('/api/layout', 'device=mobile'),
     '/api/balances': call('/api/balances'),
     '/api/cards': cardsView,
     ...(pastCycle ? { [`/api/cards?cycle=${pastCycle}`]: call('/api/cards', `cycle=${pastCycle}`) } : {}),
@@ -291,6 +293,8 @@ function emptyFixtures(now: Date): Fixtures {
   const paths = ['/api/layout', '/api/balances', '/api/cards', '/api/cards/bills', '/api/cards/forecast', '/api/installments', '/api/freshness', '/api/bill-check', '/api/rules', '/api/budgets', '/api/networth', '/api/goals', '/api/chat/conversations', '/api/calendar', '/api/findings', '/api/categories', '/api/accounts', '/api/ai', '/api/income', '/api/rules/suggestions', '/api/budgets/suggestions'];
   const responses: Record<string, unknown> = Object.fromEntries(paths.map((p) => [p, call(p)]));
   Object.assign(responses, {
+    '/api/layout?device=desktop': call('/api/layout', 'device=desktop'),
+    '/api/layout?device=mobile': call('/api/layout', 'device=mobile'),
     '/api/auth/session': { authenticated: true, strength: 'password' },
     '/api/auth/methods': { password: true, passkeys: false },
     '/api/auth/security': { strength: 'password', passkeysAvailable: false, passkeys: [], devices: [] },

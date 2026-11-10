@@ -10,6 +10,8 @@ import { Select } from './Select.tsx';
 export const FixedHeight = createContext(true);
 /** The look the dashboard gives the widget around it (see `sizeClassPx`). A small widget gives up its footer and tightens its spacing. */
 export const WidgetSize = createContext<SizeClass>('md');
+/** True when the dashboard gives the widget one row: the title and the key figure are all it shows. */
+export const WidgetTiny = createContext(false);
 /** Lets a widget with nothing to show tell the grid, which then gives it a line instead of its whole cell. */
 export const Collapse = createContext<(collapsed: boolean) => void>(() => {});
 /** True when the widget body has a fixed height to fill, so lists may be cut to what fits. */
@@ -49,6 +51,7 @@ export function Widget({ title, to, asOf, now, loading, error, actions, empty, h
   const [expanded, setExpanded] = useState(false);
   const fixed = useContext(FixedHeight);
   const small = useContext(WidgetSize) === 'sm';
+  const tiny = useContext(WidgetTiny);
   const report = useContext(Collapse);
   const collapsed = empty !== undefined && !loading && !error;
   useEffect(() => {
@@ -91,7 +94,7 @@ export function Widget({ title, to, asOf, now, loading, error, actions, empty, h
   return (
     <>
     {expanded && <div class="widget-backdrop" onClick={() => setExpanded(false)} />}
-    <section class={`${to ? 'widget linked' : 'widget'}${expanded ? ' expanded' : ''}${small && !expanded ? ' sm' : ''}${collapsed ? ' empty-state' : ''}`} onClick={open}>
+    <section class={`${to ? 'widget linked' : 'widget'}${expanded ? ' expanded' : ''}${small && !expanded ? ' sm' : ''}${tiny && !expanded ? ' tiny' : ''}${collapsed ? ' empty-state' : ''}`} onClick={open}>
       <header data-tip={small && !footer ? age : undefined}>
         <h2>
           {to ? (

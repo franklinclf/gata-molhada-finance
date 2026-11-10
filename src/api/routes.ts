@@ -19,7 +19,7 @@ import { addAsset, deleteAsset, netWorth, setAssetValue, updateAsset, type Asset
 import { budgetsFor, copyBudgets, createBudgets, setBudget, suggestBudgets, type BudgetResult } from './budgets.ts';
 import { acceptRuleSuggestion, dismissRuleSuggestion, suggestRules } from './rule-suggestions.ts';
 import { createRule, deleteRule, exportRules, importRules, listRules, previewRule, reorderRules, updateRule, type RuleResult } from './rules.ts';
-import { loadLayout, parseLayout, saveLayout } from './layout.ts';
+import { isDevice, loadLayout, parseLayout, saveLayout } from './layout.ts';
 import { billCheck, setBillCheckDismissed } from './bill-check.ts';
 import { applyBillFile, listBillImports, previewBillFile, undoBillImport, type ImportResult } from './bill-import.ts';
 import { bulkEdit, addCategory, dismissSuggestion, editBill, duplicateCandidates, joinCandidates, joinTransactions, listCategories, removeCategory, removeGroup, renameCategory, saveGroup, undoRename, separateTransaction, setCategoryParent, setCycleSettled, setTransactionInstallment, setAccountHidden, setIgnored, setTransactionCategory, setTransactionName, setReversal, setTransactionCycle, setTransactionStatus, type MutationResult } from './mutations.ts';
@@ -144,12 +144,15 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
   switch (resource) {
     case 'layout': {
       if (parts.length !== 2) return null;
-      if (method === 'GET') return { status: 200, body: loadLayout(store) };
+      // Old clients send no device and keep the desktop layout.
+      const deviceParam = params.get('device') ?? 'desktop';
+      if (!isDevice(deviceParam)) return badRequest('device must be desktop or mobile');
+      if (method === 'GET') return { status: 200, body: loadLayout(store, deviceParam) };
       if (method !== 'PUT') return methodNotAllowed();
       const raw = parseBody(body);
-      const layout = raw ? parseLayout(raw) : null;
-      if (!layout) return badRequest('layout must be { widgets: [...] } with known widgets');
-      saveLayout(store, layout, now);
+      const layout = raw ? parseLayout(raw, deviceParam) : null;
+      if (!layout) return badRequest('layout must be { version: 2, items: [...] } with known widgets that fit the grid of the device');
+      saveLayout(store, layout, now, deviceParam);
       return { status: 200, body: layout };
     }
     case 'chat': {
