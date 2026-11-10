@@ -22,7 +22,8 @@ window.addEventListener('load', () => {
     if (m) document.querySelector(decodeURIComponent(m[1]))?.click();
     // `__clickText=<text>` clicks the first button or link whose text is exactly that.
     const t = /__clickText=([^&]+)/.exec(location.hash);
-    if (t) [...document.querySelectorAll('button, a')].find((el) => el.textContent.trim() === decodeURIComponent(t[1]))?.click();
+    // It waits a moment, so a click on a menu button can draw the menu first.
+    if (t) setTimeout(() => [...document.querySelectorAll('button, a')].find((el) => el.textContent.trim().replace(/\s*[›▾]$/, '') === decodeURIComponent(t[1]))?.click(), m ? 400 : 0);
   }, 1800);
 });
 

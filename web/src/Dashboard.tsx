@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { DEFAULT_SIZES, defaultLayout, MOBILE_BREAKPOINT, MOBILE_SIZES, WIDGET_IDS } from '../../src/api/layout.ts';
+import { DEFAULT_SIZES, defaultLayout, MIN_SIZES, MOBILE_BREAKPOINT, MOBILE_SIZES, WIDGET_IDS } from '../../src/api/layout.ts';
 import type { Device } from '../../src/api/layout.ts';
 import { api } from './api.ts';
 import type { LayoutItem, WidgetId } from './api.ts';
-import { compact, fitToColumns, freeSlot, isTinyPx, packStack, reflow, shiftInStack, sizeClassPx, type Pixels } from './grid.ts';
-import { Grid } from './Grid.tsx';
+import { compact, fitToColumns, freeSlot, isTinyPx, packStack, place, reflow, shiftInStack, sizeClassPx, type Pixels } from './grid.ts';
+import { Grid, SIZES, sizeOptions } from './Grid.tsx';
+import { publishControls } from './layout-controls.ts';
+import { shiftReading, widgetRows } from './layout-rows.ts';
 import { useLoad, useStoredFlag } from './hooks.ts';
-import { Loading, Switch } from './ui.tsx';
+import { Loading } from './ui.tsx';
 import { FixedHeight, WidgetSize, WidgetTiny } from './Widget.tsx';
-import { Select } from './Select.tsx';
 import { WIDGETS } from './widgets/index.ts';
 
 /** The phone layout is for viewports narrower than MOBILE_BREAKPOINT (700 px), the same limit the server-side defaults are built for. */
@@ -36,7 +37,7 @@ const MOBILE_CHOICES: Array<[string, string]> = [
 ];
 const mobileChoice = (i: LayoutItem) => (i.w === 1 ? 'half' : i.h <= 2 ? 'compact' : 'full');
 
-export function Dashboard({ hidden, now, editing, setEditing }: { hidden: boolean; now: Date; editing: boolean; setEditing: (on: boolean) => void }) {
+export function Dashboard({ hidden, now, editing }: { hidden: boolean; now: Date; editing: boolean }) {
   const device = useDevice();
   const narrow = device === 'mobile';
   const saved = useLoad(async () => ({ device, layout: await api.layout(device) }), [device]);
@@ -75,8 +76,6 @@ export function Dashboard({ hidden, now, editing, setEditing }: { hidden: boolea
     return () => clearTimeout(gone);
   }, [removed]);
 
-  if (!items) return <Loading error={saved.error} />;
-
   function add(widget: WidgetId) {
     const id = `${widget}-${Date.now().toString(36)}`;
     if (narrow) {
@@ -91,7 +90,6 @@ export function Dashboard({ hidden, now, editing, setEditing }: { hidden: boolea
     update([...items!, { id, widget, ...slot, w, h }]);
   }
 
-  const ordered = narrow ? [...packStack(items)].sort((a, b) => a.y - b.y || a.x - b.x) : items;
   const render = (item: LayoutItem, pixels?: Pixels) => {
     const { component: Component } = WIDGETS[item.widget];
     // On the phone the saved height says how much to show; on the desktop the room on screen does.
@@ -107,7 +105,7 @@ export function Dashboard({ hidden, now, editing, setEditing }: { hidden: boolea
             pixels={narrow ? undefined : pixels}
             size={tiny ? 'sm' : size}
             config={item.config ?? {}}
-            setConfig={(patch) => update(items.map((i) => (i.id === item.id ? { ...i, config: { ...(i.config ?? {}), ...patch } } : i)))}
+            setConfig={(patch) => update(items!.map((i) => (i.id === item.id ? { ...i, config: { ...(i.config ?? {}), ...patch } } : i)))}
           />
         </WidgetTiny.Provider>
       </WidgetSize.Provider>
@@ -127,39 +125,49 @@ export function Dashboard({ hidden, now, editing, setEditing }: { hidden: boolea
     const next = choice === 'half' ? { w: 1, h: 2 } : choice === 'compact' ? { w: 2, h: 2 } : { w: 2, h: full };
     update(packStack(items!.map((i) => (i.id === item.id ? { ...i, ...next } : i))));
   }
-  const missing = WIDGET_IDS.filter((id) => !items.some((i) => i.widget === id));
+  const sizeValue = (i: LayoutItem) => (SIZES.some(([w, h]) => w === i.w && h === i.h) ? `${i.w}x${i.h}` : '');
+  function setSize(item: LayoutItem, value: string) {
+    if (narrow) return chooseMobileSize(item, value);
+    const [w, h] = value.split('x').map(Number);
+    if (w && h) update(place(fitToColumns(items!, columns), item.id, { w, h }, columns, MIN_SIZES[item.widget]));
+  }
 
-  // The controls sit in a row above the panel, so the top menu is the same on every page. "Personalizar painel" opens from the main menu.
-  const tools = (
-    <div class="dash-tools">
-      {editing && (
-        <>
-          <span class="dash-env" role="status">
-            Editando: {DEVICE_NAME[device]}
-          </span>
-          <Select ariaLabel="Adicionar widget" value="" placeholder={missing.length === 0 ? 'Todos os widgets já estão no painel' : '+ Adicionar widget'} disabled={missing.length === 0} onChange={(value) => value && add(value as WidgetId)} options={missing.map((id) => ({ value: id, label: WIDGETS[id].title }))} />
-          {!narrow && columns > 12 && (
-            <button class="icon" onClick={() => update(reflow(items, columns))} title="Reparte os widgets pelas colunas da tela">
-              Distribuir na largura
-            </button>
-          )}
-          <button class="icon" onClick={() => update(defaultLayout(device).items)} title={`Volta o painel do ${DEVICE_NAME[device]} ao padrão dele; o do outro ambiente não muda`}>
-            Restaurar padrão do {DEVICE_NAME[device]}
-          </button>
-        </>
-      )}
-      {!narrow && <Switch label="Largura total" checked={wide} onChange={setWide} title="Usar toda a largura da tela" />}
-      {editing && (
-        <button class="icon" onClick={() => setEditing(false)}>
-          Concluir
-        </button>
-      )}
-    </div>
-  );
+  // The menu shows and changes the layout: it gets the controls here and always acts on the current items.
+  useEffect(() => {
+    if (!items) return;
+    publishControls({
+      deviceName: DEVICE_NAME[device],
+      canWiden: !narrow,
+      wide,
+      setWide,
+      rows: widgetRows(items, WIDGET_IDS, narrow).map(({ widget, item, canUp, canDown }) => ({
+        widget,
+        title: WIDGETS[widget].title,
+        id: item?.id ?? null,
+        size: item ? (narrow ? mobileChoice(item) : sizeValue(item)) : '',
+        sizes: narrow ? MOBILE_CHOICES : sizeOptions(MIN_SIZES[widget], columns).map(([w, h, label]): [string, string] => [`${w}x${h}`, label]),
+        canUp,
+        canDown,
+      })),
+      toggle: (row) => (row.id ? remove(row.id) : add(row.widget)),
+      setSize: (row, value) => {
+        const item = items.find((i) => i.id === row.id);
+        if (item) setSize(item, value);
+      },
+      shift: (row, delta) => {
+        if (row.id) update(narrow ? shiftInStack(items, row.id, delta) : shiftReading(fitToColumns(items, columns), row.id, delta, columns));
+      },
+      spread: !narrow && columns > 12 ? () => update(reflow(items, columns)) : null,
+      restore: () => update(defaultLayout(device).items),
+    });
+  }, [items, device, wide, columns]);
+  useEffect(() => () => publishControls(null), []);
+
+  if (!items) return <Loading error={saved.error} />;
+  const ordered = narrow ? [...packStack(items)].sort((a, b) => a.y - b.y || a.x - b.x) : items;
 
   return (
     <>
-      {(!narrow || editing) && tools}
       {narrow ? (
         <FixedHeight.Provider value={false}>
           <div class={editing ? 'stack editing' : 'stack'}>
@@ -208,7 +216,7 @@ export function Dashboard({ hidden, now, editing, setEditing }: { hidden: boolea
           </button>
         </div>
       )}
-      {items.length === 0 && <div class="empty page">O painel está vazio. Use “Personalizar painel” no menu para adicionar widgets.</div>}
+      {items.length === 0 && <div class="empty page">O painel está vazio. Abra o menu (⋯ no alto ou Mais no celular) e use Personalizar painel para adicionar widgets.</div>}
     </>
   );
 }
