@@ -17,8 +17,8 @@ test('compact lifts boxes into the gaps above them', () => {
 });
 
 test('clampBox keeps a box inside the grid and above the size limits', () => {
-  assert.deepEqual(clampBox(box('a', 10, -3, 6, 1)), { id: 'a', x: 6, y: 0, w: 6, h: 2 });
-  assert.deepEqual(clampBox(box('a', 0, 0, 20, 99)), { id: 'a', x: 0, y: 0, w: 12, h: 40 });
+  assert.deepEqual(clampBox(box('a', 10, -3, 6, 1)), { id: 'a', x: 7, y: 0, w: 6, h: 2 });
+  assert.deepEqual(clampBox(box('a', 0, 0, 20, 99)), { id: 'a', x: 0, y: 0, w: 13, h: 40 });
 });
 
 test('moving a box onto another pushes it down and nothing overlaps afterwards', () => {
@@ -66,10 +66,10 @@ test('the size class follows the cells a widget has', () => {
 
 test('wide screens get more columns, and widgets spread over them', async () => {
   const { columnsFor, reflow, sizeClassPx } = await import('../../web/src/grid.ts');
-  assert.equal(columnsFor(1000, 14), 12);
-  assert.equal(columnsFor(2600, 14), 20);
+  assert.equal(columnsFor(1000, 14), 13);
+  assert.equal(columnsFor(2600, 14), 18);
   assert.equal(columnsFor(9000, 14), 36);
-  assert.equal(columnsFor(9000, 14, 112, 12), 12);
+  assert.equal(columnsFor(9000, 14, 130, 9), 9);
   const spread = reflow([{ id: 'a', x: 0, y: 0, w: 4, h: 5 }, { id: 'b', x: 0, y: 5, w: 4, h: 5 }, { id: 'c', x: 0, y: 10, w: 4, h: 5 }, { id: 'd', x: 0, y: 15, w: 4, h: 5 }], 16);
   assert.deepEqual(spread.map((i) => [i.x, i.y]), [[0, 0], [4, 0], [8, 0], [12, 0]]);
   assert.equal(sizeClassPx(300, 300), 'sm');
@@ -78,20 +78,45 @@ test('wide screens get more columns, and widgets spread over them', async () => 
   assert.equal(sizeClassPx(900, 200), 'md');
 });
 
-test('shrink first, then wrap: the count holds while the columns stay at least 64 px, then drops in steps of 4', async () => {
-  const { columnsFor, MIN_SLOT } = await import('../../web/src/grid.ts');
-  assert.equal(MIN_SLOT, 64);
-  // Window widths minus the 32 px of page padding: 1440, 1280, 1024 and 960 px windows all keep 12 columns.
-  for (const window of [1440, 1280, 1024, 960]) assert.equal(columnsFor(window - 32, 14), 12, `${window}`);
-  // 12 columns need 12 * 64 + 11 * 14 = 922 px; one pixel less wraps to 8.
-  assert.equal(columnsFor(922, 14), 12);
-  assert.equal(columnsFor(921, 14), 8);
-  assert.equal(columnsFor(768 - 32, 14), 8);
-  assert.equal(columnsFor(700 - 32, 14), 8);
-  assert.equal(columnsFor(500, 14), 4);
-  assert.equal(columnsFor(100, 14), 4);
-  // Wide screens grow with the original 112 px slot, and never shrink under the 12 of the reference.
-  assert.equal(columnsFor(1888, 14), 15);
+test('shrink first, then wrap: 13 columns while they stay at least 56 px, then steps of 4 (13, 9, 5)', async () => {
+  const { columnsFor, MIN_SLOT, PARTIAL_COLUMNS } = await import('../../web/src/grid.ts');
+  assert.equal(MIN_SLOT, 56);
+  assert.equal(PARTIAL_COLUMNS, 9);
+  // Window widths minus the 32 px of page padding: every common desktop and laptop window has 13 columns.
+  for (const window of [1280, 1440, 1536, 1697, 1920]) assert.equal(columnsFor(window - 32, 14), 13, `${window}`);
+  // 13 columns need 13 * 56 + 12 * 14 = 896 px; one pixel less wraps to 9.
+  assert.equal(columnsFor(896, 14), 13);
+  assert.equal(columnsFor(895, 14), 9);
+  assert.equal(columnsFor(1024 - 32, 14), 13);
+  // 9 columns need 9 * 56 + 8 * 14 = 616 px; below that 5.
+  assert.equal(columnsFor(768 - 32, 14), 9);
+  assert.equal(columnsFor(616, 14), 9);
+  assert.equal(columnsFor(615, 14), 5);
+  assert.equal(columnsFor(500, 14), 5);
+  assert.equal(columnsFor(100, 14), 5);
+  // Without "Largura total" the count is capped at 9 and steps down to 5.
+  assert.equal(columnsFor(1408, 14, 130, 9), 9);
+  assert.equal(columnsFor(1888, 14, 130, 9), 9);
+  assert.equal(columnsFor(700, 14, 130, 9), 9);
+  assert.equal(columnsFor(600, 14, 130, 9), 5);
+  // Wide screens add columns only when 13 would pass 130 px: 13 columns of 130 px need 1876 px.
+  assert.equal(columnsFor(1876, 14), 13);
+  assert.equal(columnsFor(2010, 14), 14);
+});
+
+test('a layout saved for 12 columns shows in 13 as it is, and one saved for 13 fits 9 and 5 without overlaps or lost widgets', async () => {
+  const { fitToColumns, collides } = await import('../../web/src/grid.ts');
+  const twelve = [box('a', 0, 0, 4, 4), box('b', 4, 0, 4, 4), box('c', 8, 0, 4, 4), box('d', 0, 4, 6, 3)];
+  assert.deepEqual(fitToColumns(twelve, 13), twelve);
+  const thirteen = [box('a', 0, 0, 4, 4), box('b', 4, 0, 4, 4), box('c', 8, 0, 5, 4), box('t', 12, 4, 1, 1), box('d', 0, 4, 4, 3), box('e', 4, 4, 4, 3), box('f', 8, 4, 4, 3)];
+  for (const columns of [9, 5]) {
+    const fitted = fitToColumns(thirteen, columns);
+    assert.equal(fitted.length, thirteen.length);
+    for (const [n, a] of fitted.entries()) {
+      assert.ok(a.x + a.w <= columns, a.id);
+      for (const b of fitted.slice(n + 1)) assert.equal(collides(a, b), false, `${a.id} ${b.id} at ${columns}`);
+    }
+  }
 });
 
 test('a widget keeps its own smallest size when resized, and the default smallest is 2 x 2', () => {

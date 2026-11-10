@@ -3,7 +3,8 @@ import type { Store } from '../store/store.ts';
 export const WIDGET_IDS = ['outlook', 'balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'summary', 'upcoming', 'calendar', 'trend', 'review', 'recent', 'freshness', 'findings'] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 
-export const GRID_COLUMNS = 12;
+/** Columns of the reference desktop grid (see COLUMNS in web/src/grid.ts). */
+export const GRID_COLUMNS = 13;
 /** A wide screen shows more columns; a saved widget may sit in any of them. */
 export const MAX_GRID_COLUMNS = 36;
 /** The phone layout is a stack with two half-width columns: a widget takes one or both. */
@@ -22,7 +23,7 @@ export const isDevice = (value: unknown): value is Device => typeof value === 's
 type Size = { w: number; h: number };
 
 /**
- * Size a new widget starts with on the desktop, in grid cells (12 columns, 72 px rows).
+ * Size a new widget starts with on the desktop, in grid cells (13 columns, 72 px rows).
  * Widgets that are one figure start small (a tile 3 wide and 2 tall shows the figure and one line); the rest keep room for a chart or a list.
  */
 export const DEFAULT_SIZES: Record<WidgetId, Size> = {
@@ -46,27 +47,27 @@ export const DEFAULT_SIZES: Record<WidgetId, Size> = {
 };
 
 /**
- * Smallest size of each widget, desktop columns. A widget that is one figure fits 2x1 (title and figure); the ones that need a list or a calendar to make sense start higher.
+ * Smallest size of each widget, desktop columns. A widget that is one figure or one status fits 1x1 (a short title and the figure); the other lists and charts fit 2x1 (title and figure); the ones that need a list or a calendar to make sense start higher.
  * The phone layout also uses the height (compact below 3 rows) and a width of 1 or 2 half columns.
  */
 export const MIN_SIZES: Record<WidgetId, Size> = {
   outlook: { w: 2, h: 2 },
-  balances: { w: 2, h: 1 },
+  balances: { w: 1, h: 1 },
   cards: { w: 2, h: 1 },
   cashflow: { w: 2, h: 1 },
   spending: { w: 2, h: 1 },
-  installments: { w: 2, h: 1 },
+  installments: { w: 1, h: 1 },
   budget: { w: 2, h: 1 },
-  networth: { w: 2, h: 1 },
+  networth: { w: 1, h: 1 },
   goals: { w: 2, h: 1 },
-  summary: { w: 2, h: 1 },
+  summary: { w: 1, h: 1 },
   upcoming: { w: 2, h: 1 },
   calendar: { w: 3, h: 4 },
   trend: { w: 2, h: 2 },
-  review: { w: 2, h: 1 },
+  review: { w: 1, h: 1 },
   recent: { w: 2, h: 2 },
-  freshness: { w: 2, h: 1 },
-  findings: { w: 2, h: 1 },
+  freshness: { w: 1, h: 1 },
+  findings: { w: 1, h: 1 },
 };
 
 /** The phone stack in reading order, with each widget's width in half columns (2 = full width) and height: 2 rows or less is the compact look. */
@@ -136,11 +137,32 @@ function flow(entries: Array<[WidgetId, number, number]>, columns: number): Layo
 
 const sized = (widgets: readonly WidgetId[], sizes: Record<WidgetId, Size> = DEFAULT_SIZES): Array<[WidgetId, number, number]> => widgets.map((id) => [id, sizes[id].w, sizes[id].h]);
 
-/** Desktop order: the small figures first, so they sit in one band above the charts and lists. */
-const DESKTOP_ORDER: readonly WidgetId[] = ['balances', 'summary', 'networth', 'installments', 'outlook', 'upcoming', 'cards', 'cashflow', 'spending', 'calendar', 'budget', 'goals', 'trend', 'recent', 'review', 'findings', 'freshness'];
+/**
+ * Desktop default, 13 columns, every row full: a band of four figures (4+3+3+3), then rows of 4+4+5 and 4+4+4 plus a rail of three 1x2 tiles,
+ * 4+4+5 again, and the recent transactions across the whole width.
+ */
+const DESKTOP_DEFAULT: Array<[WidgetId, number, number, number, number]> = [
+  ['balances', 0, 0, 4, 2],
+  ['summary', 4, 0, 3, 2],
+  ['networth', 7, 0, 3, 2],
+  ['installments', 10, 0, 3, 2],
+  ['outlook', 0, 2, 4, 7],
+  ['upcoming', 4, 2, 4, 7],
+  ['calendar', 8, 2, 5, 7],
+  ['cards', 0, 9, 4, 6],
+  ['cashflow', 4, 9, 4, 6],
+  ['spending', 8, 9, 4, 6],
+  ['review', 12, 9, 1, 2],
+  ['findings', 12, 11, 1, 2],
+  ['freshness', 12, 13, 1, 2],
+  ['budget', 0, 15, 4, 5],
+  ['goals', 4, 15, 4, 5],
+  ['trend', 8, 15, 5, 5],
+  ['recent', 0, 20, 13, 5],
+];
 
 export function defaultLayout(device: Device = 'desktop'): Layout {
-  return device === 'mobile' ? { version: 2, items: flow(MOBILE_DEFAULT, MOBILE_COLUMNS) } : { version: 2, items: flow(sized(DESKTOP_ORDER), GRID_COLUMNS) };
+  return device === 'mobile' ? { version: 2, items: flow(MOBILE_DEFAULT, MOBILE_COLUMNS) } : { version: 2, items: DESKTOP_DEFAULT.map(([widget, x, y, w, h]) => ({ id: widget, widget, x, y, w, h })) };
 }
 
 function parseConfig(value: unknown): Record<string, string> | undefined | null {
@@ -191,6 +213,8 @@ export function parseLayout(value: unknown, device: Device = 'desktop'): Layout 
     const parsedConfig = parseConfig(config);
     if (parsedConfig === null) return null;
     if (!isWidgetId(widget)) continue;
+    // A widget cannot be saved smaller than its minimum (the phone layout has its own sizes).
+    if (device === 'desktop' && (w < MIN_SIZES[widget].w || h < MIN_SIZES[widget].h)) return null;
     ids.add(id);
     items.push(parsedConfig === undefined ? { id, widget, x, y, w, h } : { id, widget, x, y, w, h, config: parsedConfig });
   }

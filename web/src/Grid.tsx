@@ -2,7 +2,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { LayoutItem } from './api.ts';
 import { MIN_SIZES } from '../../src/api/layout.ts';
-import { collapseEmpty, columnsFor, COLUMNS, fitToColumns, place, type Box } from './grid.ts';
+import { collapseEmpty, columnsFor, COLUMNS, fitToColumns, PARTIAL_COLUMNS, WIDE_SLOT, place, type Box } from './grid.ts';
 import { Collapse } from './Widget.tsx';
 
 export const ROW_HEIGHT = 72;
@@ -10,8 +10,9 @@ export const GAP = 14;
 /** The move bar above a widget while customizing; the widget is that much shorter than its cell. */
 const GRIP_HEIGHT = 32;
 
-/** Sizes offered while customizing, in cells: from a title and a figure (2 × 1) to half of a wide screen. */
+/** Sizes offered while customizing, in cells: from one cell (1 × 1, only for single-figure widgets) and a title with a figure (2 × 1) to half of a wide screen. */
 export const SIZES: Array<[number, number, string]> = [
+  [1, 1, 'Célula (1 × 1)'],
   [2, 1, 'Mínimo (2 × 1)'],
   [3, 1, 'Faixa (3 × 1)'],
   [2, 2, 'Pequeno (2 × 2)'],
@@ -45,7 +46,7 @@ interface Props {
   canDrag?: boolean;
   onChange: (items: LayoutItem[]) => void;
   renderItem: (item: LayoutItem, pixels: { width: number; height: number }) => ComponentChildren;
-  /** Use as many columns as the screen holds (about one per 112 px) instead of 12. */
+  /** Use as many columns as the screen holds (13, and one more per 144 px past 1876 px) instead of 9. */
   wide?: boolean;
   onColumns?: (columns: number) => void;
   onRemove: (id: string) => void;
@@ -70,8 +71,8 @@ export function Grid({ items, editing, canDrag = true, wide = false, onColumns, 
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  // Shrink first, then wrap: the count only drops once the columns would be thinner than the minimum slot. Without "Largura total" the grid does not grow past 12.
-  const columns = width > 0 ? columnsFor(width, GAP, 112, wide ? 36 : COLUMNS) : COLUMNS;
+  // Shrink first, then wrap: the count only drops once the columns would be thinner than the minimum slot. Without "Largura total" the grid does not grow past 9.
+  const columns = width > 0 ? columnsFor(width, GAP, WIDE_SLOT, wide ? 36 : PARTIAL_COLUMNS) : COLUMNS;
   useEffect(() => onColumns?.(columns), [columns]);
   const cellWidth = width > 0 ? (width + GAP) / columns : 0;
   // A widget saved on a wider screen is shown inside the columns there are now, in a free place and never over another widget.
