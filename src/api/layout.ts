@@ -1,10 +1,27 @@
-import { compact } from '../../web/src/grid.ts';
 import type { Store } from '../store/store.ts';
 
 export const WIDGET_IDS = ['outlook', 'balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'summary', 'calendar', 'trend', 'review', 'recent', 'freshness', 'findings'] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 
 /** Columns of the reference desktop grid (see COLUMNS in web/src/grid.ts). */
+/** Moves every item up as far as it goes without touching another one, keeping the left-to-right order. The server cannot import the web grid code: the production image holds only `src`. */
+function compact<T extends { id: string; x: number; y: number; w: number; h: number }>(items: T[]): T[] {
+  const hits = (a: T, b: T) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const placed: T[] = [];
+  for (const item of [...items].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    let y = 0;
+    const candidate = { ...item };
+    for (;;) {
+      candidate.y = y;
+      const hit = placed.filter((p) => hits(p, candidate));
+      if (hit.length === 0) break;
+      y = Math.max(...hit.map((p) => p.y + p.h));
+    }
+    placed.push(candidate);
+  }
+  return items.map((original) => placed.find((p) => p.id === original.id)!);
+}
+
 export const GRID_COLUMNS = 13;
 /** A wide screen shows more columns; a saved widget may sit in any of them. */
 export const MAX_GRID_COLUMNS = 36;
