@@ -234,7 +234,7 @@ button, .chip, .tab, .navlink, .tab-item, .sheet-item, .grip { user-select: none
   .topbar { padding: 8px 14px; flex-wrap: nowrap; gap: 8px; }
   .topbar h1 { font-size: 17px; flex: 1; }
   .topbar nav { display: none; }
-  .topbar-actions .icon:not(:first-child) { display: none; }
+  .topbar-actions .icon:not(:first-child), .tools-menu { display: none; }
   .topbar-actions .icon { padding: 8px 12px; min-height: 40px; }
   .main { padding: 0 12px calc(var(--bar) + env(safe-area-inset-bottom) + 20px); }
 
@@ -749,8 +749,18 @@ body.wide .main { max-width: none; }
 }
 
 /* Dashboard review */
-/* The panel controls sit in a row above the grid, so the top menu has the same links on every page. */
-.dash-tools { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; padding-bottom: 6px; }
+/* Customize panel: lives in the "⋯" menu (and in the phone's "Mais" sheet), never in a row above the grid. */
+.tools-panel { display: block; width: min(380px, calc(100vw - 24px)); max-height: min(70dvh, 620px); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+.layout-panel { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 4px; outline: none; }
+.layout-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.layout-row { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 2px 4px; border-radius: 10px; }
+.layout-row.off { color: var(--muted); }
+.layout-show { display: flex; align-items: center; gap: 8px; flex: 1 1 0; min-width: 0; cursor: pointer; }
+.layout-show .clip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.layout-show input { flex: none; width: 18px; height: 18px; accent-color: var(--accent); }
+.layout-row .size-pick { flex: none; max-width: 130px; }
+.layout-row .icon { padding: 2px 9px; min-height: 30px; }
+.layout-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; border-top: 1px solid var(--track); }
 .widget-body[hidden] { display: none; }
 /* A widget with nothing to show: its title and one short note on a line (the grid gives it one or two rows). */
 .widget.empty-state { padding-top: 14px; padding-bottom: 14px; justify-content: center; }

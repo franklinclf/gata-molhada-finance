@@ -15,7 +15,8 @@ import { SettingsPage } from './pages/settings.tsx';
 import { SpendingPage } from './pages/spending.tsx';
 import { NAV, useNavOrder } from './nav.ts';
 import { TransactionsPage } from './pages/transactions.tsx';
-import { hrefFor, patchParams, useRoute } from './router.ts';
+import { LayoutPanel } from './LayoutPanel.tsx';
+import { hrefFor, useRoute } from './router.ts';
 
 const svg = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': true } as const;
 const Eye = () => (
@@ -112,6 +113,9 @@ export function App() {
   const [more, setMore] = useState(false);
   const [menu, setMenu] = useState(false);
   const [tools, setTools] = useState(false);
+  // On the phone the sheet opens the customize panel on request, so "Mais" alone does not put the dashboard in edit mode.
+  const [custom, setCustom] = useState(false);
+  const toolsButton = useRef<HTMLButtonElement>(null);
   const route = useRoute();
   const nav = useNavOrder();
   const section = route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page === 'status' ? 'settings' : route.page;
@@ -153,14 +157,30 @@ export function App() {
       setMenu(false);
       setTools(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (tools) toolsButton.current?.focus();
+      close();
+    };
     document.addEventListener('click', close);
     window.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('click', close);
       window.removeEventListener('keydown', onKey);
     };
-  }, [menu]);
+  }, [menu, tools]);
+
+  // The phone sheet closes on Escape too.
+  useEffect(() => {
+    if (!more) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setMore(false);
+      setCustom(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [more]);
 
   // Keeps the "há N min" labels current.
   useEffect(() => {
@@ -172,6 +192,7 @@ export function App() {
   if (phase === 'out') return <Login onDone={() => setPhase('in')} />;
 
   const tx = route.params.get('tx');
+  const onDashboard = route.page === '' || route.page === 'dashboard';
   const inMore = MORE.some(([id]) => id === (route.page === 'cashflow' || route.page === 'networth' ? 'accounts' : route.page));
   let page;
   switch (route.page) {
@@ -214,7 +235,7 @@ export function App() {
       break;
     case '':
     case 'dashboard':
-      page = <Dashboard hidden={hidden} now={now} editing={route.params.get('customize') === '1'} setEditing={(on) => patchParams({ customize: on ? '1' : null })} />;
+      page = <Dashboard hidden={hidden} now={now} editing={tools || (more && custom)} />;
       break;
     default:
       page = (
@@ -259,14 +280,12 @@ export function App() {
         </nav>
         <div class="topbar-actions">
           <div class="nav-more tools-menu">
-            <button class="icon icon-btn" aria-label="Mais ações" title="Mais ações" aria-haspopup="menu" aria-expanded={tools} onClick={(e) => { e.stopPropagation(); setTools(!tools); setMenu(false); }}>
+            <button ref={toolsButton} class="icon icon-btn" aria-label="Personalizar e mais" title="Personalizar painel" aria-haspopup="dialog" aria-expanded={tools} onClick={(e) => { e.stopPropagation(); setTools(!tools); setMenu(false); }}>
               <Dots />
             </button>
             {tools && (
-              <div class="nav-menu right" role="menu">
-                <a class="navlink" role="menuitem" href={hrefFor('', { customize: '1' })} onClick={() => setTools(false)}>
-                  Personalizar painel
-                </a>
+              <div class="nav-menu right tools-panel" role="dialog" aria-label="Personalizar painel" onClick={(e) => e.stopPropagation()}>
+                <LayoutPanel onDashboard={onDashboard} onClose={() => setTools(false)} />
               </div>
             )}
           </div>
@@ -300,7 +319,7 @@ export function App() {
         </button>
       </nav>
       {more && (
-        <div class="overlay sheet-overlay" onClick={() => setMore(false)}>
+        <div class="overlay sheet-overlay" onClick={() => { setMore(false); setCustom(false); }}>
           <div class="drawer sheet" role="dialog" aria-label="Mais seções" onClick={(e) => e.stopPropagation()}>
             <div class="sheet-handle" aria-hidden="true" />
             {MORE.map(([id, label]) => (
@@ -308,9 +327,10 @@ export function App() {
                 {label} <span aria-hidden="true">›</span>
               </a>
             ))}
-            <a class="sheet-item" href={hrefFor('', { customize: '1' })} onClick={() => setMore(false)}>
-              Personalizar painel <span aria-hidden="true">›</span>
-            </a>
+            <button class="sheet-item" aria-expanded={custom} onClick={() => setCustom(!custom)}>
+              Personalizar painel <span aria-hidden="true">{custom ? '▾' : '›'}</span>
+            </button>
+            {custom && <LayoutPanel onDashboard={onDashboard} onClose={() => { setMore(false); setCustom(false); }} focus={false} />}
             <button class="sheet-item" onClick={() => setHidden(!hidden)}>
               {hidden ? 'Mostrar valores' : 'Ocultar valores'}
             </button>
