@@ -488,7 +488,6 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
           {cardName(card.institution, card.name)}
           {card.last4 ? ` •••• ${card.last4}` : ''}
         </h2>
-        {c && <StatusBadge status={c.status} />}
       </div>
       {c ? (
         <>
@@ -541,13 +540,6 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
       {c?.adjusted && <div class="note">{c.adjusted.by === 'auto' ? `${brl(c.adjusted.amount, hidden)} desta fatura não foi pago e provavelmente rolou para a fatura seguinte; não conta de novo como devido.` : `${brl(c.adjusted.amount, hidden)} desta fatura não foi cobrado, então ela conta como paga.`}</div>}
       {c?.latePaid && <div class="note">Pago com atraso em {dayMonth(c.latePaid.day)}: {brl(c.latePaid.amount, hidden)} desta fatura foram pagos depois do fechamento da fatura seguinte.</div>}
       {c && c.overpaid > 0 && <div class="note">Pago a mais: {brl(c.overpaid, hidden)}. Os pagamentos desta janela passam do total da fatura. Pode ser pagamento em dobro, ou o pagamento atrasado de uma fatura anterior.</div>}
-      {card.outstanding > 0 && (
-        <div class={late ? 'badge bad' : 'badge warn'}>
-          {/* A closed month already shows "Falta pagar" above, so the badge only adds the due date. */}
-          {isOpen ? `Fatura fechada, a pagar: ${brl(card.outstanding, hidden)} · ` : ''}
-          {late ? 'venceu em' : 'vence'} {card.nextDueDate ? fullDay(card.nextDueDate) : ''}
-        </div>
-      )}
       {owed !== null && (
         <>
           <div class="badge warn">Saldo do emissor menor que a fatura: {brl(card.balance, hidden)} contra {brl(owed, hidden)}</div>
@@ -564,6 +556,18 @@ function CardBlock({ card, cycle, hidden, today }: { card: CardsView['cards'][nu
         </>
       )}
       {nothingListed && <div class="muted">Sem compras listadas nesta fatura{card.plannedInstallments > 0 ? `; ${brl(card.plannedInstallments, hidden)} são parcelas que o banco ainda não listou` : ''}</div>}
+      {/* Status and due date sit together at the bottom of the card, one chip per column, so they line up across cards. */}
+      <div class="card-chips">
+        {c ? <StatusBadge status={c.status} /> : <span />}
+        {card.outstanding > 0 ? (
+          <div class={late ? 'badge bad' : 'badge warn'} title={isOpen ? `Fatura fechada, a pagar: ${brl(card.outstanding, hidden)}` : undefined}>
+            {isOpen ? `Fechada, a pagar ${brl(card.outstanding, hidden)} · ` : ''}
+            {late ? 'venceu em' : 'vence'} {card.nextDueDate ? fullDay(card.nextDueDate) : ''}
+          </div>
+        ) : (
+          <span />
+        )}
+      </div>
       <div class="card-actions">
         {!nothingListed && (
           <ButtonLink size="sm" href={hrefFor('transactions', { accountId: card.id, cycle: c ? (cycle === 'open' ? 'open' : c.key) : undefined })} title="Ver as transações desta fatura">

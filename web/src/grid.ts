@@ -7,7 +7,12 @@ export interface Box {
   h: number;
 }
 
-export const COLUMNS = 12;
+/** Columns of the reference desktop grid: 13 = 3 widgets of 4 columns plus one column for a 1 x 1 tile. */
+export const COLUMNS = 13;
+/** Columns without "Largura total": 9 = 2 widgets of 4 columns plus one for a 1 x 1 tile. */
+export const PARTIAL_COLUMNS = 9;
+/** Fewest columns the grid keeps. */
+export const MIN_COLUMNS = 5;
 
 export function collides(a: Box, b: Box): boolean {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -97,20 +102,22 @@ export function sizeClassPx(width: number, height: number): SizeClass {
   return 'md';
 }
 
-/** Narrowest a grid column gets (px) before the grid drops columns instead: 12 of them plus 11 gaps of 14 px fit from 922 px. */
-export const MIN_SLOT = 64;
+/** Narrowest a grid column gets (px) before the grid drops columns instead: 13 of them plus 12 gaps of 14 px fit from 896 px, so a 1024 px window keeps 13. */
+export const MIN_SLOT = 56;
+/** Widest a column grows (px) before the grid adds columns: 13 columns stay up to 1876 px of usable width (a 1920 px screen). */
+export const WIDE_SLOT = 130;
 
 /**
  * Columns of the grid for a container: shrink first, then wrap.
- * The count is the one the widest layout has: 12, and more where a wide screen has room for slots of `slot` px (`max` caps it; 12 when the grid
- * should not grow). Narrowing the window keeps that count and only makes the columns thinner, down to `minSlot`. Below that the count drops, in
- * steps of 4 (12, 8, 4) so the usual 4-wide widgets stay lined up, and never under 4.
+ * The count is 13, and more only where a wide screen has room for slots of `slot` px (`max` caps it; pass PARTIAL_COLUMNS to keep the grid
+ * narrow). Narrowing the window keeps that count and only makes the columns thinner, down to `minSlot`. Below that the count drops in
+ * steps of 4 (13, 9, 5), so the counts are always 4n + 1: 4-wide widgets stay lined up and one column is left for a 1 x 1 tile.
  */
-export function columnsFor(width: number, gap: number, slot = 112, max = 36, minSlot = MIN_SLOT): number {
+export function columnsFor(width: number, gap: number, slot = WIDE_SLOT, max = 36, minSlot = MIN_SLOT): number {
   const grown = Math.min(max, Math.max(COLUMNS, Math.floor((width + gap) / (slot + gap))));
   const fits = Math.floor((width + gap) / (minSlot + gap));
   const count = Math.min(grown, fits);
-  return count >= COLUMNS ? count : Math.max(4, Math.floor(count / 4) * 4);
+  return count >= COLUMNS ? count : Math.max(MIN_COLUMNS, Math.floor((count - 1) / 4) * 4 + 1);
 }
 
 /**

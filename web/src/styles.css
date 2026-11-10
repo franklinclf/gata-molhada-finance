@@ -347,7 +347,9 @@ span.clip, a.clip, div.clip { min-width: 0; }
 /* Cartões: the buttons of every card sit at its foot, level across a row. A card with the history or the editor open takes the row. */
 .card-block { min-width: 0; }
 .card-main { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 4px; }
+.card-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: stretch; margin-top: auto; padding-top: 4px; }
+.card-chips > * { min-width: 0; display: flex; align-items: center; justify-content: center; text-align: center; margin: 0; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
 .card-detail { min-width: 0; }
 .cards-grid > .card-block.expanded { grid-column: 1 / -1; }
 .card-block.expanded > .card-main { max-width: 560px; }
@@ -835,6 +837,18 @@ body.wide .main { max-width: none; }
 .widget.tiny .widget-scroll, .widget.tiny .expand, .widget.tiny footer { display: none; }
 .widget.tiny .big { font-size: clamp(14px, 11cqi, 22px); line-height: 1.1; }
 .widget.tiny.empty-state { padding-top: 8px; padding-bottom: 8px; }
+/* One column wide (1 x 1, or a 1-wide rail): a short title cut with an ellipsis (the full one is in the title attribute) and a figure that shrinks to fit. */
+@container (max-width: 130px) {
+  .widget.tiny h2, .widget.sm h2 { font-size: 10px; line-height: 1.15; white-space: normal; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+  .widget.tiny .big, .widget.sm .big { font-size: clamp(11px, 17cqi, 18px); }
+  .widget.tiny .widget-head > :not(.big):not(:has(.big)), .widget.sm .widget-head > :not(.big):not(:has(.big)) { display: none; }
+  .widget.tiny header, .widget.sm header { min-width: 0; }
+  .widget.tiny .empty-note, .widget.sm .empty-note { display: none; }
+  .widget.tiny .widget-scroll, .widget.sm .widget-scroll, .widget.tiny .expand, .widget.sm .expand, .widget.tiny footer, .widget.sm footer { display: none; }
+  .widget.tiny h2 a.go, .widget.sm h2 a.go { display: inline; white-space: normal; }
+  .widget.tiny h2 a.go span, .widget.sm h2 a.go span { display: none; }
+  .widget.tiny, .widget.sm { padding: 8px 10px; }
+}
 .dash-env { font-size: 13px; color: var(--muted); margin-right: auto; }
 .size-pick { font: inherit; font-size: 12px; max-width: 150px; background: var(--card-2); color: var(--text); border: 0; border-radius: var(--radius-pill); padding: 3px 8px; cursor: pointer; }
 .switch-btn { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 14px; color: var(--text); background: none; border: 0; padding: 6px 8px; cursor: pointer; border-radius: var(--radius-pill); }

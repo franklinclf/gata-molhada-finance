@@ -96,7 +96,7 @@ export function Widget({ title, to, asOf, now, loading, error, actions, empty, h
     {expanded && <div class="widget-backdrop" onClick={() => setExpanded(false)} />}
     <section class={`${to ? 'widget linked' : 'widget'}${expanded ? ' expanded' : ''}${small && !expanded ? ' sm' : ''}${tiny && !expanded ? ' tiny' : ''}${collapsed ? ' empty-state' : ''}`} onClick={open}>
       <header data-tip={small && !footer ? age : undefined}>
-        <h2>
+        <h2 title={title}>
           {to ? (
             <a class="go title clip" href={hrefFor(to.page, to.params)}>
               {title} <span aria-hidden="true">›</span>

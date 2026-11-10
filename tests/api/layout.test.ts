@@ -105,7 +105,26 @@ test('the desktop default respects every smallest size, and single-figure widget
   }
   const by = Object.fromEntries(defaultLayout().items.map((i) => [i.widget, i]));
   assert.ok(by.balances!.h <= 2 && by.summary!.h <= 2 && by.networth!.h <= 2);
-  assert.ok(MIN_SIZES.balances.h === 1 && MIN_SIZES.summary.w <= 2);
+  assert.ok(MIN_SIZES.balances.h === 1 && MIN_SIZES.summary.w === 1);
+});
+
+test('the desktop default fills 13 columns in every row it starts', () => {
+  const items = defaultLayout().items;
+  assert.equal(GRID_COLUMNS, 13);
+  const bands = new Map<number, number>();
+  for (const i of items) if (i.y === 0 || i.y === 2 || i.y === 15 || i.y === 20) bands.set(i.y, (bands.get(i.y) ?? 0) + i.w);
+  for (const [y, width] of bands) assert.equal(width, 13, `row at ${y}`);
+  assert.equal(items.length, WIDGET_IDS.length);
+});
+
+test('single-figure widgets accept 1x1, the others keep 2x1 as the smallest', () => {
+  const one = (widget: string) => ({ version: 2, items: [{ id: 'a', widget, x: 12, y: 0, w: 1, h: 1 }] });
+  for (const widget of ['balances', 'summary', 'networth', 'installments', 'review', 'freshness', 'findings']) {
+    assert.notEqual(parseLayout(one(widget)), null, widget);
+  }
+  for (const widget of ['cashflow', 'cards', 'goals', 'upcoming', 'calendar', 'recent']) assert.equal(parseLayout(one(widget)), null, widget);
+  assert.notEqual(parseLayout({ version: 2, items: [{ id: 'a', widget: 'cards', x: 0, y: 0, w: 2, h: 1 }] }), null);
+  assert.notEqual(parseLayout({ version: 2, items: [{ id: 'a', widget: 'cards', x: 1, y: 0, w: 1, h: 1 }] }, 'mobile'), null);
 });
 
 test('the phone layout accepts only two columns, the desktop one still accepts old wide layouts', () => {
