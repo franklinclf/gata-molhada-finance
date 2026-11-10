@@ -27,7 +27,7 @@ export function FindingsWidget({ now, size, hidden }: WidgetProps) {
       head={
         data && (
           <>
-            <div class="big">{total}</div>
+            <div class="big count">{total} <small>{total === 1 ? 'item' : 'itens'}</small></div>
             <div class="muted">
               {total === 0
                 ? 'Nada para conferir'

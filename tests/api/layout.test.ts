@@ -87,9 +87,9 @@ test('the desktop layout keeps its old key and shape, and the phone layout has i
   assert.ok(store.getSetting('dashboard_layout_mobile'));
 });
 
-test('the phone default starts with the bills, the month, the balances and the next 14 days, inside two half columns', () => {
+test('the phone default starts with the bills, the month, the balances and the calendar, inside two half columns', () => {
   const layout = defaultLayout('mobile');
-  assert.deepEqual(layout.items.slice(0, 4).map((i) => i.widget), ['cards', 'outlook', 'balances', 'upcoming']);
+  assert.deepEqual(layout.items.slice(0, 4).map((i) => i.widget), ['cards', 'outlook', 'balances', 'calendar']);
   assert.equal(layout.items.length, WIDGET_IDS.length);
   for (const a of layout.items) {
     assert.ok(a.x + a.w <= MOBILE_COLUMNS);
@@ -112,7 +112,7 @@ test('the desktop default fills 13 columns in every row it starts', () => {
   const items = defaultLayout().items;
   assert.equal(GRID_COLUMNS, 13);
   const bands = new Map<number, number>();
-  for (const i of items) if (i.y === 0 || i.y === 2 || i.y === 15 || i.y === 20) bands.set(i.y, (bands.get(i.y) ?? 0) + i.w);
+  for (const i of items) if (i.y === 0 || i.y === 2 || i.y === 15) bands.set(i.y, (bands.get(i.y) ?? 0) + i.w);
   for (const [y, width] of bands) assert.equal(width, 13, `row at ${y}`);
   assert.equal(items.length, WIDGET_IDS.length);
 });
@@ -122,7 +122,7 @@ test('single-figure widgets accept 1x1, the others keep 2x1 as the smallest', ()
   for (const widget of ['balances', 'summary', 'networth', 'installments', 'review', 'freshness', 'findings']) {
     assert.notEqual(parseLayout(one(widget)), null, widget);
   }
-  for (const widget of ['cashflow', 'cards', 'goals', 'upcoming', 'calendar', 'recent']) assert.equal(parseLayout(one(widget)), null, widget);
+  for (const widget of ['cashflow', 'cards', 'goals', 'calendar', 'recent']) assert.equal(parseLayout(one(widget)), null, widget);
   assert.notEqual(parseLayout({ version: 2, items: [{ id: 'a', widget: 'cards', x: 0, y: 0, w: 2, h: 1 }] }), null);
   assert.notEqual(parseLayout({ version: 2, items: [{ id: 'a', widget: 'cards', x: 1, y: 0, w: 1, h: 1 }] }, 'mobile'), null);
 });
@@ -154,4 +154,33 @@ test('the layout routes take a device, default to desktop and reject anything el
     assert.equal(apiRoute('PUT', '/api/layout', P(bad), store, NOW, JSON.stringify(desk))?.status, 400, bad);
   }
   assert.deepEqual(apiRoute('GET', '/api/layout', P('device=mobile'), openSqliteStore(':memory:', MIGRATIONS), NOW)?.body, defaultLayout('mobile'));
+});
+
+test('the standalone "upcoming" widget is gone from the catalog and the default layouts', () => {
+  assert.equal((WIDGET_IDS as readonly string[]).includes('upcoming'), false);
+  for (const device of ['desktop', 'mobile'] as const) assert.equal(defaultLayout(device).items.some((i) => (i.widget as string) === 'upcoming'), false);
+});
+
+test('a saved layout that still holds "upcoming" loads without it, the others stay and the ones below move up', () => {
+  const saved = {
+    version: 2,
+    items: [
+      { id: 'a', widget: 'spending', x: 0, y: 0, w: 4, h: 3 },
+      { id: 'up', widget: 'upcoming', x: 0, y: 3, w: 4, h: 4 },
+      { id: 'b', widget: 'cards', x: 0, y: 7, w: 4, h: 3, config: { period: '3m' } },
+      { id: 'c', widget: 'calendar', x: 4, y: 0, w: 5, h: 7, config: { days: '30' } },
+    ],
+  };
+  const layout = parseLayout(saved);
+  assert.deepEqual(layout?.items.map((i) => i.id), ['a', 'b', 'c']);
+  assert.equal(layout?.items.find((i) => i.id === 'b')?.y, 3);
+  assert.deepEqual(layout?.items.find((i) => i.id === 'c')?.config, { days: '30' });
+  // The same through the store: the saved JSON is not rejected and the route answers 200 with the cleaned layout.
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.setSetting('dashboard_layout', JSON.stringify(saved), NOW.toISOString());
+  assert.deepEqual(loadLayout(store).items.map((i) => i.id), ['a', 'b', 'c']);
+  assert.equal(apiRoute('PUT', '/api/layout', P(), store, NOW, JSON.stringify(saved))?.status, 200);
+  // The phone layout and the old list format drop it too.
+  assert.deepEqual(parseLayout({ version: 2, items: [{ id: 'up', widget: 'upcoming', x: 0, y: 0, w: 2, h: 4 }, { id: 'k', widget: 'cards', x: 0, y: 4, w: 2, h: 4 }] }, 'mobile')?.items.map((i) => i.id), ['k']);
+  assert.deepEqual(parseLayout({ widgets: [{ id: 'upcoming', hidden: false }, { id: 'cards', hidden: false }] })?.items.map((i) => i.widget), ['cards']);
 });

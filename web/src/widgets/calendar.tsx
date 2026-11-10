@@ -1,11 +1,13 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api.ts';
 import type { CalendarDay } from '../api.ts';
 import { brl, dayMonth, localDay, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
 import { navigate, patchParams } from '../router.ts';
+import { Select } from '../Select.tsx';
 import { TxRow } from '../ui.tsx';
-import { FitList, Widget } from '../Widget.tsx';
+import { MAX_WINDOW, monthsCovering, parseWindow, upcomingItems, upcomingTotals, WINDOW_PRESETS, windowLabel } from '../upcoming.ts';
+import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
 const WEEKDAYS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
@@ -62,11 +64,54 @@ function Selection({ picked, days, hidden, month, rows }: { picked: { from: stri
   );
 }
 
+/** The window of the summary: the usual choices, or any number of days from 1 to 90. */
+function WindowPicker({ days, onChange }: { days: number; onChange: (days: number) => void }) {
+  const preset = (WINDOW_PRESETS as readonly number[]).includes(days);
+  const [custom, setCustom] = useState(!preset);
+  const [text, setText] = useState(String(days));
+  useEffect(() => setText(String(days)), [days]);
+  const commit = (value: string) => {
+    const n = Number(value);
+    if (Number.isInteger(n) && n >= 1 && n <= MAX_WINDOW) onChange(n);
+    else setText(String(days));
+  };
+  return (
+    <span class="window-pick" data-no-nav>
+      <Select
+        ariaLabel="Janela dos próximos vencimentos"
+        value={custom || !preset ? 'custom' : String(days)}
+        options={[...WINDOW_PRESETS.map((n) => ({ value: String(n), label: windowLabel(n) })), { value: 'custom', label: 'Outro número' }]}
+        onChange={(value) => {
+          if (value === 'custom') setCustom(true);
+          else {
+            setCustom(false);
+            onChange(Number(value));
+          }
+        }}
+      />
+      {(custom || !preset) && (
+        <input
+          class="window-days"
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={MAX_WINDOW}
+          value={text}
+          aria-label={`Dias, de 1 a ${MAX_WINDOW}`}
+          onInput={(e) => setText(e.currentTarget.value)}
+          onBlur={(e) => commit(e.currentTarget.value)}
+          onKeyDown={(e) => e.key === 'Enter' && commit(e.currentTarget.value)}
+        />
+      )}
+    </span>
+  );
+}
+
 /**
  * The month as a small grid: a dot on days with money moving, a ring on today. A tap selects a day and lists it below; a
  * tap on another day selects the days between, and a tap on the chosen day clears it.
  */
-export function CalendarWidget({ now, size, hidden, pixels }: WidgetProps) {
+export function CalendarWidget({ now, size, hidden, pixels, config, setConfig }: WidgetProps) {
   const [picked, setPicked] = useState<Picked>(null);
   const tap = (day: string) => {
     if (!picked || picked.from !== picked.to) setPicked({ from: day, to: day });
@@ -76,7 +121,12 @@ export function CalendarWidget({ now, size, hidden, pixels }: WidgetProps) {
   const month = localDay(now.toISOString()).slice(0, 7);
   const { data, error, loading } = useLoad(() => api.calendar(month), [month], 300_000);
   const first = new Date(`${month}-01T00:00:00Z`).getUTCDay();
-  const next = data?.days.flatMap((d) => d.projected.map((p) => ({ ...p, day: d.day }))).filter((p) => p.day >= data.today).slice(0, 20) ?? [];
+  // The summary under the grid: what is expected in the chosen window, which may reach into the next months.
+  const windowDays = parseWindow(config.days);
+  const later = data ? monthsCovering(data.today, windowDays).filter((m) => m !== month) : [];
+  const extra = useLoad(() => Promise.all(later.map((m) => api.calendar(m))), [later.join(',')], 300_000);
+  const next = data ? upcomingItems([...data.days, ...(extra.data ?? []).flatMap((c) => c.days)], data.today, windowDays) : [];
+  const total = upcomingTotals(next);
   return (
     <Widget title={`Calendário · ${monthName(month)}`} to={{ page: 'calendar' }} now={now} loading={loading && !data} error={error}>
       {data && (
@@ -105,17 +155,38 @@ export function CalendarWidget({ now, size, hidden, pixels }: WidgetProps) {
             ))}
           </div>
           {picked && <Selection picked={picked} days={data.days} hidden={hidden} month={month} rows={pixels ? Math.max(3, Math.min(20, Math.floor((pixels.height - 340) / 46))) : size === 'lg' ? 8 : 5} />}
-          {!picked && size !== 'sm' && next.length > 0 && (
-            <FitList
-              noun={['item', 'itens']}
-              rows={next.map((p, i) => (
-                <li key={i}>
-                  <span class="muted">{dayMonth(p.day)}</span>
-                  <span class="grow clip">{p.name}</span>
-                  <span class="muted">{p.kind === 'bill' ? 'fatura' : ''}</span>
-                </li>
-              ))}
-            />
+          {!picked && size !== 'sm' && (
+            <div class="upcoming">
+              <div class="upcoming-head">
+                <div class="grow">
+                  <strong>{brl(total.out, hidden)}</strong> <span class="muted">a pagar em {windowLabel(windowDays)}</span>
+                  <div class="muted">
+                    {total.count} {total.count === 1 ? 'item' : 'itens'}
+                    {total.in > 0 ? ` · ${brl(total.in, hidden)} a receber` : ''}
+                    {extra.loading && !extra.data && later.length > 0 ? ' · carregando…' : ''}
+                  </div>
+                </div>
+                <WindowPicker days={windowDays} onChange={(n) => setConfig({ days: String(n) })} />
+              </div>
+              {next.length === 0 ? (
+                <div class="muted">Nada esperado em {windowLabel(windowDays)}.</div>
+              ) : (
+                <ul class="rows upcoming-list">
+                  {next.map((p, i) => (
+                    <li key={`${p.day}${p.name}${i}`}>
+                      <span class="muted">{dayMonth(p.day)}</span>
+                      <span class="grow clip">
+                        {p.name} {p.late && <span class="badge bad">atrasado</span>}
+                      </span>
+                      <strong class={p.direction === 'in' ? 'good-text' : ''}>
+                        {p.direction === 'in' ? '+' : '−'}
+                        {brl(p.amount, hidden)}
+                      </strong>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </>
       )}

@@ -35,7 +35,7 @@ export function GoalsWidget({ now, hidden, size, pixels }: WidgetProps) {
         ))
       }
     >
-      {size !== 'sm' && active.length > 0 && (
+      {(size !== 'sm' || (pixels !== undefined && pixels.height >= 170)) && active.length > 0 && (
         <FitList
           class="rows tall"
           noun={['meta', 'metas']}

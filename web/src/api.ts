@@ -138,7 +138,7 @@ export const api = {
   dismissBills: (bills: Array<{ accountId: string; cycleKey: string }>, dismissed: boolean) =>
     request<{ ok: true }>('/api/bill-check/dismiss', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bills, dismissed }) }),
   installments: () => request<InstallmentsView>('/api/installments'),
-  transactions: (from: string, to: string, limit: number) => request<ExplorerResult>(`/api/transactions${query({ from, to, limit })}`),
+  transactions: (from: string, to: string, limit: number, offset = 0) => request<ExplorerResult>(`/api/transactions${query({ from, to, limit, offset })}`),
   /** Explorer with any filters, given as URL parameters. */
   explore: (params: URLSearchParams) => request<ExplorerResult>(`/api/transactions?${params.toString()}`),
   detail: (id: string) => request<TransactionDetail>(`/api/transactions/${encodeURIComponent(id)}`),

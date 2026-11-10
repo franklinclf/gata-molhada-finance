@@ -41,7 +41,7 @@ export function BudgetWidget({ now, hidden, size, pixels }: WidgetProps) {
         ))
       }
     >
-      {size !== 'sm' && budgeted.length > 0 && (
+      {(size !== 'sm' || (pixels !== undefined && pixels.height >= 170)) && budgeted.length > 0 && (
         <FitList
           noun={['categoria', 'categorias']}
           rows={budgeted.map((l) => {

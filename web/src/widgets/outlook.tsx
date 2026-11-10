@@ -161,7 +161,7 @@ export function OutlookWidget({ now, hidden, size }: WidgetProps) {
             </div>
           )}
           <h3 class="outlook-sub">Próximos vencimentos</h3>
-          <OutlookTimeline data={{ ...data, timeline: size === 'lg' ? data.timeline : upcoming }} hidden={hidden} limit={size === 'lg' ? 10 : 4} detail={size === 'lg'} linkMore />
+          <OutlookTimeline data={{ ...data, timeline: size === 'lg' ? data.timeline : upcoming }} hidden={hidden} limit={40} detail={size === 'lg'} linkMore />
           {size === 'lg' && <OutlookCommitted data={data} hidden={hidden} />}
         </>
       )}
