@@ -1,9 +1,27 @@
 import type { Store } from '../store/store.ts';
 
-export const WIDGET_IDS = ['outlook', 'balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'summary', 'upcoming', 'calendar', 'trend', 'review', 'recent', 'freshness', 'findings'] as const;
+export const WIDGET_IDS = ['outlook', 'balances', 'cards', 'cashflow', 'spending', 'installments', 'budget', 'networth', 'goals', 'summary', 'calendar', 'trend', 'review', 'recent', 'freshness', 'findings'] as const;
 export type WidgetId = (typeof WIDGET_IDS)[number];
 
 /** Columns of the reference desktop grid (see COLUMNS in web/src/grid.ts). */
+/** Moves every item up as far as it goes without touching another one, keeping the left-to-right order. The server cannot import the web grid code: the production image holds only `src`. */
+function compact<T extends { id: string; x: number; y: number; w: number; h: number }>(items: T[]): T[] {
+  const hits = (a: T, b: T) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const placed: T[] = [];
+  for (const item of [...items].sort((a, b) => a.y - b.y || a.x - b.x)) {
+    let y = 0;
+    const candidate = { ...item };
+    for (;;) {
+      candidate.y = y;
+      const hit = placed.filter((p) => hits(p, candidate));
+      if (hit.length === 0) break;
+      y = Math.max(...hit.map((p) => p.y + p.h));
+    }
+    placed.push(candidate);
+  }
+  return items.map((original) => placed.find((p) => p.id === original.id)!);
+}
+
 export const GRID_COLUMNS = 13;
 /** A wide screen shows more columns; a saved widget may sit in any of them. */
 export const MAX_GRID_COLUMNS = 36;
@@ -37,8 +55,7 @@ export const DEFAULT_SIZES: Record<WidgetId, Size> = {
   networth: { w: 3, h: 2 },
   goals: { w: 4, h: 4 },
   summary: { w: 3, h: 2 },
-  upcoming: { w: 4, h: 6 },
-  calendar: { w: 4, h: 7 },
+  calendar: { w: 5, h: 7 },
   trend: { w: 4, h: 5 },
   review: { w: 2, h: 2 },
   recent: { w: 4, h: 6 },
@@ -61,7 +78,6 @@ export const MIN_SIZES: Record<WidgetId, Size> = {
   networth: { w: 1, h: 1 },
   goals: { w: 2, h: 1 },
   summary: { w: 1, h: 1 },
-  upcoming: { w: 2, h: 1 },
   calendar: { w: 3, h: 4 },
   trend: { w: 2, h: 2 },
   review: { w: 1, h: 1 },
@@ -75,7 +91,7 @@ const MOBILE_DEFAULT: Array<[WidgetId, number, number]> = [
   ['cards', 2, 6],
   ['outlook', 2, 6],
   ['balances', 2, 2],
-  ['upcoming', 2, 5],
+  ['calendar', 2, 8],
   ['summary', 1, 2],
   ['networth', 1, 2],
   ['installments', 1, 2],
@@ -86,7 +102,6 @@ const MOBILE_DEFAULT: Array<[WidgetId, number, number]> = [
   ['spending', 2, 6],
   ['budget', 2, 5],
   ['goals', 2, 4],
-  ['calendar', 2, 7],
   ['trend', 2, 5],
   ['recent', 2, 6],
 ];
@@ -138,8 +153,9 @@ function flow(entries: Array<[WidgetId, number, number]>, columns: number): Layo
 const sized = (widgets: readonly WidgetId[], sizes: Record<WidgetId, Size> = DEFAULT_SIZES): Array<[WidgetId, number, number]> => widgets.map((id) => [id, sizes[id].w, sizes[id].h]);
 
 /**
- * Desktop default, 13 columns, every row full: a band of four figures (4+3+3+3), then rows of 4+4+5 and 4+4+4 plus a rail of three 1x2 tiles,
- * 4+4+5 again, and the recent transactions across the whole width.
+ * Desktop default, 13 columns, every row full: a band of four figures (4+3+3+3), then the month (4), the calendar with the upcoming items (5)
+ * and a column of goals over the budget (4); the cards, the cash flow and the spending (4 each) beside a rail of three 1x2 tiles; and the biggest rises (5)
+ * beside the recent transactions (8).
  */
 const DESKTOP_DEFAULT: Array<[WidgetId, number, number, number, number]> = [
   ['balances', 0, 0, 4, 2],
@@ -147,18 +163,17 @@ const DESKTOP_DEFAULT: Array<[WidgetId, number, number, number, number]> = [
   ['networth', 7, 0, 3, 2],
   ['installments', 10, 0, 3, 2],
   ['outlook', 0, 2, 4, 7],
-  ['upcoming', 4, 2, 4, 7],
-  ['calendar', 8, 2, 5, 7],
+  ['calendar', 4, 2, 5, 7],
+  ['goals', 9, 2, 4, 3],
+  ['budget', 9, 5, 4, 4],
   ['cards', 0, 9, 4, 6],
   ['cashflow', 4, 9, 4, 6],
   ['spending', 8, 9, 4, 6],
   ['review', 12, 9, 1, 2],
   ['findings', 12, 11, 1, 2],
   ['freshness', 12, 13, 1, 2],
-  ['budget', 0, 15, 4, 5],
-  ['goals', 4, 15, 4, 5],
-  ['trend', 8, 15, 5, 5],
-  ['recent', 0, 20, 13, 5],
+  ['trend', 0, 15, 5, 6],
+  ['recent', 5, 15, 8, 6],
 ];
 
 export function defaultLayout(device: Device = 'desktop'): Layout {
@@ -205,6 +220,7 @@ export function parseLayout(value: unknown, device: Device = 'desktop'): Layout 
   if (record.version !== 2 || !Array.isArray(record.items) || record.items.length > MAX_ITEMS) return null;
   const ids = new Set<string>();
   const items: LayoutItem[] = [];
+  let dropped = false;
   for (const raw of record.items) {
     if (raw === null || typeof raw !== 'object') return null;
     const { id, widget, x, y, w, h, config } = raw as Record<string, unknown>;
@@ -212,13 +228,17 @@ export function parseLayout(value: unknown, device: Device = 'desktop'): Layout 
     if (!isInt(x, 0, columns - 1) || !isInt(y, 0, MAX_ROWS) || !isInt(w, 1, columns) || !isInt(h, 1, MAX_HEIGHT) || x + w > columns) return null;
     const parsedConfig = parseConfig(config);
     if (parsedConfig === null) return null;
-    if (!isWidgetId(widget)) continue;
+    if (!isWidgetId(widget)) {
+      // A widget that no longer exists (such as the old "upcoming") is left out; the ones below it move up into the hole.
+      dropped = true;
+      continue;
+    }
     // A widget cannot be saved smaller than its minimum (the phone layout has its own sizes).
     if (device === 'desktop' && (w < MIN_SIZES[widget].w || h < MIN_SIZES[widget].h)) return null;
     ids.add(id);
     items.push(parsedConfig === undefined ? { id, widget, x, y, w, h } : { id, widget, x, y, w, h, config: parsedConfig });
   }
-  return { version: 2, items };
+  return { version: 2, items: dropped && device === 'desktop' ? compact(items) : items };
 }
 
 /** The saved layout of this environment, or its default when nothing valid is saved. */

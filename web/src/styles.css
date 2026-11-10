@@ -571,7 +571,7 @@ img, svg { -webkit-user-drag: none; user-drag: none; }
 @media (max-width: 760px) { .rows li.cat-row { flex-wrap: wrap; } .rows li.cat-row > .grow { flex-basis: 100%; } }
 .mini-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
 .mini-head { text-align: center; font-size: 10px; color: var(--muted); }
-.mini-day { position: relative; aspect-ratio: 1; border: 0; border-radius: var(--radius-sm); background: var(--card-2); color: var(--text); font-size: 11px; padding: 0; cursor: pointer; }
+.mini-day { position: relative; aspect-ratio: 1.5; border: 0; border-radius: var(--radius-sm); background: var(--card-2); color: var(--text); font-size: 11px; padding: 0; cursor: pointer; }
 .mini-day.past { opacity: 0.7; }
 /* The ring is drawn inside the cell: an outline would be painted over the gap and the card's edge. */
 .mini-day.today { box-shadow: inset 0 0 0 1.5px var(--accent); }
@@ -874,3 +874,27 @@ body.wide .main { max-width: none; }
 .grip-actions { min-width: 0; gap: 4px; }
 .grip .size-pick { min-width: 0; max-width: 120px; text-overflow: ellipsis; }
 .stack-bar .size-pick { max-width: 140px; }
+
+/* ---------- widgets: listas que rolam, resumo de próximos vencimentos, figuras sem corte ---------- */
+/* A key figure is never cut with an ellipsis: fit-text.ts shrinks it to the width it has. */
+.big { text-overflow: clip; }
+.big small { font-size: 0.42em; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+/* A one-column tile (1 x 2) uses its height for the count and a short label under it. */
+@container (max-width: 130px) {
+  .widget.sm:not(.tiny) .big.count { font-size: clamp(26px, 42cqi, 44px); line-height: 1.05; }
+  .widget.sm:not(.tiny) .big.count small { display: block; font-size: 12px; }
+}
+/* "+N itens" opens the whole list in place. */
+.rows li.more-rows { display: flex; gap: 14px; }
+.rows li.more-rows button.link { font-size: 12px; }
+.rows li.more-rows:hover { background: none; }
+/* Calendar: the summary of what is coming under the month grid. */
+.upcoming { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.upcoming-head { display: flex; align-items: flex-start; gap: 10px; }
+.window-pick { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.window-days { width: 64px; font: inherit; font-size: 13px; background: var(--card-2); color: var(--text); border: 0; border-radius: var(--radius-pill); padding: 4px 10px; }
+/* An open list: the chart above it folds away so the rows get the height, the thumb stays visible and "Mostrar menos" sticks to the foot. */
+.widget.list-open .widget-head > :not(.big):not(.seg):not(.tabs):not(.muted:first-of-type) { display: none; }
+.widget.list-open .widget-body { scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent; }
+.widget.list-open .widget-body::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 35%, transparent); }
+.rows li.more-rows.sticky { position: sticky; bottom: 0; background: var(--card); padding-top: 6px; z-index: 1; }

@@ -16,7 +16,6 @@ import { RecentWidget } from './recent.tsx';
 import { ReviewWidget } from './review.tsx';
 import { SummaryWidget } from './summary.tsx';
 import { TrendWidget } from './trend.tsx';
-import { UpcomingWidget } from './upcoming.tsx';
 import { SpendingWidget } from './spending.tsx';
 
 export interface WidgetProps {
@@ -41,7 +40,6 @@ export const WIDGETS: Record<WidgetId, { title: string; component: FunctionCompo
   budget: { title: 'Orçamento', component: BudgetWidget },
   goals: { title: 'Metas', component: GoalsWidget },
   summary: { title: 'Entrou menos saiu', component: SummaryWidget },
-  upcoming: { title: 'Próximos 14 dias', component: UpcomingWidget },
   calendar: { title: 'Calendário', component: CalendarWidget },
   trend: { title: 'Maiores altas', component: TrendWidget },
   review: { title: 'Para revisar', component: ReviewWidget },

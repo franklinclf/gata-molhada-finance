@@ -8,7 +8,7 @@ import { Select } from '../Select.tsx';
 import { chartHeight } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { Go, StatusBadge } from '../ui.tsx';
-import { FitList, Widget } from '../Widget.tsx';
+import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
 const BAR_COLOR: Record<string, string> = { open: 'var(--accent)', paid: 'var(--good)', overdue: 'var(--bad)', unknown: 'var(--muted)' };
@@ -117,10 +117,9 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
               </div>
             </div>
           )}
-          <FitList
-            class="rows tall"
-            noun={['cartão', 'cartões']}
-            rows={
+          {/* Every card is listed: the chart and the headline stay in view and the list scrolls under them. */}
+          <ul class="rows tall">
+            {
               shown.length === 0
                 ? [
                     <li key="none" class="muted">
@@ -151,7 +150,7 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
                     );
                   })
             }
-          />
+          </ul>
           {unexplained > 0 && (
             <ul class="rows tall">
               <li data-tip="Parte do limite usado, informada pelo banco para o limite compartilhado, que nenhuma compra ou parcela listada explica. Pode ser uma compra que o banco ainda não enviou.">
