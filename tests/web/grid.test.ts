@@ -69,12 +69,46 @@ test('wide screens get more columns, and widgets spread over them', async () => 
   assert.equal(columnsFor(1000, 14), 12);
   assert.equal(columnsFor(2600, 14), 20);
   assert.equal(columnsFor(9000, 14), 36);
+  assert.equal(columnsFor(9000, 14, 112, 12), 12);
   const spread = reflow([{ id: 'a', x: 0, y: 0, w: 4, h: 5 }, { id: 'b', x: 0, y: 5, w: 4, h: 5 }, { id: 'c', x: 0, y: 10, w: 4, h: 5 }, { id: 'd', x: 0, y: 15, w: 4, h: 5 }], 16);
   assert.deepEqual(spread.map((i) => [i.x, i.y]), [[0, 0], [4, 0], [8, 0], [12, 0]]);
   assert.equal(sizeClassPx(300, 300), 'sm');
   assert.equal(sizeClassPx(320, 588), 'md');
   assert.equal(sizeClassPx(1000, 600), 'lg');
   assert.equal(sizeClassPx(900, 200), 'md');
+});
+
+test('shrink first, then wrap: the count holds while the columns stay at least 64 px, then drops in steps of 4', async () => {
+  const { columnsFor, MIN_SLOT } = await import('../../web/src/grid.ts');
+  assert.equal(MIN_SLOT, 64);
+  // Window widths minus the 32 px of page padding: 1440, 1280, 1024 and 960 px windows all keep 12 columns.
+  for (const window of [1440, 1280, 1024, 960]) assert.equal(columnsFor(window - 32, 14), 12, `${window}`);
+  // 12 columns need 12 * 64 + 11 * 14 = 922 px; one pixel less wraps to 8.
+  assert.equal(columnsFor(922, 14), 12);
+  assert.equal(columnsFor(921, 14), 8);
+  assert.equal(columnsFor(768 - 32, 14), 8);
+  assert.equal(columnsFor(700 - 32, 14), 8);
+  assert.equal(columnsFor(500, 14), 4);
+  assert.equal(columnsFor(100, 14), 4);
+  // Wide screens grow with the original 112 px slot, and never shrink under the 12 of the reference.
+  assert.equal(columnsFor(1888, 14), 15);
+});
+
+test('a widget keeps its own smallest size when resized, and the default smallest is 2 x 2', () => {
+  const items = [box('a', 0, 0, 4, 4), box('b', 4, 0, 4, 4)];
+  assert.deepEqual(at(place(items, 'a', { w: 1, h: 1 }, 12, { w: 2, h: 1 }), 'a'), { id: 'a', x: 0, y: 0, w: 2, h: 1 });
+  assert.equal(at(place(items, 'a', { w: 1, h: 1 }), 'a').h, 2);
+});
+
+test('the phone stack packs half-width widgets in pairs and never overlaps', async () => {
+  const { packStack, shiftInStack } = await import('../../web/src/grid.ts');
+  const stack = [box('a', 0, 0, 2, 5), box('b', 0, 5, 1, 2), box('c', 0, 7, 1, 2), box('d', 0, 9, 1, 2), box('e', 0, 20, 2, 3)];
+  const out = packStack(stack);
+  assert.deepEqual(out.map((i) => [i.x, i.y]), [[0, 0], [0, 5], [1, 5], [0, 7], [0, 9]]);
+  noOverlap(out);
+  const down = shiftInStack(out, 'a', 1);
+  assert.deepEqual([...down].sort((p, q) => p.y - q.y || p.x - q.x).map((i) => i.id), ['b', 'a', 'c', 'd', 'e']);
+  assert.equal(shiftInStack(out, 'a', -1), out);
 });
 
 const noOverlap = (items: Box[]) => {

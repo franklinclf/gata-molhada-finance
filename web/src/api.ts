@@ -1,6 +1,6 @@
 import { invalidateData } from './invalidate.ts';
 import type { TransactionDetail } from '../../src/api/detail.ts';
-import type { Layout, LayoutItem, WidgetId } from '../../src/api/layout.ts';
+import type { Device, Layout, LayoutItem, WidgetId } from '../../src/api/layout.ts';
 import type { AiRunReply } from '../../src/ai/job.ts';
 import type { AiView, Decision, DecisionStatus, Suggestion } from '../../src/api/ai.ts';
 import type { IncomeItem } from '../../src/store/store.ts';
@@ -30,7 +30,7 @@ import type { ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine }
 
 export type { AccountPreview, AccountPreviewLine, ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine };
 
-export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, ChangeView, ChatMessageView, GoalView, CalendarView, CalendarDay, OutlookView, RecurringItem, TrendView, CompareView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
+export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, ChangeView, ChatMessageView, GoalView, CalendarView, CalendarDay, OutlookView, RecurringItem, TrendView, CompareView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Device, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
   strength: 'password' | 'passkey' | 'device';
@@ -96,7 +96,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   // A change made by the owner (not a login, a chat question or a preview) can alter any list on screen. Reading a
   // statement file and previewing it write nothing; applying it and undoing it do.
-  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && path !== '/api/layout' && path !== '/api/rules/preview' && !/^\/api\/bill-files(\?.*)?$|^\/api\/bill-files\/(preview|vision)$/.test(path);
+  const changes = (init?.method ?? 'GET') !== 'GET' && !path.startsWith('/api/auth/') && !path.startsWith('/api/chat') && !/^\/api\/layout(\?.*)?$/.test(path) && path !== '/api/rules/preview' && !/^\/api\/bill-files(\?.*)?$|^\/api\/bill-files\/(preview|vision)$/.test(path);
   if (!response.ok) {
     const message = (body as { message?: string; error?: string } | null)?.message ?? (body as { error?: string } | null)?.error ?? (response.status === 413 ? 'O arquivo é grande demais para enviar.' : response.statusText);
     throw new ApiError(response.status, message);
@@ -293,6 +293,6 @@ export const api = {
   undoBillImport: (id: number) => request<{ removed: number; restoredManual: number }>(`/api/bill-files/${id}`, { method: 'DELETE' }),
   readBillWithAi: (input: { fileHash: string; image: string }) =>
     request<BillPreview>('/api/bill-files/vision', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
-  layout: () => request<Layout>('/api/layout'),
-  saveLayout: (layout: Layout) => request<Layout>('/api/layout', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(layout) }),
+  layout: (device: Device = 'desktop') => request<Layout>(`/api/layout?device=${device}`),
+  saveLayout: (layout: Layout, device: Device = 'desktop') => request<Layout>(`/api/layout?device=${device}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(layout) }),
 };

@@ -32,7 +32,10 @@ export function compact<T extends Box>(items: T[]): T[] {
   return items.map((original) => placed.find((p) => p.id === original.id)!);
 }
 
-export function clampBox<T extends Box>(box: T, columns = COLUMNS, minW = 2, minH = 2, maxH = 40): T {
+/** Smallest size a box can take unless its widget says otherwise. */
+export const DEFAULT_MIN: { w: number; h: number } = { w: 2, h: 2 };
+
+export function clampBox<T extends Box>(box: T, columns = COLUMNS, minW = DEFAULT_MIN.w, minH = DEFAULT_MIN.h, maxH = 40): T {
   const w = Math.min(Math.max(Math.round(box.w), minW), columns);
   const h = Math.min(Math.max(Math.round(box.h), minH), maxH);
   const x = Math.min(Math.max(Math.round(box.x), 0), columns - w);
@@ -44,10 +47,10 @@ export function clampBox<T extends Box>(box: T, columns = COLUMNS, minW = 2, min
  * Puts one box at a new place or size. Boxes in the way are pushed down, then everything settles upward.
  * The moved box wins ties, so it stays where it was dropped when possible.
  */
-export function place<T extends Box>(items: T[], id: string, target: Partial<Omit<Box, 'id'>>, columns = COLUMNS): T[] {
+export function place<T extends Box>(items: T[], id: string, target: Partial<Omit<Box, 'id'>>, columns = COLUMNS, min: { w: number; h: number } = DEFAULT_MIN): T[] {
   const current = items.find((i) => i.id === id);
   if (!current) return items;
-  const moved = clampBox({ ...current, ...target }, columns);
+  const moved = clampBox({ ...current, ...target }, columns, Math.min(min.w, columns), min.h);
   const others = items.filter((i) => i.id !== id).map((i) => ({ ...i })).sort(byPosition);
   const fixed: T[] = [moved];
   for (const item of others) {
@@ -83,15 +86,67 @@ export function sizeClass(w: number, h: number): SizeClass {
 }
 
 /** The same choice from the size on screen, so a widget fits its real room whatever the column width is. A wide, short widget still gets the fuller look, and a narrow but tall one does too, since its content fits in 355 px on a phone. */
+/** The look of a widget one row tall: the title and the key figure, nothing else. */
+export function isTinyPx(height: number): boolean {
+  return height <= 100;
+}
+
 export function sizeClassPx(width: number, height: number): SizeClass {
   if ((width <= 360 && height <= 360) || (height <= 260 && width < 600)) return 'sm';
   if ((width >= 880 && height >= 500) || (width >= 660 && height >= 590)) return 'lg';
   return 'md';
 }
 
-/** Columns that fit a container: about as wide as the 12 of the normal layout, never fewer than 12. */
-export function columnsFor(width: number, gap: number, slot = 112, max = 36): number {
-  return Math.min(max, Math.max(COLUMNS, Math.floor((width + gap) / (slot + gap))));
+/** Narrowest a grid column gets (px) before the grid drops columns instead: 12 of them plus 11 gaps of 14 px fit from 922 px. */
+export const MIN_SLOT = 64;
+
+/**
+ * Columns of the grid for a container: shrink first, then wrap.
+ * The count is the one the widest layout has: 12, and more where a wide screen has room for slots of `slot` px (`max` caps it; 12 when the grid
+ * should not grow). Narrowing the window keeps that count and only makes the columns thinner, down to `minSlot`. Below that the count drops, in
+ * steps of 4 (12, 8, 4) so the usual 4-wide widgets stay lined up, and never under 4.
+ */
+export function columnsFor(width: number, gap: number, slot = 112, max = 36, minSlot = MIN_SLOT): number {
+  const grown = Math.min(max, Math.max(COLUMNS, Math.floor((width + gap) / (slot + gap))));
+  const fits = Math.floor((width + gap) / (minSlot + gap));
+  const count = Math.min(grown, fits);
+  return count >= COLUMNS ? count : Math.max(4, Math.floor(count / 4) * 4);
+}
+
+/**
+ * Phone stack: items in reading order (top to bottom, left to right), one or two half columns wide. A half-width item takes the next
+ * half-width one beside it; anything else gets a row of its own. Rows are as tall as their tallest item, so no two items share a cell.
+ */
+export function packStack<T extends Box>(items: T[], columns = 2): T[] {
+  const ordered = [...items].sort(byPosition);
+  const placed = new Map<string, T>();
+  let y = 0;
+  let x = 0;
+  let rowHeight = 0;
+  for (const item of ordered) {
+    const w = Math.min(Math.max(item.w, 1), columns);
+    if (x + w > columns) {
+      x = 0;
+      y += rowHeight;
+      rowHeight = 0;
+    }
+    placed.set(item.id, { ...item, w, x, y });
+    x += w;
+    rowHeight = Math.max(rowHeight, item.h);
+  }
+  return items.map((i) => placed.get(i.id)!);
+}
+
+/** The stack moved one step in reading order (-1 up, 1 down); at the edge it stays as it is. */
+export function shiftInStack<T extends Box>(items: T[], id: string, delta: -1 | 1, columns = 2): T[] {
+  const ordered = [...packStack(items, columns)].sort(byPosition);
+  const from = ordered.findIndex((i) => i.id === id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= ordered.length) return items;
+  const [moved] = ordered.splice(from, 1);
+  ordered.splice(to, 0, moved!);
+  // Positions follow the new order: each item takes the sort key of its index.
+  return packStack(ordered.map((item, index) => ({ ...item, x: 0, y: index })), columns);
 }
 
 /** Spreads boxes over the given number of columns, keeping their sizes and reading order. */

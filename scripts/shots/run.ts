@@ -43,7 +43,7 @@ const SCENARIOS: Record<string, { fixtures: FixtureVariant; storage: Record<stri
 };
 const ROUTES: Array<[string, string, number]> = [
   ['painel', '', 1500],
-  ['painel-personalizar', `?__clickText=${encodeURIComponent('Personalizar painel')}`, 1500],
+  ['painel-personalizar', '?customize=1', 1500],
   ['painel-calendario-dia', `?__click=${encodeURIComponent('.mini-day[aria-label^="15/"]')}`, 3200],
   ['transacoes', 'transactions', 1300],
   ['gastos', 'spending', 1500],
