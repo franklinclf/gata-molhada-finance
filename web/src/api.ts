@@ -25,9 +25,10 @@ import type { RuleSuggestion } from '../../src/api/rule-suggestions.ts';
 import type { RuleRow, RulePreview, ImportReport } from '../../src/api/rules.ts';
 import type { Rule, RuleConditions } from '../../src/api/rules-engine.ts';
 import type { BalancesView, BillsView, CardsView, CashFlowView, FreshnessView, SpendingView } from '../../src/api/views.ts';
+import type { AccountPreview, AccountPreviewLine } from '../../src/api/account-import.ts';
 import type { ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine } from '../../src/api/bill-import.ts';
 
-export type { ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine };
+export type { AccountPreview, AccountPreviewLine, ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine };
 
 export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, ChangeView, ChatMessageView, GoalView, CalendarView, CalendarDay, OutlookView, RecurringItem, TrendView, CompareView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
@@ -283,9 +284,9 @@ export const api = {
    * Reading it writes nothing, so the screens are not reloaded.
    */
   uploadBill: (file: Blob, name: string) =>
-    request<BillPreview | ImageOnly>(`/api/bill-files${query({ name: name.slice(0, 200) })}`, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file }),
+    request<BillPreview | AccountPreview | ImageOnly>(`/api/bill-files${query({ name: name.slice(0, 200) })}`, { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: file }),
   previewBill: (input: { fileHash: string; accountId?: string; targets?: Record<string, string> }) =>
-    request<BillPreview>('/api/bill-files/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
+    request<BillPreview | AccountPreview>('/api/bill-files/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
   applyBill: (input: { fileHash: string; accountId?: string; targets?: Record<string, string>; removeManual?: string[] }) =>
     request<ApplyResult>('/api/bill-files/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
   billImports: () => request<{ items: BillImportView[] }>('/api/bill-files'),

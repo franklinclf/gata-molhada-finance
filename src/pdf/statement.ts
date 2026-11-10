@@ -33,7 +33,7 @@ export interface StatementLine {
 }
 
 export interface ParsedStatement {
-  issuer: 'bradescard' | 'bradesco';
+  issuer: 'bradescard' | 'bradesco' | 'nubank' | 'itau';
   /** Card product as printed, for example a co-branded Mastercard name. */
   product: string;
   /** Card the bill is issued to (header), and every card section found. */
@@ -174,6 +174,8 @@ interface RawLine {
   installment: { number: number; total: number } | null;
   foreign: StatementLine['foreign'];
   kind: StatementLine['kind'];
+  /** The day is when the bank charged the line (not the purchase), so an installment number says nothing about the year. */
+  chargeDate?: boolean;
 }
 
 function kindOf(credit: boolean, installment: unknown, description: string): StatementLine['kind'] {
@@ -257,6 +259,12 @@ interface Parsed {
   analysis: RawLine[];
   subtotals: number[];
   warnings: string[];
+  /** Closing day when the layout prints it (null: not printed). Left out, the Bradesco 'Disponível em' box is searched. */
+  closing?: string | null;
+  /** Day the years of the lines are counted back from. */
+  reference?: string;
+  /** Debt carried in from earlier bills, when the layout prints it (Itaú 'Saldo financiado'). Left out: previous balance minus payments. */
+  carry?: number;
 }
 
 const MASK = /(\d{4})\.\d{2}\*{2}\.\*{4}\.(\d{4})\s*$/;
@@ -505,6 +513,351 @@ function parseBradesco(doc: PdfDocument): Parsed {
   };
 }
 
+// --- Nubank and Itaú ------------------------------------------------------------------------------------------------
+
+const MONTHS: Record<string, number> = { JAN: 1, FEV: 2, MAR: 3, ABR: 4, MAI: 5, JUN: 6, JUL: 7, AGO: 8, SET: 9, OUT: 10, NOV: 11, DEZ: 12 };
+const squash = (s: string): string => s.replace(/\s+/g, '');
+const NEG = /^[-−–]$/;
+
+/** "14 AGO 2026" to 2026-08-14. */
+function longDate(text: string): string | null {
+  const m = /(\d{2})\s*([A-ZÇ]{3})\s*(\d{4})/.exec(text);
+  const month = m ? MONTHS[m[2] as string] : undefined;
+  return m && month ? isoIfValid(Number(m[3]), month, Number(m[1])) : null;
+}
+
+/**
+ * A money amount at the end of a row. The amount can come as one run or as pieces ("804", ",7", "4") that touch each
+ * other, so the pieces are taken from the right while they are digits, dots, commas or a minus and have no gap.
+ */
+function trailingAmount(items: PdfTextItem[], prefix: RegExp | null): { value: number; credit: boolean; rest: PdfTextItem[] } | null {
+  let k = items.length;
+  let acc = '';
+  while (k > 0) {
+    const it = items[k - 1] as PdfTextItem;
+    const t = it.text.trim();
+    if (!/^[-−–\d.,]+$/.test(t) && !(prefix && t === 'R$')) break;
+    const next = items[k];
+    if (next && next.x - (it.x + (it.width ?? 0)) > 0.9 * it.size) break;
+    acc = t + acc;
+    k--;
+  }
+  const m = new RegExp(`^([-−–])?(${MONEY})$`).exec(acc.replace(/R\$/g, ''));
+  if (!m) return null;
+  return { value: cents(m[2] as string), credit: m[1] !== undefined, rest: items.slice(0, k) };
+}
+
+/** Joins runs into text. In a PDF that positions every few letters alone, the gaps inside words look like spaces, so only a wide gap counts. */
+function looseJoin(items: PdfTextItem[], spaced: boolean): string {
+  if (!spaced) return clean(joinItems(items));
+  const row = [...items].sort((a, b) => a.x - b.x);
+  let text = '';
+  let end = Number.NEGATIVE_INFINITY;
+  for (const it of row) {
+    if (text !== '' && it.x - end > 0.45 * it.size && !text.endsWith(' ') && !it.text.startsWith(' ')) text += ' ';
+    text += it.text.trim();
+    end = it.x + (it.width ?? 0);
+  }
+  return clean(text);
+}
+
+/** A date drawn in one or more runs at the start of a row: DD/MM, or "DD MON" with `named`. */
+function datePrefix(items: PdfTextItem[], maxX: number, named: boolean): { day: number; month: number; used: number } | null {
+  const first = items[0];
+  if (!first || first.x > maxX) return null;
+  let acc = '';
+  for (let used = 1; used <= Math.min(4, items.length); used++) {
+    acc += named ? ` ${(items[used - 1] as PdfTextItem).text.trim()}` : (items[used - 1] as PdfTextItem).text.trim();
+    const text = acc.trim();
+    const m = named ? /^(\d{2}) ([A-ZÇ]{3})$/.exec(text) : /^(\d{2})\/(\d{2})$/.exec(text);
+    if (m) {
+      const day = Number(m[1]);
+      const month = named ? (MONTHS[m[2] as string] ?? 0) : Number(m[2]);
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      return { day, month, used };
+    }
+    if (text.length > 6) return null;
+  }
+  return null;
+}
+
+/** A line of text and its amount, for the summary boxes: "label  R$ 1.234,56". */
+function labelled(line: PdfLine): { label: string; value: number; credit: boolean } | null {
+  const m = new RegExp(`^(.*?)\\s*([-−–])?\\s*R\\$\\s*(${MONEY})$`).exec(line.text.trim());
+  return m ? { label: (m[1] as string).trim(), value: cents(m[3] as string), credit: m[2] !== undefined } : null;
+}
+
+function installmentTail(text: string): { text: string; installment: { number: number; total: number } | null } {
+  const m = /^(.*?)\s*[-–]?\s*Parcela\s+(\d{1,2})\/(\d{1,2})$/.exec(text.trimEnd());
+  if (!m) return { text, installment: null };
+  const number = Number(m[2]);
+  const total = Number(m[3]);
+  if (number < 1 || total < 2 || number > total) return { text, installment: null };
+  return { text: (m[1] as string).replace(/[\s-–]+$/, '').trim(), installment: { number, total } };
+}
+
+const NUBANK_CARD = /^•+\s*(\d{4})$/;
+
+function parseNubank(doc: PdfDocument): Parsed {
+  const warnings: string[] = [];
+  const pageText = doc.pages.map((p) => p.lines.map((l) => l.text));
+  const flat = pageText.flat();
+  let due: string | null = null;
+  let emission: string | null = null;
+  for (const text of flat) {
+    const d = /^Data de vencimento:\s*(.+)$/.exec(text);
+    if (d && !due) due = longDate(d[1] as string);
+    const f = /FATURA\s+(\d{2}\s*[A-ZÇ]{3}\s*\d{4})\s+EMISS[ÃA]O E ENVIO\s+(\d{2}\s*[A-ZÇ]{3}\s*\d{4})/.exec(text);
+    if (f) {
+      due = due ?? longDate(f[1] as string);
+      emission = emission ?? longDate(f[2] as string);
+    }
+  }
+  if (!due || !emission) throw new StatementError('incomplete', 'Vencimento e emissão da fatura não encontrados');
+
+  const summary: Summary = { previous: null, credits: null, debits: null, total: null };
+  let inSummary = false;
+  for (const page of doc.pages) {
+    for (const line of page.lines) {
+      if (/^RESUMO DA FATURA ATUAL/.test(line.text)) inSummary = true;
+      else if (/^PR[ÓO]XIMAS FATURAS/.test(line.text)) inSummary = false;
+      if (!inSummary) continue;
+      const l = labelled(line);
+      if (!l) continue;
+      if (/^Fatura anterior$/.test(l.label) && summary.previous === null) summary.previous = l.value;
+      else if (/^Pagamento recebido$/.test(l.label) && summary.credits === null) summary.credits = l.value;
+      else if (/^Total de compras/.test(l.label) && summary.debits === null) summary.debits = l.value;
+      else if (/^Total a pagar$/.test(l.label) && summary.total === null) summary.total = l.value;
+    }
+  }
+  if (summary.total === null) throw new StatementError('incomplete', 'Total da fatura não encontrado');
+
+  const lines: RawLine[] = [];
+  const subtotals: number[] = [];
+  const finals: string[] = [];
+  let started = false;
+  let payments = false;
+  for (const page of doc.pages) {
+    for (const line of page.lines) {
+      const items = line.items.filter((i) => i.size >= 3 && i.text.trim() !== '');
+      if (items.length === 0) continue;
+      if (!started) {
+        if (/^TRANSA[ÇC][ÕO]ES\b/.test(line.text)) started = true;
+        continue;
+      }
+      const date = datePrefix(items, page.width * 0.3, true);
+      if (!date) {
+        // A cardholder's total or the "Pagamentos" heading, each with a total at the right.
+        const l = labelled(line);
+        if (l && items[0] && items[0].x < page.width * 0.3) {
+          if (/^Pagamentos$/.test(l.label)) payments = true;
+          else subtotals.push(l.credit ? -l.value : l.value);
+        }
+        continue;
+      }
+      let rest = items.slice(date.used);
+      const last = rest[rest.length - 1];
+      if (!last) continue;
+      let credit = false;
+      if (rest.length > 1 && NEG.test(last.text.trim())) rest.pop();
+      const tail = rest[rest.length - 1];
+      const am = tail ? new RegExp(`^([-−–])?\\s*R\\$\\s*(${MONEY})$`).exec(tail.text.trim()) : null;
+      if (!tail || !am) continue;
+      rest = rest.slice(0, -1);
+      credit = am[1] !== undefined || NEG.test(last.text.trim());
+      let card: string | null = null;
+      const parts: PdfTextItem[] = [];
+      for (const it of rest) {
+        const c = NUBANK_CARD.exec(it.text.trim());
+        if (c) card = c[1] as string;
+        else parts.push(it);
+      }
+      if (card && !finals.includes(card)) finals.push(card);
+      const { text: description, installment } = installmentTail(clean(joinItems(parts)));
+      const payment = credit && (payments || /^Pagamento (em|recebido)/i.test(description));
+      lines.push({
+        cardFinal: card,
+        day: date.day,
+        month: date.month,
+        description,
+        city: null,
+        amount: credit ? cents(am[2] as string) : -cents(am[2] as string),
+        installment,
+        foreign: null,
+        kind: payment ? 'payment' : kindOf(credit, installment, description),
+        chargeDate: true,
+      });
+    }
+  }
+  if (lines.length === 0) throw new StatementError('incomplete', 'Nenhum lançamento encontrado');
+  // The card the bill goes to: the one with most lines.
+  const count = (f: string): number => lines.filter((l) => l.cardFinal === f).length;
+  const header = [...finals].sort((a, b) => count(b) - count(a))[0] ?? null;
+  return {
+    issuer: 'nubank',
+    product: 'Nubank',
+    headerCardFinal: header,
+    cardFinals: finals,
+    due,
+    total: summary.total,
+    summary,
+    lines,
+    analysis: [],
+    subtotals: [subtotals.reduce((a, c) => a + c, 0)].filter(() => subtotals.length > 0),
+    warnings,
+    closing: emission,
+    reference: emission,
+  };
+}
+
+const ITAU_CARD = /Cart[ãa]o\d{4}\.X{4}\.X{4}\.(\d{4})/;
+
+function parseItau(doc: PdfDocument): Parsed {
+  const warnings: string[] = [];
+  const first = doc.pages[0] as PdfPage;
+  const cut = (page: PdfPage): number => page.width * 0.58;
+  const allText = doc.pages.flatMap((p) => p.lines.map((l) => squash(l.text)));
+  let due: string | null = null;
+  let emission: string | null = null;
+  let headerCardFinal: string | null = null;
+  for (const t of allText) {
+    const d = /Vencimento:(\d{2}\/\d{2}\/\d{4})/.exec(t);
+    if (d && !due) due = dmyToIso(d[1] as string);
+    const e = /Emiss[ãa]o:(\d{2}\/\d{2}\/\d{4})/.exec(t);
+    if (e && !emission) emission = dmyToIso(e[1] as string);
+    const c = ITAU_CARD.exec(t);
+    if (c && !headerCardFinal) headerCardFinal = c[1] as string;
+  }
+  if (!due) throw new StatementError('incomplete', 'Vencimento da fatura não encontrado');
+  const head = squash(first.lines.slice(0, 3).map((l) => l.text).join(' '));
+  const product = /Platinum|Gold|Black|Infinite|Uniclass|Personnalit[eé]/i.exec(head)?.[0] ?? '';
+
+  // Summary box at the right of the first page.
+  const summary: Summary = { previous: null, credits: null, debits: null, total: null };
+  let financed: number | null = null;
+  for (const line of first.lines) {
+    const right = line.items.filter((i) => i.x >= cut(first) && i.text.trim() !== '');
+    const amount = trailingAmount(right, null);
+    if (!amount) continue;
+    const label = squash(joinItems(amount.rest));
+    const signed = amount.credit ? -amount.value : amount.value;
+    if (/Totaldafaturaanterior$/.test(label) && summary.previous === null) summary.previous = amount.value;
+    else if (/^Pagamento(s)?efetuado/.test(label) && summary.credits === null) summary.credits = Math.abs(signed);
+    else if (/Saldofinanciado$/.test(label) && financed === null) financed = amount.value;
+    else if (/Lançamentosatuais$/.test(label) && summary.debits === null) summary.debits = amount.value;
+    else if (/Totaldestafatura$/.test(label) && summary.total === null) summary.total = amount.value;
+  }
+  if (summary.total === null) throw new StatementError('incomplete', 'Total da fatura não encontrado');
+  const reference = emission ?? addDays(due, -7);
+
+  const lines: RawLine[] = [];
+  const subtotals: number[] = [];
+  const finals: string[] = [];
+  let mode: 'pay' | 'launch' | null = null;
+  let card: string | null = null;
+  let international = false;
+  const items0 = doc.pages.flatMap((p) => p.lines.flatMap((l) => l.items)).filter((i) => i.size >= 3);
+  const spaced = items0.length > 0 && items0.filter((i) => i.text.trim().length <= 2).length / items0.length > 0.35;
+  for (const page of doc.pages) {
+    for (const line of page.lines) {
+      const items = line.items.filter((i) => i.x < cut(page) && i.size >= 3 && i.text.trim() !== '');
+      if (items.length === 0) continue;
+      const text = squash(joinItems(items));
+      if (/Pagamentosefetuados/.test(text)) {
+        mode = 'pay';
+        continue;
+      }
+      if (/Lançamentos:/.test(text)) {
+        mode = 'launch';
+        if (/internacion/i.test(text)) international = true;
+        continue;
+      }
+      if (/Totaldospagamentos|Limitesdecrédito|Limite(total|disponível)/.test(text)) {
+        mode = null;
+        continue;
+      }
+      if (/Lançamentosnocartão|Totaldoslançamentosatuais/.test(text)) {
+        const a = trailingAmount(items, null);
+        if (a && /Lançamentosnocartão/.test(text)) subtotals.push(a.value);
+        mode = null;
+        continue;
+      }
+      if (mode === null) continue;
+      const cardLine = mode === 'launch' ? new RegExp('^Cart[ãa]o(?:final)?[\\dX.]*?(\\d{4})$').exec(text) : null;
+      if (cardLine) {
+        card = cardLine[1] as string;
+        if (!finals.includes(card)) finals.push(card);
+        continue;
+      }
+      const date = datePrefix(items, page.width * 0.3, false);
+      const amount = trailingAmount(date ? items.slice(date.used) : items, null);
+      if (!amount) continue;
+      const body = amount.rest;
+      const raw = looseJoin(body, spaced);
+      let description = raw;
+      let installment: { number: number; total: number } | null = null;
+      const m = /^(.*?)\s*(\d)\s?(\d)\s?\/\s?(\d)\s?(\d)$/.exec(description);
+      if (m) {
+        const number = Number(`${m[2]}${m[3]}`);
+        const total = Number(`${m[4]}${m[5]}`);
+        const before = (m[1] as string).trim();
+        if (number >= 1 && total >= 2 && number <= total && /[^\d\s/]$/.test(before)) {
+          description = before;
+          installment = { number, total };
+        }
+      }
+      if (mode === 'pay') {
+        if (!date || !amount.credit) continue;
+        lines.push({ cardFinal: null, day: date.day, month: date.month, description, city: null, amount: amount.value, installment: null, foreign: null, kind: 'payment' });
+        continue;
+      }
+      let day: number;
+      let month: number;
+      if (date) {
+        day = date.day;
+        month = date.month;
+      } else {
+        // Charges the bank adds on its own (interest, IOF, fees) can come without a date.
+        if (!FEE.test(description) || description === '') continue;
+        day = Number(reference.slice(8, 10));
+        month = Number(reference.slice(5, 7));
+      }
+      if (card && !finals.includes(card)) finals.push(card);
+      lines.push({
+        cardFinal: card,
+        day,
+        month,
+        description,
+        city: null,
+        amount: amount.credit ? amount.value : -amount.value,
+        installment,
+        foreign: null,
+        kind: kindOf(amount.credit, installment, description),
+      });
+    }
+  }
+  if (international) warnings.push('A fatura tem lançamentos internacionais, que ainda não têm leitura própria.');
+  if (spaced) warnings.push('O PDF separa as letras de cada palavra; as descrições podem sair sem alguns espaços.');
+  if (finals.length === 0 && headerCardFinal) finals.push(headerCardFinal);
+  const carry = financed ?? undefined;
+  return {
+    issuer: 'itau',
+    product,
+    headerCardFinal,
+    cardFinals: finals,
+    due,
+    total: summary.total,
+    summary,
+    lines,
+    analysis: [],
+    subtotals,
+    warnings,
+    closing: emission,
+    reference,
+    ...(carry !== undefined ? { carry } : {}),
+  };
+}
+
 // --- result ----------------------------------------------------------------------------------------------------------
 
 const reais = (c: number): string => `R$ ${(Math.abs(c) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -515,17 +868,20 @@ export function parseStatement(doc: PdfDocument): ParsedStatement {
   }
   const all = doc.pages.map((p) => p.lines.map((l) => l.text).join('\n')).join('\n');
   let parsed: Parsed;
-  if (/Fatura mensal/.test(all) && /Total da fatura/.test(all)) parsed = parseBradescard(doc);
+  const flatAll = squash(all);
+  if (/RESUMO DA FATURA ATUAL/.test(all) && /TRANSA[ÇC][ÕO]ES/.test(all) && /EMISS[ÃA]O E ENVIO/.test(all)) parsed = parseNubank(doc);
+  else if (/Resumodafatura/.test(flatAll) && /Totaldestafatura/.test(flatAll) && /Lançamentos:/.test(flatAll)) parsed = parseItau(doc);
+  else if (/Fatura mensal/.test(all) && /Total da fatura/.test(all)) parsed = parseBradescard(doc);
   else if (/Fatura Mensal/.test(all) && (/N[úu]mero do Cart[ãa]o/.test(all) || /Hist[óo]rico de Lan[çc]amentos/.test(all))) parsed = parseBradesco(doc);
   else throw new StatementError('unknown_layout', 'O layout da fatura não é reconhecido');
 
   const warnings = [...parsed.warnings];
-  const closing = closingDate(doc);
-  if (!closing) warnings.push('O fechamento não está impresso; o ano das compras foi inferido pelo vencimento.');
-  const reference = closing ?? addDays(parsed.due, -7);
+  const closing = parsed.closing !== undefined ? parsed.closing : closingDate(doc);
+  if (!closing && parsed.closing === undefined) warnings.push('O fechamento não está impresso; o ano das compras foi inferido pelo vencimento.');
+  const reference = parsed.reference ?? closing ?? addDays(parsed.due, -7);
 
   const toLine = (r: RawLine): StatementLine => {
-    const day = inferDay(r.day, r.month, reference, r.installment);
+    const day = inferDay(r.day, r.month, reference, r.chargeDate ? null : r.installment);
     if (!day) throw new StatementError('incomplete', 'Uma data de lançamento não pôde ser lida');
     return {
       cardFinal: r.cardFinal,
@@ -543,7 +899,7 @@ export function parseStatement(doc: PdfDocument): ParsedStatement {
 
   const payments = lines.filter((l) => l.kind === 'payment').reduce((a, l) => a + l.amount, 0);
   const sum = -lines.filter((l) => l.kind !== 'payment').reduce((a, l) => a + l.amount, 0);
-  const carry = parsed.summary.previous === null ? 0 : parsed.summary.previous - payments;
+  const carry = parsed.carry ?? (parsed.summary.previous === null ? 0 : parsed.summary.previous - payments);
   const expected = parsed.total - carry;
   const difference = sum - expected;
   const analysisCredits = inAnalysis.reduce((a, l) => a + l.amount, 0);

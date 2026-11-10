@@ -14,10 +14,12 @@ import { PDF_SOURCE } from '../core/sources.ts';
 import { DATA_START, localDay, startOfLocalDay } from '../core/time.ts';
 import type { SourceAccount, SourceBill, SourceTransaction } from '../core/types.ts';
 import { PdfError, readPdf } from '../pdf/reader.ts';
+import { isAccountStatement, parseAccountStatement, type ParsedAccountStatement } from '../pdf/account-statement.ts';
 import { parseStatement, StatementError, type ParsedStatement, type StatementLine } from '../pdf/statement.ts';
 import type { AccountPin } from '../reconcile/accounts.ts';
 import { manualId, planReconciliation, runReconciliation, type SourceOverride } from '../reconcile/run.ts';
 import type { BillImport, ManualTransaction, Store } from '../store/store.ts';
+import { applyAccountStatement, previewAccountStatement, type AccountApplyResult, type AccountPreview } from './account-import.ts';
 import { billGapOf, type BillGap } from './bill-check.ts';
 
 /** Largest file the upload route reads. A text statement is well under 1 MB; the image-only exports are 20 MB and more. */
@@ -54,6 +56,7 @@ export interface PreviewLine {
 
 export interface BillPreview {
   readable: true;
+  statementKind: 'card';
   fileHash: string;
   issuer: ParsedStatement['issuer'];
   product: string;
@@ -124,8 +127,11 @@ const PDF_MESSAGES: Record<PdfError['code'], string> = {
   damaged: 'O PDF está danificado: nenhuma página pôde ser lida.',
 };
 
+type AnyStatement = ParsedStatement | ParsedAccountStatement;
+const isAccount = (s: AnyStatement): s is ParsedAccountStatement => s.issuer === '99pay';
+
 interface Held {
-  statement: ParsedStatement;
+  statement: AnyStatement;
   at: number;
 }
 
@@ -138,7 +144,7 @@ function holdings(store: Store, now: Date): Map<string, Held> {
   return map;
 }
 
-function hold(store: Store, hash: string, statement: ParsedStatement, now: Date): void {
+function hold(store: Store, hash: string, statement: AnyStatement, now: Date): void {
   const map = holdings(store, now);
   map.delete(hash);
   while (map.size >= HOLD_MAX) map.delete(map.keys().next().value as string);
@@ -148,15 +154,15 @@ function hold(store: Store, hash: string, statement: ParsedStatement, now: Date)
 const sha = (text: string | Uint8Array): string => createHash('sha256').update(text).digest('hex');
 
 /** Reads an uploaded file and answers its preview, or why it cannot be read. Nothing is written. */
-export function readBillFile(store: Store, bytes: Uint8Array, now: Date): ImportResult<BillPreview | ImageOnly> {
+export function readBillFile(store: Store, bytes: Uint8Array, now: Date): ImportResult<BillPreview | AccountPreview | ImageOnly> {
   if (bytes.length === 0) return fail(400, 'bad_request', 'O arquivo está vazio.');
   if (bytes.length > MAX_BILL_FILE_BYTES) return fail(413, 'payload_too_large', 'O arquivo passa de 6 MB.');
   const fileHash = sha(bytes);
-  let statement: ParsedStatement;
+  let statement: AnyStatement;
   try {
     const doc = readPdf(bytes, { maxBytes: MAX_BILL_FILE_BYTES });
     try {
-      statement = parseStatement(doc);
+      statement = isAccountStatement(doc) ? parseAccountStatement(doc) : parseStatement(doc);
     } catch (error) {
       if (error instanceof StatementError && error.code === 'no_text') {
         return { ok: true, value: { readable: false, fileHash, reason: 'no_text', message: 'O PDF não tem texto: é uma imagem da fatura. Só a leitura pela IA conseguiria ler as compras.', images: doc.images.slice(0, 10).map((i) => ({ page: i.page, width: i.width, height: i.height, colorSpace: i.colorSpace, filter: i.filter })) } };
@@ -165,23 +171,28 @@ export function readBillFile(store: Store, bytes: Uint8Array, now: Date): Import
     }
   } catch (error) {
     if (error instanceof PdfError) return fail(422, 'unreadable_pdf', PDF_MESSAGES[error.code]);
-    if (error instanceof StatementError) return fail(422, error.code, error.code === 'unknown_layout' ? 'Este PDF não parece uma fatura Bradescard ou Bradesco.' : `Não foi possível ler a fatura: ${error.message}.`);
+    if (error instanceof StatementError) return fail(422, error.code, error.code === 'unknown_layout' ? 'Este PDF não parece uma fatura Bradescard, Bradesco, Nubank ou Itaú, nem um extrato 99Pay.' : `Não foi possível ler o arquivo: ${error.message}.`);
     return fail(422, 'unreadable_pdf', 'Não foi possível ler este PDF.');
   }
   hold(store, fileHash, statement, now);
+  if (isAccount(statement)) return previewAccountStatement(store, fileHash, statement, {}, now);
   return previewOf(store, fileHash, statement, { byFinal: {} }, now);
 }
 
 /** The preview of a statement uploaded in the last 30 minutes, for other cards than the suggested ones. */
-export function previewBillFile(store: Store, input: Record<string, unknown>, now: Date): ImportResult<BillPreview> {
+export function previewBillFile(store: Store, input: Record<string, unknown>, now: Date): ImportResult<BillPreview | AccountPreview> {
   const statement = heldStatement(store, input.fileHash, now);
   if (!statement.ok) return statement;
+  if (isAccount(statement.value)) {
+    if (input.accountId !== undefined && input.accountId !== null && typeof input.accountId !== 'string') return fail(400, 'bad_request', 'accountId precisa ser o id de uma conta.');
+    return previewAccountStatement(store, input.fileHash as string, statement.value, typeof input.accountId === 'string' ? { accountId: input.accountId } : {}, now);
+  }
   const choice = choiceOf(input);
   if (!choice.ok) return choice;
   return previewOf(store, input.fileHash as string, statement.value, choice.value, now);
 }
 
-function heldStatement(store: Store, fileHash: unknown, now: Date): ImportResult<ParsedStatement> {
+function heldStatement(store: Store, fileHash: unknown, now: Date): ImportResult<AnyStatement> {
   if (typeof fileHash !== 'string' || !/^[0-9a-f]{64}$/.test(fileHash)) return fail(400, 'bad_request', 'fileHash é obrigatório.');
   const held = holdings(store, now).get(fileHash);
   return held ? { ok: true, value: held.statement } : fail(410, 'expired', 'A leitura deste arquivo expirou. Envie o PDF de novo.');
@@ -208,7 +219,7 @@ function choiceOf(input: Record<string, unknown>): ImportResult<Choice> {
 
 // --- records -------------------------------------------------------------------------------------------------------
 
-const ISSUER_LABEL: Record<ParsedStatement['issuer'], string> = { bradescard: 'Bradescard', bradesco: 'Bradesco' };
+const ISSUER_LABEL: Record<ParsedStatement['issuer'], string> = { bradescard: 'Bradescard', bradesco: 'Bradesco', nubank: 'Nubank', itau: 'Itaú' };
 
 const pdfAccountId = (issuer: string, final: string): string => `pdf_${issuer}_${final}`;
 
@@ -402,6 +413,7 @@ function previewOf(store: Store, fileHash: string, s: ParsedStatement, choice: C
     ok: true,
     value: {
       readable: true,
+      statementKind: 'card',
       fileHash,
       issuer: s.issuer,
       product: s.product,
@@ -454,13 +466,17 @@ function otherBillOf(store: Store, account: CanonicalAccount, dueMonth: string):
 // --- apply and undo ------------------------------------------------------------------------------------------------
 
 /** Stores a statement uploaded in the last 30 minutes, replacing an earlier copy of it, and rebuilds the canonical data. */
-export function applyBillFile(store: Store, input: Record<string, unknown>, now: Date): ImportResult<ApplyResult> {
+export function applyBillFile(store: Store, input: Record<string, unknown>, now: Date): ImportResult<ApplyResult | AccountApplyResult> {
   const held = heldStatement(store, input.fileHash, now);
   if (!held.ok) return held;
   const choice = choiceOf(input);
   if (!choice.ok) return choice;
   const remove = input.removeManual ?? [];
   if (!Array.isArray(remove) || remove.some((id) => typeof id !== 'string')) return fail(400, 'bad_request', 'removeManual precisa ser uma lista de ids.');
+  if (isAccount(held.value)) {
+    if (input.accountId !== undefined && input.accountId !== null && typeof input.accountId !== 'string') return fail(400, 'bad_request', 'accountId precisa ser o id de uma conta.');
+    return applyAccountStatement(store, input.fileHash as string, held.value, { ...(typeof input.accountId === 'string' ? { accountId: input.accountId } : {}), removeManual: remove as string[] }, now);
+  }
   const preview = previewOf(store, input.fileHash as string, held.value, choice.value, now);
   if (!preview.ok) return preview;
   if (!preview.value.ready) return fail(400, 'target_required', 'Escolha o cartão do app para cada cartão da fatura.');
