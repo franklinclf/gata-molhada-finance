@@ -3,7 +3,7 @@ import { api } from '../api.ts';
 import { Bars, Meter, Ring } from '../charts.tsx';
 import { brl, dayMonth, localDay, monthName } from '../format.ts';
 import { cardName } from '../names.ts';
-import { choiceOf, CURRENT_CYCLE, CURRENT_TIP, currentLabel, cycleCaption, cycleOption, OPEN_TIP, otherCycles, resolveCycle } from '../pages/page-logic.ts';
+import { choiceOf, CURRENT_CYCLE, CURRENT_TIP, currentLabel, cycleOption, OPEN_TIP, otherCycles, resolveCycle } from '../pages/page-logic.ts';
 import { Select } from '../Select.tsx';
 import { chartHeight } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
@@ -23,13 +23,10 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
   // Nothing is asked for before the bars say which bill is the current one.
   const cycle = resolveCycle(choice, bills.data?.bars);
   const { data, error, loading } = useLoad(() => (cycle === undefined ? Promise.resolve(null) : api.cards(cycle)), [cycle], 120_000);
-  // With a month on show, the widget also says what is owed overall and offers the way back.
-  const all = useLoad(() => (cycle === undefined || cycle === 'open' ? Promise.resolve(null) : api.cards('open')), [cycle], 120_000);
   const today = localDay(now.toISOString());
   // The dropdown lists the other cycles (the current one and "Em aberto" have their buttons); a month picked on the chart is listed too.
   const options = otherCycles(data?.cycles ?? [], currentKey, choice, bills.data?.bars).map(cycleOption);
   const byMonth = cycle !== 'open';
-  const caption = cycle === undefined ? '' : cycleCaption(cycle, today);
   const used = data && data.totals.creditLimit > 0 ? data.totals.used / data.totals.creditLimit : 0;
   // "Em aberto" lists only what is still unpaid, the biggest debt first. A chosen month lists every bill due in it, paid or not.
   const amountOf = (c: { toPay: number; total: number }) => (byMonth ? c.total : c.toPay);
@@ -62,14 +59,7 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
                 Em aberto
               </button>
             </div>
-            <div class="big">{brl(byMonth ? data.totals.cycleTotal : data.totals.toPay, hidden)}</div>
-            <div class="muted" data-tip={closedUnpaid > 0 || data.totals.futureInstallments > 0 ? `${brl(data.totals.toPay - closedUnpaid, hidden)} em fatura aberta + ${brl(closedUnpaid, hidden)} em faturas fechadas não pagas${cycle === 'open' && data.totals.futureInstallments > 0 ? `\nFora do total: ${brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras` : ''}` : undefined}>{byMonth ? `${caption} · ${data.totals.toPay > 0 ? `a pagar ${brl(data.totals.toPay, hidden)}` : 'tudo pago'}` : due ? `${caption} · ${late(due) ? 'venceu em' : 'próximo vencimento'} ${dayMonth(due)}` : caption}</div>
-            {byMonth && all.data && (
-              <div class="muted">
-                Falta pagar {brl(all.data.totals.toPay, hidden)}
-                {all.data.totals.nextDueDate ? ` · próx. ${dayMonth(all.data.totals.nextDueDate)}` : ''}
-              </div>
-            )}
+            <div class="big" data-tip={closedUnpaid > 0 || data.totals.futureInstallments > 0 ? `${brl(data.totals.toPay - closedUnpaid, hidden)} em fatura aberta + ${brl(closedUnpaid, hidden)} em faturas fechadas não pagas${cycle === 'open' && data.totals.futureInstallments > 0 ? `\nFora do total: ${brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras` : ''}` : undefined}>{brl(byMonth ? data.totals.cycleTotal : data.totals.toPay, hidden)}</div>
             {size !== 'sm' && bills.data && (pixels === undefined || pixels.height >= 430) && (
               <>
                 <Bars
