@@ -35,7 +35,7 @@ export function InstallmentsWidget({ now, hidden, size, pixels }: WidgetProps) {
         (active.length === 0 ? (
           <div class="empty">Nenhuma compra parcelada em andamento</div>
         ) : (
-          <FitList class="rows tall purchases" noun={['compra', 'compras']} rows={active.map((p) => <PurchaseRow key={p.id} p={p} hidden={hidden} />)} />
+          <FitList class="rows tall purchases" rows={active.map((p) => <PurchaseRow key={p.id} p={p} hidden={hidden} />)} />
         ))}
     </Widget>
   );

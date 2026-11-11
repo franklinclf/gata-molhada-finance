@@ -38,7 +38,6 @@ export function GoalsWidget({ now, hidden, size, pixels }: WidgetProps) {
       {(size !== 'sm' || (pixels !== undefined && pixels.height >= 170)) && active.length > 0 && (
         <FitList
           class="rows tall"
-          noun={['meta', 'metas']}
           rows={active.map((g) => (
             <li key={g.id} class="budget-line">
               <div class="budget-head">

@@ -30,7 +30,6 @@ export function TrendWidget({ now, hidden, size }: WidgetProps) {
     >
       <FitList
         class="rows tall"
-        noun={['categoria', 'categorias']}
         rows={[
           ...rises.map((r) => {
             const top = size === 'sm' ? undefined : drivers.get(r.name)?.[0];

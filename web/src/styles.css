@@ -694,9 +694,6 @@ body.wide .main { max-width: none; }
 /* ---------- painel e widgets ---------- */
 /* The page actions keep one line: the menu measures what is left beside them and folds into "Mais" before they would overlap. */
 .topbar-actions { flex-wrap: nowrap; flex: none; }
-/* Rows past the edge of a widget are hidden by FitList; the line that says how many are left sits at the end of the list. */
-.fit > [hidden] { display: none !important; }
-.rows li.more-rows { font-size: 12px; padding-left: 6px; }
 .rows li.sub { padding-left: 20px; font-size: 13px; }
 .rows li.list-title { font-size: 13px; font-weight: 600; color: var(--muted); margin-top: 6px; }
 .rows li > strong { flex: none; white-space: nowrap; }
@@ -888,21 +885,19 @@ body.wide .main { max-width: none; }
 .widget.sm.col .widget-head > :not(.big):not(:has(.big)) { display: block; }
 .widget.sm.col .widget-scroll { display: block; }
 .widget.sm.col .expand { display: inline-flex; }
-.widget.sm.col .rows { gap: 6px; }
+.widget.sm.col .rows { gap: 6px; font-size: 12px; }
+.widget.sm.col .rows li, .widget.sm.col .rows li strong, .widget.sm.col .rows li small { font-size: 12px; }
+.widget.sm.col .rows .clip { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.widget.sm.col .rows li.stack small, .widget.sm.col .rows li.stack .muted, .widget.sm.col .rows li.stack .bad-text { font-size: 11px; }
 .rows li.stack { flex-direction: column; align-items: stretch; gap: 0; }
 .rows li.stack > .row-line { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; }
 .rows li.stack small { font-size: 11px; color: var(--muted); }
 /* "+N itens" opens the whole list in place. */
-.rows li.more-rows { display: flex; gap: 14px; }
-.rows li.more-rows button.link { font-size: 12px; }
-.rows li.more-rows:hover { background: none; }
 /* Calendar: the summary of what is coming under the month grid. */
 .upcoming { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .upcoming-head { display: flex; align-items: flex-start; gap: 10px; }
 .window-pick { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .window-days { width: 64px; font: inherit; font-size: 13px; background: var(--card-2); color: var(--text); border: 0; border-radius: var(--radius-pill); padding: 4px 10px; }
 /* An open list: the chart above it folds away so the rows get the height, the thumb stays visible and "Mostrar menos" sticks to the foot. */
-.widget.list-open .widget-head > :not(.big):not(.seg):not(.tabs):not(.muted:first-of-type) { display: none; }
-.widget.list-open .widget-body { scrollbar-color: color-mix(in srgb, var(--text) 35%, transparent) transparent; }
-.widget.list-open .widget-body::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text) 35%, transparent); }
-.rows li.more-rows.sticky { position: sticky; bottom: 0; background: var(--card); padding-top: 6px; z-index: 1; }
+
+.rows li.more-rows { min-height: 1px; font-size: 12px; color: var(--muted); }
