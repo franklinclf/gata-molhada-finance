@@ -39,7 +39,7 @@ export function CashflowWidget({ now, hidden, size, pixels, config, setConfig }:
       head={
         data && (
           <>
-            <div class="big">{brl(data.net, hidden)}</div>
+            <div class="big" data-tip="Só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga.">{brl(data.net, hidden)}</div>
             {size !== 'sm' && (
               <>
                 <div class="pair">
@@ -86,7 +86,6 @@ export function CashflowWidget({ now, hidden, size, pixels, config, setConfig }:
           )}
         </dl>
       )}
-      {data && size === 'lg' && <div class="note">Considera só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga.</div>}
     </Widget>
   );
 }

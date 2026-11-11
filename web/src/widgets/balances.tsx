@@ -81,7 +81,7 @@ export function BalancesWidget({ now, hidden, size, pixels }: WidgetProps) {
             <div class="muted">
               {size === 'sm' && !column
                 ? `${used.length} ${used.length === 1 ? 'conta' : 'contas'} com saldo`
-                : `${used.length} ${used.length === 1 ? 'conta' : 'contas'} com saldo em ${live.length} ${live.length === 1 ? 'instituição' : 'instituições'}${data.accounts.length > used.length ? ` · ${data.accounts.length - used.length} sem saldo` : ''}`}
+                : `${used.length} ${used.length === 1 ? 'conta' : 'contas'} · ${live.length} ${live.length === 1 ? 'instituição' : 'instituições'}`}
             </div>
             {(size !== 'sm' || column) && <StackBar parts={data.institutions.map((i, n) => ({ value: Math.max(i.balance, 0), color: PALETTE[n % PALETTE.length]!, label: i.institution, tip: `${i.institution}\n${hidden ? '••••' : brl(i.balance)} · ${shareLabel(i.share)}` }))} />}
           </>

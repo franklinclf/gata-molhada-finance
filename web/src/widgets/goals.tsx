@@ -24,7 +24,7 @@ export function GoalsWidget({ now, hidden, size, pixels }: WidgetProps) {
       head={
         data &&
         (active.length === 0 ? (
-          <div class="muted">Nenhuma meta. Abra para criar.</div>
+          <div class="muted">Sem metas</div>
         ) : (
           <>
             <div class="big">

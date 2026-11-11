@@ -39,7 +39,7 @@ export function RecentWidget({ now, hidden, size }: WidgetProps) {
       now={now}
       loading={loading && !data}
       error={error}
-      head={data && size !== 'sm' && <div class="muted">{data.total} transações em 3 meses · mais recentes primeiro</div>}
+      head={data && size !== 'sm' && <div class="muted">{data.total} transações em 3 meses</div>}
     >
       {data && (
         <FitList

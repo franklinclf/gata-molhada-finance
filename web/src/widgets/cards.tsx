@@ -39,11 +39,9 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
   const unexplained = data?.totals.unexplained ?? 0;
   const due = data?.totals.nextDueDate ?? null;
   // What falls due by the next due date, apart from the later bills the headline also adds up.
-  const dueByNext = due ? (bills.data?.bars ?? []).filter((b) => b.key <= due.slice(0, 7)).reduce((sum, b) => sum + Math.max(0, b.total - b.paid), 0) : 0;
   const late = (day: string | null) => day !== null && day < today;
   const barCount = Math.max(4, Math.min(12, Math.floor((pixels?.width ?? 380) / 52)));
   const barData = (bills.data?.bars ?? []).slice(-barCount);
-  const roomy = pixels !== undefined && pixels.height >= 600;
   return (
     <Widget
       title="Faturas"
@@ -66,11 +64,10 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
             </div>
             <div class="big">{brl(byMonth ? data.totals.cycleTotal : data.totals.toPay, hidden)}</div>
             <div class="muted" data-tip={closedUnpaid > 0 || data.totals.futureInstallments > 0 ? `${brl(data.totals.toPay - closedUnpaid, hidden)} em fatura aberta + ${brl(closedUnpaid, hidden)} em faturas fechadas não pagas${cycle === 'open' && data.totals.futureInstallments > 0 ? `\nFora do total: ${brl(data.totals.futureInstallments, hidden)} de parcelas de faturas futuras` : ''}` : undefined}>{byMonth ? `${caption} · ${data.totals.toPay > 0 ? `a pagar ${brl(data.totals.toPay, hidden)}` : 'tudo pago'}` : due ? `${caption} · ${late(due) ? 'venceu em' : 'próximo vencimento'} ${dayMonth(due)}` : caption}</div>
-            {!byMonth && due && dueByNext > 0 && dueByNext < data.totals.toPay && <div class="muted">{brl(dueByNext, hidden)} vencem até {dayMonth(due)}</div>}
             {byMonth && all.data && (
               <div class="muted">
-                Tudo que falta pagar: {brl(all.data.totals.toPay, hidden)}
-                {all.data.totals.nextDueDate ? ` · próximo vencimento ${dayMonth(all.data.totals.nextDueDate)}` : ''}
+                Falta pagar {brl(all.data.totals.toPay, hidden)}
+                {all.data.totals.nextDueDate ? ` · próx. ${dayMonth(all.data.totals.nextDueDate)}` : ''}
               </div>
             )}
             {size !== 'sm' && bills.data && (pixels === undefined || pixels.height >= 430) && (
@@ -123,7 +120,7 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
               shown.length === 0
                 ? [
                     <li key="none" class="muted">
-                      {byMonth ? 'Nenhuma fatura com vencimento neste mês.' : 'Nada a pagar agora.'}
+                      {byMonth ? 'Nenhuma fatura neste mês' : 'Nada a pagar'}
                     </li>,
                   ]
                 : shown.map((c) => {
@@ -160,29 +157,6 @@ export function CardsWidget({ now, hidden, size, pixels }: WidgetProps) {
                 <strong>{brl(unexplained, hidden)}</strong>
               </li>
             </ul>
-          )}
-          {roomy && (
-            <dl class="facts inline">
-              {closedUnpaid > 0 && (
-                <>
-                  <dt>Em faturas fechadas não pagas</dt>
-                  <dd>{brl(closedUnpaid, hidden)}</dd>
-                  {/* A month whose bills have all closed (the current cycle until they are paid) has no open part to show. */}
-                  {data.totals.toPay - closedUnpaid > 0 && (
-                    <>
-                      <dt>Em fatura aberta</dt>
-                      <dd>{brl(data.totals.toPay - closedUnpaid, hidden)}</dd>
-                    </>
-                  )}
-                </>
-              )}
-              {cycle === 'open' && data.totals.futureInstallments > 0 && (
-                <>
-                  <dt>Parcelas de faturas futuras (fora do total)</dt>
-                  <dd>{brl(data.totals.futureInstallments, hidden)}</dd>
-                </>
-              )}
-            </dl>
           )}
         </>
       )}

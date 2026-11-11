@@ -26,7 +26,7 @@ export function TrendWidget({ now, hidden, size }: WidgetProps) {
       loading={loading && !data}
       error={error}
       empty={data && rises.length === 0 ? `Sem altas contra ${prevName}` : undefined}
-      head={data && <div class="muted">{size === 'lg' ? `até o dia ${day}, contra os mesmos dias de ${prevName}` : `contra os mesmos dias de ${prevName}`}</div>}
+      head={data && <div class="muted">vs. mesmos dias de {prevName}</div>}
     >
       <FitList
         class="rows tall"

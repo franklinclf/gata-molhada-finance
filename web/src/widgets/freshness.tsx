@@ -23,7 +23,7 @@ export function FreshnessWidget({ now, size, pixels }: WidgetProps) {
         data && (
           <>
             <div class="big">{stale === 0 ? 'Em dia' : `${stale} ${stale === 1 ? 'atrasada' : 'atrasadas'}`}</div>
-            <div class="muted">{data.sources.length} fontes e instituições acompanhadas</div>
+            <div class="muted">{data.sources.length} fontes</div>
           </>
         )
       }
