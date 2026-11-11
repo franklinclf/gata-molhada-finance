@@ -37,6 +37,8 @@ interface Props {
   empty?: string;
   /** The partitioned detail (cards, categories, accounts, lists). It scrolls under the head, or opens in full with the expand button. */
   children?: ComponentChildren;
+  /** A small but tall box (a narrow column): the secondary head lines and the detail stay visible instead of only the key figure. */
+  column?: boolean;
 }
 
 const icon = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': true } as const;
@@ -51,7 +53,7 @@ const CollapseIcon = () => (
   </svg>
 );
 
-export function Widget({ title, to, asOf, now, loading, error, actions, empty, head, children }: Props) {
+export function Widget({ title, to, asOf, now, loading, error, actions, empty, head, children, column }: Props) {
   const [expanded, setExpanded] = useState(false);
   const fixed = useContext(FixedHeight);
   const small = useContext(WidgetSize) === 'sm';
@@ -105,7 +107,7 @@ export function Widget({ title, to, asOf, now, loading, error, actions, empty, h
   return (
     <>
     {expanded && <div class="widget-backdrop" onClick={() => setExpanded(false)} />}
-    <section class={`${to ? 'widget linked' : 'widget'}${expanded ? ' expanded' : ''}${small && !expanded ? ' sm' : ''}${tiny && !expanded ? ' tiny' : ''}${collapsed ? ' empty-state' : ''}${listOpen && !expanded ? ' list-open' : ''}`} onClick={open}>
+    <section class={`${to ? 'widget linked' : 'widget'}${expanded ? ' expanded' : ''}${small && !expanded ? ' sm' : ''}${small && column && !expanded ? ' col' : ''}${tiny && !expanded ? ' tiny' : ''}${collapsed ? ' empty-state' : ''}${listOpen && !expanded ? ' list-open' : ''}`} onClick={open}>
       <header data-tip={age}>
         <h2 title={title}>
           {to ? (

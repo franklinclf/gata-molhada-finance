@@ -3,15 +3,18 @@ import { Meter } from '../charts.tsx';
 import { ago } from '../format.ts';
 import { oldestFirst } from '../freshness-order.ts';
 import { useLoad } from '../hooks.ts';
+import { COLUMN_HEIGHT } from '../grid.ts';
 import { Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
 
-export function FreshnessWidget({ now, size }: WidgetProps) {
+export function FreshnessWidget({ now, size, pixels }: WidgetProps) {
+  const column = size === 'sm' && pixels !== undefined && pixels.height >= COLUMN_HEIGHT;
   const { data, error, loading } = useLoad(() => api.freshness(), [], 60_000);
   const stale = data?.sources.filter((s) => s.late).length ?? 0;
   return (
     <Widget
       title="Atualização das fontes"
+      column={column}
       to={{ page: 'status' }}
       now={now}
       loading={loading && !data}
@@ -25,17 +28,18 @@ export function FreshnessWidget({ now, size }: WidgetProps) {
         )
       }
     >
-      {data && size !== 'sm' && (
+      {data && (size !== 'sm' || column) && (
         <>
           {/* The one place where the age of the data is listed: each source with its last reading, the oldest first. The list scrolls with the widget. */}
           <ul class="rows tall">
             {oldestFirst(data.sources).map((s) => (
-              <li key={`${s.sourceId}${s.institution}`}>
-                <span class="grow clip">
-                  {s.institution} <span class="muted">({s.sourceId})</span>
+              <li key={`${s.sourceId}${s.institution}`} class={column ? 'stack' : undefined}>
+                <span class="grow clip" data-tip={`${s.institution} (${s.sourceId})`}>
+                  {s.institution} {!column && <span class="muted">({s.sourceId})</span>}
                 </span>
-                {s.late && <span class="badge bad">atrasada</span>}
+                {!column && s.late && <span class="badge bad">atrasada</span>}
                 <span class={s.late ? 'bad-text' : 'muted'} data-tip={s.lastUpdatedAt ?? undefined}>
+                  {column && s.late ? 'atrasada · ' : ''}
                   {ago(s.lastUpdatedAt, now)}
                 </span>
               </li>
