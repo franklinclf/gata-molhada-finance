@@ -219,3 +219,6 @@ export function shareLabel(fraction: number): string {
   if (fraction > 0 && fraction < 0.005) return '<1%';
   return `${Math.round(fraction * 100)}%`;
 }
+
+/** Height, px, from which a small widget that is narrow but tall also lists its detail. */
+export const COLUMN_HEIGHT = 190;
