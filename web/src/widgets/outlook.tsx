@@ -10,9 +10,9 @@ type Event = OutlookView['timeline'][number];
 
 /** The headline: what is left in the account at the end of the month, and what it means. */
 function freeNote(data: OutlookView, hidden: boolean): string {
-  if (data.free.value < 0) return 'O saldo não cobre o que vence até o fim do mês.';
+  if (data.free.value < 0) return 'Não cobre o que vence no mês';
   if (data.free.perDay !== null) return `${brl(data.free.perDay, hidden)} por dia, nos ${data.daysLeft} ${data.daysLeft === 1 ? 'dia' : 'dias'} que faltam`;
-  return 'Nada sobra depois do que vence até o fim do mês.';
+  return 'Nada sobra depois do que vence';
 }
 
 /** The sums behind the free amount, each one saying where it comes from. */
@@ -89,7 +89,7 @@ export function OutlookTimeline({ data, hidden, limit, detail = false, linkMore 
       </ul>
       {cut.length > 0 && (
         <div class="muted outlook-more">
-          + {cut.length} {cut.length === 1 ? 'vencimento' : 'vencimentos'} no mês ({brl(cutTotal, hidden)}), já descontados do livre para gastar.{' '}
+          + {cut.length} {cut.length === 1 ? 'vencimento' : 'vencimentos'} ({brl(cutTotal, hidden)}){' · '}
           {linkMore && <a href={hrefFor('accounts')}>Ver em Contas</a>}
         </div>
       )}
@@ -104,7 +104,7 @@ export function OutlookCommitted({ data, hidden }: { data: OutlookView; hidden: 
     <div class="outlook-committed">
       <h3 class="outlook-sub">Renda comprometida</h3>
       {c.share === null ? (
-        <div class="muted">{c.income.explain} Os compromissos somam {brl(c.total, hidden)} por mês.</div>
+        <div class="muted" data-tip={c.income.explain}>Compromissos: {brl(c.total, hidden)} por mês</div>
       ) : (
         <div class="muted">
           {Math.round(c.share * 100)}% de {brl(c.income.amount ?? 0, hidden)} {c.income.source === 'registered' ? '(renda cadastrada)' : '(estimada pelas suas entradas)'}
@@ -142,9 +142,9 @@ export function OutlookWidget({ now, hidden, size }: WidgetProps) {
             <div class="muted">{freeNote(data, hidden)}</div>
             {data.expectedIn.source !== 'registered' && (
               <div class="muted">
-                {data.expectedIn.source === 'none' ? 'Sem renda cadastrada. ' : 'Entradas estimadas pelos dias em que o banco lançou. '}
+                {data.expectedIn.source === 'none' ? 'Sem renda cadastrada · ' : 'Entradas estimadas · '}
                 <Go page="accounts" params={{ renda: '1' }}>
-                  {data.expectedIn.source === 'none' ? 'Cadastrar renda' : 'Corrigir dias e valores'}
+                  {data.expectedIn.source === 'none' ? 'Cadastrar' : 'Corrigir'}
                 </Go>
               </div>
             )}
@@ -157,7 +157,7 @@ export function OutlookWidget({ now, hidden, size }: WidgetProps) {
           {size === 'lg' && <OutlookFacts data={data} hidden={hidden} />}
           {data.afterMonth.count > 0 && (
             <div class="note">
-              Mais {brl(data.afterMonth.total, hidden)} em {data.afterMonth.count === 1 ? 'fatura vence' : 'faturas vencem'} a partir de {dayMonth(data.afterMonth.firstDay ?? data.monthEnd)}, depois do fim do mês.
+              Depois do mês: {brl(data.afterMonth.total, hidden)} em {data.afterMonth.count} {data.afterMonth.count === 1 ? 'fatura' : 'faturas'} (desde {dayMonth(data.afterMonth.firstDay ?? data.monthEnd)})
             </div>
           )}
           <h3 class="outlook-sub">Próximos vencimentos</h3>

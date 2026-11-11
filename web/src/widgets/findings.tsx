@@ -31,7 +31,7 @@ export function FindingsWidget({ now, size, hidden }: WidgetProps) {
             <div class="muted">
               {total === 0
                 ? 'Nada para conferir'
-                : [data.items.length > 0 ? `${data.items.length} ${data.items.length === 1 ? 'registro que pode ser o mesmo' : 'registros que podem ser o mesmo'}, em fontes diferentes` : '', billCount > 0 ? `${billCount} ${billCount === 1 ? 'fatura que não fecha' : 'faturas que não fecham'}` : ''].filter(Boolean).join(' · ')}
+                : [data.items.length > 0 ? `${data.items.length} ${data.items.length === 1 ? 'possível duplicata' : 'possíveis duplicatas'}` : '', billCount > 0 ? `${billCount} ${billCount === 1 ? 'fatura que não fecha' : 'faturas que não fecham'}` : ''].filter(Boolean).join(' · ')}
             </div>
           </>
         )

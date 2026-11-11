@@ -27,7 +27,7 @@ export function NetWorthWidget({ now, hidden, size, pixels }: WidgetProps) {
           <>
             <div class="big">{brl(data.net, hidden)}</div>
             <div class="muted">
-              {brl(data.assets, hidden)} em bens e saldos · {brl(data.liabilities, hidden)} em dívidas
+              Bens {brl(data.assets, hidden)} · dívidas {brl(data.liabilities, hidden)}
             </div>
             {size !== 'sm' && data.liabilities > 0 && (
               <StackBar

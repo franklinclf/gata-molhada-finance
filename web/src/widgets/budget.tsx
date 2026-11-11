@@ -27,14 +27,14 @@ export function BudgetWidget({ now, hidden, size, pixels }: WidgetProps) {
       head={
         data &&
         (budgeted.length === 0 ? (
-          <div class="muted">Nenhum orçamento neste mês. Abra para criar.</div>
+          <div class="muted">Sem orçamento neste mês</div>
         ) : (
           <>
             {over > 0 ? <div class="big bad-text">{brl(overAmount, hidden)}</div> : <div class="big">{brl(remaining, hidden)}</div>}
             <div class="muted">
               {over > 0
-                ? `acima do limite em ${over} ${over === 1 ? 'categoria' : 'categorias'} · restam ${brl(remaining, hidden)} nas outras`
-                : `sobram de ${brl(data.totals.budget, hidden)} · nenhum acima do limite`}
+                ? `${over} ${over === 1 ? 'categoria acima' : 'categorias acima'} · restam ${brl(remaining, hidden)}`
+                : `de ${brl(data.totals.budget, hidden)} · nenhum acima`}
             </div>
             <Meter fraction={data.totals.budget > 0 ? data.totals.actual / data.totals.budget : 0} />
           </>
