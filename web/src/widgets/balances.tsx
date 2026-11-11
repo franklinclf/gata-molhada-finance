@@ -95,7 +95,7 @@ export function BalancesWidget({ now, hidden, size, pixels }: WidgetProps) {
           </Ring>
         </div>
       )}
-      {data && (size !== 'sm' || column) && <FitList noun={['instituição', 'instituições']} rows={rows} />}
+      {data && (size !== 'sm' || column) && <FitList rows={rows} />}
     </Widget>
   );
 }

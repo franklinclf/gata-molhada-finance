@@ -46,7 +46,6 @@ export function FindingsWidget({ now, size, hidden }: WidgetProps) {
         <>
           <FitList
             class="rows tall"
-            noun={['registro', 'registros']}
             rows={data.items.map((f) => (
               <li key={f.id} class="tx" data-no-nav onClick={() => patchParams({ tx: f.transactionId })} tabIndex={0}>
                 <span class={f.severity === 'warning' ? 'swatch warn' : 'swatch'} />

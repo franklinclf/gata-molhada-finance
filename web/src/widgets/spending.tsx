@@ -52,7 +52,6 @@ export function SpendingWidget({ now, hidden, size, pixels, config, setConfig }:
           {size === 'lg' && <Ring size={120} segments={groups.slice(0, 8).map((g, i) => ({ value: g.amount, color: PALETTE[i % PALETTE.length]!, tip: `${g.name}\n${hidden ? '••••' : brl(g.amount)} · ${shareLabel(g.share)}` }))} />}
           <div class="grow">
             <FitList
-              noun={[by === 'category' ? 'categoria' : 'estabelecimento', by === 'category' ? 'categorias' : 'estabelecimentos']}
               rows={groups.map((g, i) => (
                 <li key={g.name}>
                   <span class="swatch" style={{ background: PALETTE[i % PALETTE.length] }} />

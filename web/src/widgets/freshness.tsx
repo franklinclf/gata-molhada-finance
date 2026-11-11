@@ -45,7 +45,7 @@ export function FreshnessWidget({ now, size, pixels }: WidgetProps) {
               </li>
             ))}
           </ul>
-          {data.quota.length > 0 && (
+          {!column && data.quota.length > 0 && (
             <ul class="rows tall">
               <li class="list-title">Leituras do mês por banco</li>
               {data.quota.map((q) => (

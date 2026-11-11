@@ -221,4 +221,4 @@ export function shareLabel(fraction: number): string {
 }
 
 /** Height, px, from which a small widget that is narrow but tall also lists its detail. */
-export const COLUMN_HEIGHT = 190;
+export const COLUMN_HEIGHT = 120;

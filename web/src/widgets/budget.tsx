@@ -43,7 +43,6 @@ export function BudgetWidget({ now, hidden, size, pixels }: WidgetProps) {
     >
       {(size !== 'sm' || (pixels !== undefined && pixels.height >= 170)) && budgeted.length > 0 && (
         <FitList
-          noun={['categoria', 'categorias']}
           rows={budgeted.map((l) => {
             const passed = l.budget !== null && l.actual > l.budget;
             const figure = passed ? <span class="bad-text">passou {brl(l.actual - l.budget!, hidden)}</span> : <span class="muted">{shareLabel(l.used ?? 0)}</span>;

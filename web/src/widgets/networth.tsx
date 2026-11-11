@@ -44,7 +44,6 @@ export function NetWorthWidget({ now, hidden, size, pixels }: WidgetProps) {
     >
       {data && size !== 'sm' && items.length > 0 && (
         <FitList
-          noun={['item', 'itens']}
           rows={[
             ...filled.map((i, n) => (
               <li key={`${i.kind}${i.name}${i.assetId ?? ''}${n}`}>

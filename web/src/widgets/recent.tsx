@@ -44,7 +44,6 @@ export function RecentWidget({ now, hidden, size }: WidgetProps) {
       {data && (
         <FitList
           class="rows tall tx-list"
-          noun={['transação', 'transações']}
           unloaded={Math.max(0, data.total - items.length)}
           loadMore={loadMore}
           loadingMore={busy}
