@@ -138,16 +138,9 @@ export function OutlookWidget({ now, hidden, size }: WidgetProps) {
         data && (
           <>
             <div class="muted">Livre para gastar até {dayMonth(data.monthEnd)}</div>
-            <div class={data.free.value < 0 ? 'big bad-text' : 'big'}>{brl(data.free.value, hidden)}</div>
-            <div class="muted">{freeNote(data, hidden)}</div>
-            {data.expectedIn.source !== 'registered' && (
-              <div class="muted">
-                {data.expectedIn.source === 'none' ? 'Sem renda cadastrada · ' : 'Entradas estimadas · '}
-                <Go page="accounts" params={{ renda: '1' }}>
-                  {data.expectedIn.source === 'none' ? 'Cadastrar' : 'Corrigir'}
-                </Go>
-              </div>
-            )}
+            <div class={data.free.value < 0 ? 'big bad-text' : 'big'} data-tip={freeNote(data, hidden)}>
+              {brl(data.free.value, hidden)}
+            </div>
           </>
         )
       }

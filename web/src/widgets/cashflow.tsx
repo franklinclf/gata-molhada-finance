@@ -2,7 +2,7 @@ import { api } from '../api.ts';
 import { Bars } from '../charts.tsx';
 import { flowColumns } from '../flow.ts';
 import { brl, monthName, PERIODS, periodRange, type PeriodId } from '../format.ts';
-import { chartHeight } from '../grid.ts';
+import { chartHeight, COLUMN_HEIGHT } from '../grid.ts';
 import { useLoad } from '../hooks.ts';
 import { PeriodSelect, Widget } from '../Widget.tsx';
 import type { WidgetProps } from './index.ts';
@@ -25,11 +25,14 @@ export function CashflowWidget({ now, hidden, size, pixels, config, setConfig }:
   const prev = useLoad(() => api.cashflow(before.from, before.to), [before.from, before.to], 300_000);
   const columns = data ? flowColumns(data.days, data.from, data.to, period === 'month') : [];
   // The chart takes the height left under the figures; the comparison below it shows only when there is room for it.
-  const roomy = pixels !== undefined && pixels.height >= 470;
-  const height = chartHeight(pixels, roomy ? 330 : 270, 90, 260);
+  const rows = pixels === undefined ? 3 : pixels.height >= 400 ? 3 : pixels.height >= 330 ? 1 : 0;
+  const roomy = rows === 3;
+  const column = size === 'sm' && pixels !== undefined && pixels.height >= COLUMN_HEIGHT;
+  const height = chartHeight(pixels, 230 + rows * 36, 50, 220);
   return (
     <Widget
       title="Fluxo de caixa"
+      column={column}
       to={{ page: 'cashflow', params: { from: range.from, to: range.to } }}
       asOf={data?.oldestDataAt}
       now={now}
@@ -40,7 +43,7 @@ export function CashflowWidget({ now, hidden, size, pixels, config, setConfig }:
         data && (
           <>
             <div class="big" data-tip="Só o dinheiro que entra e sai das contas. Compras no cartão entram quando a fatura é paga.">{brl(data.net, hidden)}</div>
-            {size !== 'sm' && (
+            {(size !== 'sm' || column) && (
               <>
                 <div class="pair">
                   <div>
@@ -52,21 +55,21 @@ export function CashflowWidget({ now, hidden, size, pixels, config, setConfig }:
                     <strong class="bad-text">{brl(data.outflow, hidden)}</strong>
                   </div>
                 </div>
-                <Bars
+                {size !== 'sm' && <Bars
                   hidden={hidden}
                   height={height}
                   data={columns.flatMap((c) => [
                     { key: `${c.key}-in`, group: c.key, label: c.label, value: c.inflow, color: 'var(--good)', tip: `${c.tip}\nEntrou ${hidden ? '••••' : brl(c.inflow)}\nSaiu ${hidden ? '••••' : brl(c.outflow)}` },
                     { key: `${c.key}-out`, group: c.key, label: '', value: c.outflow, color: 'var(--bad)', tip: `${c.tip}\nEntrou ${hidden ? '••••' : brl(c.inflow)}\nSaiu ${hidden ? '••••' : brl(c.outflow)}` },
                   ])}
-                />
+                />}
               </>
             )}
           </>
         )
       }
     >
-      {data && size !== 'sm' && (pixels === undefined || pixels.height >= 400) && (
+      {data && size !== 'sm' && rows > 0 && (
         <dl class="facts inline">
           {prev.data && (
             <>
