@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { namesEarlierBill } from '../core/parties.ts';
 import type {
   CanonicalAccount,
   CanonicalTransaction,
@@ -262,6 +263,7 @@ export function reconcileTransactions(input: TransactionInput): TransactionRecon
     findings.push({ id: `fd_${hash(`${kind}|${transactionId}|${String(details.otherTransactionId ?? '')}`)}`, kind, severity, accountId: account.id, transactionId, summary, details });
   };
   const statementOf: StatementOf = (sourceId, tx) => {
+    if (namesEarlierBill(tx.parties)) return { month: tx.parties!.billForecast!, published: false };
     const billId = tx.parties?.billId;
     const month = billId ? input.billMonths?.get(`${sourceId}|${billId}`) : undefined;
     if (month !== undefined) return { month, published: true };

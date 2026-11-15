@@ -8,7 +8,8 @@
  */
 import { createHash } from 'node:crypto';
 import type { CanonicalAccount } from '../core/canonical.ts';
-import { dayNumber } from '../core/dates.ts';
+import { addDays, dayNumber } from '../core/dates.ts';
+import { PDF_BILL_PREFIX } from '../core/parties.ts';
 import { normalizeName } from '../core/names.ts';
 import { PDF_SOURCE } from '../core/sources.ts';
 import { DATA_START, localDay, startOfLocalDay } from '../core/time.ts';
@@ -229,7 +230,10 @@ function finalsOf(s: ParsedStatement): { lineFinal: (l: StatementLine) => string
   return { lineFinal: (l) => l.cardFinal ?? fallback, billFinal: fallback };
 }
 
-const billIdOf = (s: ParsedStatement, billFinal: string): string => `pdfbill_${sha(`${s.issuer}|${billFinal}|${s.dueDate}`).slice(0, 24)}`;
+/** Due month (YYYY-MM) of the bill before the one due on this day. */
+const previousMonth = (dueDate: string): string => addDays(`${dueDate.slice(0, 7)}-01`, -1).slice(0, 7);
+
+const billIdOf = (s: ParsedStatement, billFinal: string): string => `${PDF_BILL_PREFIX}${sha(`${s.issuer}|${billFinal}|${s.dueDate}`).slice(0, 24)}`;
 
 /** The source account a card of the app stands for: its member from a source other than the PDF one when it has one. */
 function targetRef(account: CanonicalAccount): { sourceId: string; externalId: string } | null {
@@ -282,7 +286,7 @@ function recordsOf(store: Store, s: ParsedStatement, targets: Map<string, Canoni
       status: 'posted',
       installment: line.installment,
       category: null,
-      parties: { operation: null, mcc: null, payer: null, receiver: null, foreign: line.foreign ? { currency: line.foreign.currency, amount: line.foreign.amount, converted: true } : null, billId, billForecast: null },
+      parties: { operation: null, mcc: null, payer: null, receiver: null, foreign: line.foreign ? { currency: line.foreign.currency, amount: line.foreign.amount, converted: true } : null, billId, billForecast: line.settledBefore ? previousMonth(s.dueDate) : null },
     });
     lineOf.push(index);
   });

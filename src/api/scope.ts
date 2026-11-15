@@ -3,7 +3,7 @@ import { normalizeName } from '../core/names.ts';
 import { mapSourceCategory } from '../ai/source-map.ts';
 import { localDay } from '../core/time.ts';
 import { dayNumber } from '../core/dates.ts';
-import type { ForeignAmount, Parties } from '../core/parties.ts';
+import { namesEarlierBill, type ForeignAmount, type Parties } from '../core/parties.ts';
 import { categoryForMcc } from './mcc.ts';
 import { pairReversals, type Reversal } from './reversals.ts';
 import { categoryFromRules, sortRules, type RuleSubject } from './rules-engine.ts';
@@ -140,6 +140,7 @@ function publishedBills(store: Store, bills: StoredSourceBill[]): Map<string, { 
 
 /** The bill (due month) the issuer put a charge on: its bill when it has one, otherwise the month it expects. Null when it said nothing. */
 function bankBillOf(parties: Parties | undefined, billMonth: Map<string, string>): string | null {
+  if (namesEarlierBill(parties)) return parties!.billForecast ?? null;
   return (parties?.billId ? billMonth.get(parties.billId) : undefined) ?? parties?.billForecast ?? null;
 }
 

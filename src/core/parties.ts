@@ -50,3 +50,11 @@ export function partyFrom(name: string | null, document: string | null, type: st
 export function partiesFrom(input: { operation: string | null; mcc: string | null; payer: Party | null; receiver: Party | null; foreign?: ForeignAmount | null; billId?: string | null; billForecast?: string | null }): Parties | undefined {
   return input.operation === null && input.mcc === null && input.payer === null && input.receiver === null && !input.foreign && !input.billId && !input.billForecast ? undefined : input;
 }
+
+/** Statement lines read from a PDF carry the id of their bill with this prefix. */
+export const PDF_BILL_PREFIX = 'pdfbill_';
+
+/** A PDF line the previous bill already discounted names that bill by month (`billForecast`), which wins over the bill the line is printed on. */
+export function namesEarlierBill(parties: Pick<Parties, 'billId' | 'billForecast'> | undefined): boolean {
+  return Boolean(parties?.billForecast) && Boolean(parties?.billId?.startsWith(PDF_BILL_PREFIX));
+}
