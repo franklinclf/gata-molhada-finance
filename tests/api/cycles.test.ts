@@ -703,3 +703,21 @@ test('a credit balance returned after the next closing offsets the bill that was
   const [, oct2, nov2] = cyclesFor(store, card1, effectiveTransactions(store), '2026-11-20');
   assert.deepEqual([oct2!.paid, oct2!.overpaid, nov2!.paid], [68000, 0, 27000]);
 });
+
+test('a bill published gross of a credit the bank had already discounted takes the statement total, once the next statement lists that credit', () => {
+  const store = openSqliteStore(':memory:', MIGRATIONS);
+  store.registerSource({ id: 'pluggy', kind: 'test', capabilities: {} }, NOW.toISOString());
+  store.registerSource({ id: 'pdf', kind: 'manual', capabilities: {} }, NOW.toISOString());
+  const bill = (id: string, ext: string, due: string, closing: string, total: number) => ({ externalId: id, accountExternalId: ext, dueDate: due, closingDate: closing, total, minimumPayment: null });
+  store.upsertSourceBills('pluggy', [bill('p-aug', 'ext-k', '2026-08-15', '2026-08-08', 100000), bill('p-sep', 'ext-k', '2026-09-15', '2026-09-08', 60000)], NOW.toISOString());
+  store.upsertSourceBills('pdf', [bill('pdfbill_aug', 'pdf-k', '2026-08-15', '2026-08-08', 85000)], NOW.toISOString());
+  const k = account('k', { refs: [{ sourceId: 'pluggy', externalId: 'ext-k', role: 'member' }, { sourceId: 'pdf', externalId: 'pdf-k', role: 'member' }] });
+  store.replaceCanonicalAccounts([k], [], NOW.toISOString());
+  const totalOf = () => cyclesFor(store, k, [], '2026-10-27').find((c) => c.key === '2026-08')?.billTotal;
+  assert.equal(totalOf(), 100000, 'with no credit named, the published total stands');
+  // The September statement lists a 150,00 credit that the August bill already discounted.
+  const credit = { externalId: 'c1', accountExternalId: 'pdf-k', occurredAt: '2026-07-20T03:00:00.000Z', amount: 15000, description: 'CREDITO TRANSACAO CONTESTADA', descriptionRaw: null, status: 'posted' as const, installment: null, category: null, parties: { operation: null, mcc: null, payer: null, receiver: null, foreign: null, billId: 'pdfbill_sep', billForecast: '2026-08' } };
+  store.upsertSourceTransactions('pdf', [credit], NOW.toISOString());
+  assert.equal(totalOf(), 85000);
+  assert.equal(cyclesFor(store, k, [], '2026-10-27').find((c) => c.key === '2026-09')?.billTotal, 60000, 'other months keep their published total');
+});

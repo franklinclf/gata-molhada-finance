@@ -126,15 +126,15 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
             </div>
           )}
           {s.kind === 'missing' && !s.unlisted && <div class="muted">O banco cobra {brl(s.amount, hidden)} que nenhuma compra perto do fechamento explica. Provavelmente uma compra, juros ou IOF que não chegaram: use “Lançar a diferença”.</div>}
-          {s.kind === 'extra' && <div class="muted">O app soma {brl(s.amount, hidden)} a mais do que o banco cobrou e nenhuma compra perto do fechamento explica. Pode ser uma pendente que o banco nunca lançou: abra a compra suspeita e ignore ou mude o status.</div>}
+          {s.kind === 'extra' && <div class="muted">O app soma {brl(s.amount, hidden)} a mais do que o banco cobrou e nenhuma compra perto do fechamento explica. Pode ser uma pendente que o banco nunca lançou: abra a compra suspeita e ignore ou mude o status. Se não achar, use “Lançar a diferença” para registrar um crédito de ajuste.</div>}
         </div>
         <div class="actions">
           <Button size="sm" onClick={() => navigate('chat', { q: `A fatura do ${item.institution}${item.last4 ? ` final ${item.last4}` : ''} com vencimento em ${item.dueDate} veio ${brlText(item.billTotal)} no banco e o app soma ${brlText(item.ours)} (período ${item.from} a ${item.to}). O que pode explicar a diferença de ${brlText(item.gap)}? Consulte as transações do período e as parcelas.` })}>
             Perguntar à IA
           </Button>
-          {/* Only a bill larger than the app's sum is fixed by adding a charge; with a smaller bill it would double the gap. */}
-          {s.kind === 'missing' && (
-            <Button size="sm" onClick={() => (item.old && !window.confirm('Esta fatura é antiga e já foi paga. Lançar a diferença cria uma compra de ajuste nela. Continuar?') ? undefined : setManual(manual === key ? null : key))}>
+          {/* A bill larger than the app's sum is fixed by an adjustment charge, a smaller one by an adjustment credit. */}
+          {(s.kind === 'missing' || s.kind === 'extra') && (
+            <Button size="sm" onClick={() => (item.old && !window.confirm('Esta fatura é antiga e já foi paga. Lançar a diferença cria um lançamento de ajuste nela. Continuar?') ? undefined : setManual(manual === key ? null : key))}>
               Lançar a diferença
             </Button>
           )}
@@ -154,7 +154,7 @@ function CheckTab({ hidden, now }: { hidden: boolean; now: Date }) {
           <div class="grow" style={{ flexBasis: '100%', minWidth: 0 }}>
             <ManualForm
               now={now}
-              initial={{ accountId: item.accountId, day: item.to, amount: -Math.abs(item.gap), description: 'Ajuste de fatura', category: '' }}
+              initial={{ accountId: item.accountId, day: item.to, amount: -item.gap, description: 'Ajuste de fatura', category: '' }}
               onCancel={() => setManual(null)}
               onSaved={(id) => {
                 setManual(null);

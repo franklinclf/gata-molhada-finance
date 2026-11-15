@@ -30,6 +30,8 @@ export interface StatementLine {
   /** The purchase in its own currency: `amount` is what was charged in reais, this is what the shop asked. `usd` and `rate` are the dollar value and quote the bank printed. */
   foreign: { currency: string; amount: number; usd?: number; rate?: number } | null;
   kind: 'purchase' | 'installment' | 'fee' | 'credit' | 'payment';
+  /** A credit the previous bill already discounted (a disputed purchase credited while it was in analysis): it belongs to that bill, not to this one. */
+  settledBefore?: boolean;
 }
 
 export interface ParsedStatement {
@@ -912,6 +914,7 @@ export function parseStatement(doc: PdfDocument): ParsedStatement {
   } else if (!ok && contested > 0 && difference === -contested) {
     ok = true;
     note = `O crédito de transação contestada (${reais(contested)}) já foi descontado na fatura anterior, quando estava em análise, e esta fatura não o desconta de novo.`;
+    for (const l of lines) if (l.amount > 0 && /CONTESTAD/i.test(l.description)) l.settledBefore = true;
   }
   if (!ok) {
     throw new StatementError('incomplete', `A soma dos lançamentos não bate com o total da fatura (diferença de ${reais(difference)})`);

@@ -328,3 +328,20 @@ test('a PDF with only an image has no text and lists the image', () => {
   assert.equal(doc.images[0]?.width, 30);
   assert.equal(failure(() => parseStatement(doc)).code, 'no_text');
 });
+
+test('a credit the previous bill already discounted is marked as settled before', () => {
+  const s = parse(
+    bradescard({
+      total: '100,00',
+      previous: '200,00',
+      credits: '287,00',
+      debits: '100,00',
+      rows: [
+        { date: '10/02', desc: 'PAGAMENTO RECEBIDO - OBRIGADO', amount: '200,00', credit: true },
+        { date: '11/02', desc: pad('LOJA UM', 'CIDADE'), amount: '100,00' },
+        { date: '12/02', desc: 'CREDITO TRANSACAO CONTESTADA', amount: '87,00', credit: true },
+      ],
+    }),
+  );
+  assert.deepEqual(s.lines.filter((l) => l.settledBefore).map((l) => l.description), ['CREDITO TRANSACAO CONTESTADA']);
+});

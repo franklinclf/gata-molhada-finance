@@ -2,6 +2,8 @@ import type { CanonicalAccount } from '../core/canonical.ts';
 import type { Cents } from '../core/money.ts';
 import { addDays, dayNumber } from '../core/dates.ts';
 import { normalizeName } from '../core/names.ts';
+import { namesEarlierBill } from '../core/parties.ts';
+import { PDF_SOURCE } from '../core/sources.ts';
 import { localDay } from '../core/time.ts';
 import { sourcePriority } from '../reconcile/run.ts';
 import type { Store, StoredSourceBill } from '../store/store.ts';
@@ -93,9 +95,32 @@ function billsOf(store: Store, account: CanonicalAccount): BillInfo[] {
       if (!current || rank(sourceId) < current.rank) byDueMonth.set(key, { bill, rank: rank(sourceId) });
     }
   }
-  return [...byDueMonth.values()]
-    .map(({ bill }) => ({ closing: bill.closingDate ?? addDays(bill.dueDate, -7), due: bill.dueDate, total: bill.total }))
+  // Pluggy can publish a bill gross of a credit the bank discounted while it was still in analysis (a disputed purchase). The
+  // statement of the next month lists that credit and says the earlier bill already discounted it, so the statement of this month,
+  // when we hold it, gives the total that was payable: it is the published total less those credits.
+  const settled = settledCredits(store, account);
+  const pdfTotals = new Map<string, Cents>();
+  for (const bill of store.listSourceBills(PDF_SOURCE)) {
+    if (account.refs.some((r) => r.sourceId === PDF_SOURCE && r.externalId === bill.accountExternalId)) pdfTotals.set(bill.dueDate.slice(0, 7), bill.total);
+  }
+  return [...byDueMonth.entries()]
+    .map(([month, { bill }]) => {
+      const credit = settled.get(month) ?? 0;
+      const net = bill.total - credit;
+      return { closing: bill.closingDate ?? addDays(bill.dueDate, -7), due: bill.dueDate, total: credit > 0 && pdfTotals.get(month) === net ? net : bill.total };
+    })
     .sort((a, b) => a.closing.localeCompare(b.closing));
+}
+
+/** Credits of this card's PDF statements that the previous bill already discounted, by the due month (YYYY-MM) of that bill. */
+function settledCredits(store: Store, account: CanonicalAccount): Map<string, Cents> {
+  const externalIds = new Set(account.refs.filter((r) => r.sourceId === PDF_SOURCE).map((r) => r.externalId));
+  const byMonth = new Map<string, Cents>();
+  if (externalIds.size === 0) return byMonth;
+  for (const t of store.listSourceTransactions(PDF_SOURCE)) {
+    if (t.amount > 0 && externalIds.has(t.accountExternalId) && namesEarlierBill(t.parties)) byMonth.set(t.parties!.billForecast!, (byMonth.get(t.parties!.billForecast!) ?? 0) + t.amount);
+  }
+  return byMonth;
 }
 
 /**

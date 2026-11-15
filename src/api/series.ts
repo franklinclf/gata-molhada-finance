@@ -18,6 +18,25 @@ export interface SeriesMember {
   description: string;
   excluded: boolean;
   installment: { number: number; total: number } | null;
+  /** Due month (YYYY-MM) of the bill the charge is on, when known. */
+  billCycle?: string | null;
+}
+
+const monthIndex = (key: string) => Number(key.slice(0, 4)) * 12 + Number(key.slice(5, 7));
+
+/** Texts this short may still be the same purchase when the bills follow the numbers (a bank that cuts the text of some installments). */
+const MIN_SHORT_PREFIX = 3;
+
+/** Every pair of charges that both know their bill sits as many months apart as their numbers say, and at least one pair can be told. */
+function followsNumbers(members: SeriesMember[], t: SeriesMember): boolean {
+  if (!t.billCycle) return false;
+  let told = false;
+  for (const o of members) {
+    if (!o.billCycle) return false;
+    if (monthIndex(t.billCycle) - monthIndex(o.billCycle) !== t.installment!.number - o.installment!.number) return false;
+    told = true;
+  }
+  return told;
 }
 
 /**
@@ -42,6 +61,15 @@ export function groupSeries<T extends SeriesMember>(transactions: T[], skip?: Re
       for (const [k, s] of shapes) {
         const prefix = s.text.length >= MIN_PREFIX && text.length >= MIN_PREFIX && (s.text.startsWith(text) || text.startsWith(s.text));
         if (same(s) && prefix && !series.get(k)!.some((o) => o.installment!.number === t.installment!.number)) key = k;
+      }
+    }
+    // A text cut short ("STORE" for "STORE *ONLINE SA") is too generic to join on its own, but it is the same purchase when the
+    // count and the amount match and every charge sits in the bill its number says (number n in the month of number 1 plus n - 1).
+    if (key === undefined) {
+      for (const [k, s] of shapes) {
+        const prefix = s.text.length >= MIN_SHORT_PREFIX && text.length >= MIN_SHORT_PREFIX && (s.text.startsWith(text) || text.startsWith(s.text));
+        const members = series.get(k)!;
+        if (same(s) && prefix && !members.some((o) => o.installment!.number === t.installment!.number) && followsNumbers(members, t)) key = k;
       }
     }
     if (key === undefined) {
