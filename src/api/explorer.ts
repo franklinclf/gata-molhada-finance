@@ -40,6 +40,12 @@ export interface ExplorerQuery {
   installment?: 'only' | 'none';
   /** Only charges with an amount in a foreign currency. */
   international?: boolean;
+  /** Only transactions with no category. */
+  uncategorized?: boolean;
+  /** Only transactions the owner gave a name of their own (`customName`). */
+  named?: boolean;
+  /** Only charges that have a refund (`reversal` on the charge side); the refund row itself is not kept. */
+  refunded?: boolean;
   status?: 'pending' | 'posted';
   states?: TransactionState[];
   /** Bounds on the absolute amount, in cents. */
@@ -143,6 +149,9 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     if (skip !== 'source' && query.sources?.length && !t.sourceIds.some((s) => query.sources!.includes(s))) return false;
     if (query.installment !== undefined && (t.installment !== null || t.estimated === true) !== (query.installment === 'only')) return false;
     if (query.international && !t.foreign) return false;
+    if (query.uncategorized && t.category !== null) return false;
+    if (query.named && t.customName === null) return false;
+    if (query.refunded && t.reversal?.side !== 'charge') return false;
     if (query.spendingOnly && isNonSpending(t)) return false;
     if (query.netSpending && (isNonSpending(t) || (t.amount > 0 && account.kind !== 'credit_card' && !t.reversal))) return false;
     if (query.hideOwnTransfers && t.role === 'own_transfer') return false;

@@ -4,7 +4,8 @@ import type { CompareView, SpendingView } from '../api.ts';
 import { Bars, LineChart, PALETTE, Ring, Sparkline } from '../charts.tsx';
 import { brl, cumulative, dayMonth, lastMonths, monthBounds, monthName, percent, sumByMonth } from '../format.ts';
 import { useLoad } from '../hooks.ts';
-import { PeriodPicker, PRESETS } from '../period.tsx';
+import { DateRangePicker } from '../DateRangePicker.tsx';
+import { monthRange } from '../month-range.ts';
 import { patchParams, type Route } from '../router.ts';
 import { localDay } from '../format.ts';
 import { Go, Loading, TxRow } from '../ui.tsx';
@@ -169,7 +170,7 @@ function Changes({ month, today, hidden }: { month: string; today: string; hidde
 
 export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; hidden: boolean }) {
   const today = localDay(now.toISOString());
-  const month = PRESETS.find((p) => p.id === 'month')!.range(today);
+  const month = monthRange(today.slice(0, 7), today);
   const from = route.params.get('from') ?? month.from;
   const to = route.params.get('to') ?? month.to;
   const view = route.params.get('by') === 'merchant' ? 'merchant' : route.params.get('by') === 'category' ? 'category' : route.params.get('by') === 'trend' ? 'trend' : 'group';
@@ -189,7 +190,7 @@ export function SpendingPage({ route, now, hidden }: { route: Route; now: Date; 
   return (
     <div class="page-body">
       <h1 class="page-title">Gastos</h1>
-      {view !== 'trend' && <PeriodPicker from={from} to={to} now={now} onChange={(r) => patchParams({ from: r.from ?? month.from, to: r.to ?? month.to })} />}
+      {view !== 'trend' && <DateRangePicker arrows from={from} to={to} now={now} onChange={(r) => patchParams({ from: r.from ?? month.from, to: r.to ?? month.to })} />}
       <div class="tabs">
         <button class={view === 'group' ? 'tab on' : 'tab'} onClick={() => patchParams({ by: null })}>Grupos</button>
         <button class={view === 'category' ? 'tab on' : 'tab'} onClick={() => patchParams({ by: 'category' })}>Categorias</button>

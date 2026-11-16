@@ -2,14 +2,15 @@ import { api } from '../api.ts';
 import { Bars, DayDots } from '../charts.tsx';
 import { brl, dayMonth, lastMonths, localDay, monthBounds, monthName } from '../format.ts';
 import { useLoad } from '../hooks.ts';
-import { PeriodPicker, PRESETS } from '../period.tsx';
+import { DateRangePicker } from '../DateRangePicker.tsx';
+import { monthRange } from '../month-range.ts';
 import { patchParams, type Route } from '../router.ts';
 import { Go, Loading, TxRow } from '../ui.tsx';
 
 export function CashflowPage({ route, now, hidden, embedded = false }: { route: Route; now: Date; hidden: boolean; embedded?: boolean }) {
   const today = localDay(now.toISOString());
   const narrow = window.innerWidth < 600;
-  const month = PRESETS.find((p) => p.id === 'month')!.range(today);
+  const month = monthRange(today.slice(0, 7), today);
   const from = route.params.get('from') ?? month.from;
   const to = route.params.get('to') ?? month.to;
   const tab = route.params.get('tab') ?? 'all';
@@ -37,7 +38,7 @@ export function CashflowPage({ route, now, hidden, embedded = false }: { route: 
   return (
     <div class="page-body">
       {!embedded && <h1 class="page-title">Fluxo de caixa</h1>}
-      <PeriodPicker from={from} to={to} now={now} onChange={(r) => patchParams({ from: r.from ?? month.from, to: r.to ?? month.to })} />
+      <DateRangePicker arrows from={from} to={to} now={now} onChange={(r) => patchParams({ from: r.from ?? month.from, to: r.to ?? month.to })} />
       {flow.error || (flow.loading && !flow.data) ? (
         <Loading error={flow.error} />
       ) : flow.data ? (
