@@ -32,6 +32,14 @@ export interface ExplorerQuery {
   q?: string;
   /** A merchant name as the spending view shows it (see `merchantName`). */
   merchant?: string;
+  /** Merchant names as `merchantOf` gives them; keeps a transaction that matches any of them. */
+  origins?: string[];
+  /** Source ids (`pluggy`, `pdf`, `manual`...); keeps a transaction that has at least one of them. */
+  sources?: string[];
+  /** `only` keeps installment charges (listed or estimated), `none` keeps the rest. */
+  installment?: 'only' | 'none';
+  /** Only charges with an amount in a foreign currency. */
+  international?: boolean;
   status?: 'pending' | 'posted';
   states?: TransactionState[];
   /** Bounds on the absolute amount, in cents. */
@@ -77,12 +85,14 @@ export interface ExplorerResult extends Stamped {
   /** The part of `sums` that is made of estimated installments (billed by the bank, never listed): their number and amount. */
   estimated: { count: number; expense: Cents };
   /** Counts for each filter option. A facet ignores its own filter, so the other options stay visible. */
-  facets: { categories: Facet[]; accounts: Array<Facet & { id: string; institution: string; kind: string; last4: string | null }>; institutions: Facet[] };
+  facets: { categories: Facet[]; origins: Facet[]; sources: Facet[]; accounts: Array<Facet & { id: string; institution: string; kind: string; last4: string | null }>; institutions: Facet[] };
+  /** Smallest and largest absolute amount among the rows that match every filter except `min` and `max`, so a slider keeps its scale while it moves. Zero for both when nothing matches. */
+  amountRange: { min: Cents; max: Cents };
   /** Date range of each card cycle chosen, for the screen to show. */
   cycleRanges: Record<string, { from: string; to: string; dueDate: string }>;
 }
 
-type Dimension = 'category' | 'account' | 'institution';
+type Dimension = 'category' | 'account' | 'institution' | 'origin' | 'source' | 'amount';
 
 export function explore(store: Store, query: ExplorerQuery, now: Date, opts: ViewOptions = {}): ExplorerResult {
   const accounts = visibleAccounts(store, opts);
@@ -127,8 +137,12 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     if (query.states?.length && !query.states.includes(t.state)) return false;
     const size = Math.abs(t.amount);
     if (query.merchant !== undefined && merchantOf(t) !== query.merchant) return false;
-    if (query.min !== undefined && size < query.min) return false;
-    if (query.max !== undefined && size > query.max) return false;
+    if (skip !== 'amount' && query.min !== undefined && size < query.min) return false;
+    if (skip !== 'amount' && query.max !== undefined && size > query.max) return false;
+    if (skip !== 'origin' && query.origins?.length && !query.origins.includes(merchantOf(t))) return false;
+    if (skip !== 'source' && query.sources?.length && !t.sourceIds.some((s) => query.sources!.includes(s))) return false;
+    if (query.installment !== undefined && (t.installment !== null || t.estimated === true) !== (query.installment === 'only')) return false;
+    if (query.international && !t.foreign) return false;
     if (query.spendingOnly && isNonSpending(t)) return false;
     if (query.netSpending && (isNonSpending(t) || (t.amount > 0 && account.kind !== 'credit_card' && !t.reversal))) return false;
     if (query.hideOwnTransfers && t.role === 'own_transfer') return false;
@@ -190,6 +204,25 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     }
     return map;
   };
+  // A transaction with two sources counts once for each.
+  const sourceFacets = new Map<string, Facet>();
+  for (const t of all.filter(wanted('source'))) {
+    for (const id of new Set(t.sourceIds)) {
+      const entry = sourceFacets.get(id) ?? { name: id, count: 0, amount: 0 };
+      entry.count += 1;
+      entry.amount += -t.amount;
+      sourceFacets.set(id, entry);
+    }
+  }
+  const originFacets = facet('origin', merchantOf);
+  originFacets.delete('');
+  let low = Infinity;
+  let high = 0;
+  for (const t of all.filter(wanted('amount'))) {
+    const size = Math.abs(t.amount);
+    if (size < low) low = size;
+    if (size > high) high = size;
+  }
   const sortFacets = (map: Map<string, Facet>) => [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const accountFacets = facet('account', (t) => t.accountId);
 
@@ -211,8 +244,11 @@ export function explore(store: Store, query: ExplorerQuery, now: Date, opts: Vie
     facets: {
       categories: sortFacets(facet('category', (t) => t.category ?? '')),
       accounts: [...accountFacets.values()].map((f) => { const a = byId.get(f.name); return { ...f, id: f.name, name: a?.name ?? '', institution: a?.institution ?? '', kind: a?.kind ?? '', last4: a?.last4 ?? null }; }).sort((a, b) => b.count - a.count),
+      origins: sortFacets(originFacets).slice(0, 200),
+      sources: sortFacets(sourceFacets),
       institutions: sortFacets(facet('institution', (t) => byId.get(t.accountId)?.institution ?? '')),
     },
+    amountRange: { min: low === Infinity ? 0 : low, max: high },
     cycleRanges,
   };
 }

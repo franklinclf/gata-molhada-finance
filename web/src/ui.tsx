@@ -1,8 +1,9 @@
 import type { ComponentChildren } from 'preact';
-import { useState } from 'preact/hooks';
+import { useRef, useState } from 'preact/hooks';
 import { brl, dayMonth, foreignMoney, localDay } from './format.ts';
 import { sourceLabel, theSource } from './names.ts';
 import { hrefFor } from './router.ts';
+import { HOLD_MS, movedTooFar } from './row-selection.ts';
 
 export function Loading({ error }: { error?: string | null }) {
   return error ? <div class="error">Não foi possível carregar: {error}</div> : <div class="empty">Carregando…</div>;
@@ -41,7 +42,7 @@ export interface Option {
 }
 
 /** A list of checkboxes with optional search, used inline in the filter panel and inside the popover select. */
-export function CheckList({ options, selected, onChange, searchable = true, maxHeight = 240 }: { options: Option[]; selected: string[]; onChange: (value: string[]) => void; searchable?: boolean; maxHeight?: number }) {
+export function CheckList({ options, selected, onChange, searchable = true, maxHeight = 240, clearable = true }: { options: Option[]; selected: string[]; onChange: (value: string[]) => void; searchable?: boolean; maxHeight?: number; /** Shows a "Limpar" link under the list; a filter section that has its own in the header turns it off. */ clearable?: boolean }) {
   const [filter, setFilter] = useState('');
   const visible = options.filter((o) => o.label.toLowerCase().includes(filter.toLowerCase()));
   const toggle = (value: string) => onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);
@@ -58,7 +59,7 @@ export function CheckList({ options, selected, onChange, searchable = true, maxH
           </label>
         ))}
       </div>
-      {selected.length > 0 && (
+      {clearable && selected.length > 0 && (
         <button class="link" onClick={() => onChange([])}>
           Limpar
         </button>
@@ -82,15 +83,28 @@ export function MultiSelect({ label, options, selected, onChange, searchable = t
   );
 }
 
-/** A filter section that can be folded away; sections with an active filter start open. */
-export function Section({ title, active, children, open = false }: { title: string; active?: number; children: ComponentChildren; open?: boolean }) {
-  // Opened by default only when it mounts, so clearing the last filter does not fold it under the cursor.
-  const [startOpen] = useState(open || (active ?? 0) > 0);
+/** A filter section that can be folded away. It starts open; a "Limpar" in the header shows only while the section has a filter on. */
+export function Section({ title, active, onClear, children }: { title: string; active?: number; onClear?: () => void; children: ComponentChildren }) {
+  const count = active ?? 0;
   return (
-    <details class="fsection" open={startOpen}>
+    <details class="fsection" open>
       <summary>
         <span>{title}</span>
-        {(active ?? 0) > 0 && <span class="badge info">{active}</span>}
+        {count > 0 && <span class="badge info">{count}</span>}
+        {count > 0 && onClear && (
+          <button
+            type="button"
+            class="link fclear"
+            onClick={(e) => {
+              // Inside the summary: without this the click would also fold the section.
+              e.preventDefault();
+              e.stopPropagation();
+              onClear();
+            }}
+          >
+            Limpar
+          </button>
+        )}
       </summary>
       <div class="fbody">{children}</div>
     </details>
@@ -122,15 +136,70 @@ export const STATE_LABEL: Record<string, string> = {
   ignored: 'Ignorada por você (fora dos totais)',
 };
 
-export function TxRow({ t, hidden, onOpen, pick: wanted }: { t: { id: string; estimated?: true; sourceIds?: string[]; title?: string; customName?: string | null; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void; /** When given, the row shows a checkbox and a click toggles it instead of opening the drawer. */ pick?: { on: boolean; toggle: () => void } }) {
+/** What a row needs to take part in a selection: its state, a toggle (with Shift held for a range) and the press-and-hold that starts selecting. */
+export interface RowPick {
+  on: boolean;
+  /** Selection mode is on: the row shows a checkbox and a click toggles it instead of opening the drawer. */
+  active: boolean;
+  toggle: (shift: boolean) => void;
+  hold: () => void;
+}
+
+export function TxRow({ t, hidden, onOpen, pick: wanted }: { t: { id: string; estimated?: true; sourceIds?: string[]; title?: string; customName?: string | null; description: string; amount: number; occurredAt: string; status: string; state: string; category: string | null; foreign?: { currency: string; amount: number; converted: boolean } | null; reversal?: { side: 'charge' | 'refund'; otherDay: string; amount: number; partial: boolean } | null; account: { institution: string; last4: string | null } }; hidden: boolean; onOpen: (id: string) => void; pick?: RowPick }) {
   // An estimated installment is read-only (no category, status or bill to change), so it is never picked: a click opens its explanation.
   const pick = t.estimated ? undefined : wanted;
+  const hold = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const fired = useRef(false);
+  const [pressing, setPressing] = useState(false);
+  const cancel = () => {
+    if (hold.current) clearTimeout(hold.current.timer);
+    hold.current = null;
+    setPressing(false);
+  };
+  const press = (e: PointerEvent) => {
+    // A press on the checkbox or a button inside the row is not a hold; one already selecting needs no hold.
+    fired.current = false;
+    if (!pick || pick.active || e.button > 0) return;
+    const timer = setTimeout(() => {
+      fired.current = true;
+      hold.current = null;
+      setPressing(false);
+      navigator.vibrate?.(15);
+      pick.hold();
+    }, HOLD_MS);
+    hold.current = { timer, x: e.clientX, y: e.clientY };
+    setPressing(true);
+  };
+  const move = (e: PointerEvent) => {
+    if (hold.current && movedTooFar(hold.current, { x: e.clientX, y: e.clientY })) cancel();
+  };
+  const act = (shift: boolean) => (pick?.active ? pick.toggle(shift) : onOpen(t.id));
   return (
-    <li class={pick?.on ? 'tx picked' : 'tx'} data-no-nav onClick={() => (pick ? pick.toggle() : onOpen(t.id))} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && (pick ? pick.toggle() : onOpen(t.id))}>
-      {pick && (
+    <li
+      class={`tx${pick?.on ? ' picked' : ''}${pressing ? ' pressing' : ''}${pick ? ' holdable' : ''}`}
+      data-no-nav
+      data-id={t.id}
+      onPointerDown={press}
+      onPointerMove={move}
+      onPointerUp={cancel}
+      onPointerCancel={cancel}
+      onPointerLeave={cancel}
+      onContextMenu={(e) => fired.current && e.preventDefault()}
+      onClick={(e) => {
+        // The click that ends a press-and-hold must not also open the row.
+        if (fired.current) {
+          fired.current = false;
+          return;
+        }
+        act(e.shiftKey);
+      }}
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && act(e.shiftKey)}
+    >
+      {pick?.active && (
         // The padding makes the touch target about 44 px; the label's own click must not reach the row, or the row would toggle twice.
         <label class="tx-pick" onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" checked={pick.on} aria-label="Selecionar" onClick={(e) => e.stopPropagation()} onChange={pick.toggle} />
+          <input type="checkbox" checked={pick.on} aria-label="Selecionar" onClick={(e) => e.stopPropagation()} onChange={() => pick.toggle(false)} />
         </label>
       )}
       <div class="grow">

@@ -80,6 +80,8 @@ export function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
   if (states?.some((s) => !(STATES as readonly string[]).includes(s))) return { ok: false, error: `state must be one of ${STATES.join(', ')}` };
   const cycle = params.get('cycle') ?? undefined;
   if (cycle !== undefined && !CYCLE.test(cycle)) return { ok: false, error: 'cycle must be open or a month like 2026-10' };
+  const installment = params.get('installment') ?? undefined;
+  if (installment !== undefined && installment !== 'only' && installment !== 'none') return { ok: false, error: 'installment must be only or none' };
   const sort = (params.get('sort') ?? 'date_desc') as SortKey;
   if (!SORTS.includes(sort)) return { ok: false, error: `sort must be one of ${SORTS.join(', ')}` };
   const limit = parseInteger(params, 'limit', 50, 1, 500);
@@ -100,6 +102,11 @@ export function parseExplorer(params: URLSearchParams): Parsed<ExplorerQuery> {
       kind,
       q: params.get('q') ?? undefined,
       merchant: params.get('merchant') ?? undefined,
+      // Names can contain commas, so each one is its own parameter.
+      origins: params.has('origin') ? params.getAll('origin') : undefined,
+      sources: list(params, 'source'),
+      installment,
+      international: params.get('international') === 'true',
       status,
       states: states as ExplorerQuery['states'],
       min: (min as { value?: number }).value,

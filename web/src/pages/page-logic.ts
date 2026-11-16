@@ -12,19 +12,21 @@ export function countNote(shown: number, matching: number): string | null {
   return grouped > 0 ? `${grouped} ${grouped === 1 ? 'estorno agrupado' : 'estornos agrupados'} com a compra` : null;
 }
 
-/** What the money in the totals is made of when part of it is not income or spending; null when all of it is. */
+/** One short line on what the totals hold that is not income or spending; null when all of it is. The long reason is INTERNAL_TIP. */
 export function internalNote(internal: { count: number; income: number; expense: number }, hidden: boolean): string | null {
   if (internal.count === 0) return null;
   const money = (cents: number) => brl(cents, hidden);
   const parts = [internal.income > 0 ? `entraram ${money(internal.income)}` : '', internal.expense > 0 ? `saíram ${money(internal.expense)}` : ''].filter(Boolean);
-  return `Nas somas há ${internal.count} ${internal.count === 1 ? 'movimento' : 'movimentos'} que não são renda nem gasto (pagamento de fatura, transferência entre suas contas, investimento): ${parts.join(' e ')}.`;
+  return `${internal.count} ${internal.count === 1 ? 'movimento' : 'movimentos'} fora de renda e gasto: ${parts.join(' e ')}.`;
 }
+export const INTERNAL_TIP = 'Pagamento de fatura, transferência entre suas contas e investimento não são renda nem gasto. Ligue "Só gastos reais" para tirá-los da lista.';
 
-/** The totals include installments the bank bills but never listed; null when none is in the result. */
+/** One short line on the installments the bank bills but never listed; null when none is in the result. */
 export function estimatedNote(estimated: { count: number; expense: number }, hidden: boolean): string | null {
   if (estimated.count === 0) return null;
-  return `As somas incluem ${estimated.count} ${estimated.count === 1 ? 'parcela estimada' : 'parcelas estimadas'} (${brl(estimated.expense, hidden)}): o banco cobra na fatura, mas não listou. Elas já estão no total da fatura e não podem ser editadas.`;
+  return `${estimated.count} ${estimated.count === 1 ? 'parcela estimada' : 'parcelas estimadas'} (${brl(estimated.expense, hidden)}) nas somas.`;
 }
+export const ESTIMATED_TIP = 'O banco cobra estas parcelas na fatura, mas não as listou. Elas já estão no total da fatura e não podem ser editadas.';
 
 /**
  * The totals of the tiles. Filtered to one bill, the payment of that bill is left out: it shows in the list but is money moving between
@@ -37,12 +39,13 @@ export function tileSums(sums: { income: number; expense: number; net: number },
   return { income, expense, net: income - expense };
 }
 
-/** Says what a bill's totals leave out (see tileSums); null when the bill has no payment in the list. */
+/** One short line on what a bill's totals leave out (see tileSums); null when the bill has no payment in the list. */
 export function billPaymentNote(internal: { count: number; income: number; expense: number }, hidden: boolean): string | null {
   if (internal.count === 0) return null;
   const amount = brl(Math.max(internal.income, internal.expense), hidden);
-  return internal.count === 1 ? `O pagamento da fatura (${amount}) aparece na lista, mas não entra nas somas.` : `${internal.count} pagamentos e movimentos ligados à fatura (${amount}) aparecem na lista, mas não entram nas somas.`;
+  return internal.count === 1 ? `Pagamento da fatura (${amount}): na lista, fora das somas.` : `${internal.count} pagamentos ligados à fatura (${amount}): na lista, fora das somas.`;
 }
+export const BILL_TIP = 'O pagamento move dinheiro da conta para o cartão. Somado às compras, entradas e saídas se igualariam e o resultado ficaria em zero.';
 
 /** A recurring item whose expected day is already past is not "next" any more: say it was expected then and has not come. */
 export function recurringWhen(r: { dayOfMonth: number; occurrences: number; nextDay: string }, today: string): string {

@@ -18,9 +18,9 @@ test('the transaction count says how many refunds sit under their purchase', () 
 test('the totals note names what is not income or spending, and hides the values on request', () => {
   assert.equal(internalNote({ count: 0, income: 0, expense: 0 }, false), null);
   const text = internalNote({ count: 3, income: 20000, expense: 60000 }, false)!;
-  assert.match(text, /^Nas somas há 3 movimentos que não são renda nem gasto/);
+  assert.match(text, /^3 movimentos fora de renda e gasto: /);
   assert.match(text, /entraram R\$\s?200,00 e saíram R\$\s?600,00\.$/);
-  assert.match(internalNote({ count: 1, income: 0, expense: 500 }, false)!, /há 1 movimento .*: saíram R\$\s?5,00\.$/);
+  assert.match(internalNote({ count: 1, income: 0, expense: 500 }, false)!, /^1 movimento fora de renda e gasto: saíram R\$\s?5,00\.$/);
   assert.doesNotMatch(internalNote({ count: 3, income: 20000, expense: 60000 }, true)!, /\d,\d\d/);
 });
 
@@ -69,9 +69,9 @@ test('the totals of one bill leave out its payment, which would cancel the purch
   const internal = { count: 1, income: 134530, expense: 0 };
   assert.deepEqual(tileSums(sums, internal, true), { income: 0, expense: 134530, net: -134530 });
   assert.deepEqual(tileSums(sums, internal, false), sums);
-  assert.match(billPaymentNote(internal, false)!, /^O pagamento da fatura \(R\$\s?1\.345,30\) aparece na lista, mas não entra nas somas\.$/);
+  assert.match(billPaymentNote(internal, false)!, /^Pagamento da fatura \(R\$\s?1\.345,30\): na lista, fora das somas\.$/);
   assert.equal(billPaymentNote({ count: 0, income: 0, expense: 0 }, false), null);
-  assert.match(billPaymentNote({ count: 2, income: 1000, expense: 500 }, false)!, /^2 pagamentos e movimentos/);
+  assert.match(billPaymentNote({ count: 2, income: 1000, expense: 500 }, false)!, /^2 pagamentos ligados à fatura .*fora das somas\.$/);
 });
 
 test('the trend row compares the month in progress with the whole month before, and flags only a rise', () => {
@@ -153,7 +153,7 @@ test('the caption says what each view counts', () => {
 
 test('the list says how many estimated installments are in its totals', () => {
   assert.equal(estimatedNote({ count: 0, expense: 0 }, false), null);
-  assert.match(estimatedNote({ count: 1, expense: 5500 }, false)!, /^As somas incluem 1 parcela estimada \(R\$\s?55,00\)/);
+  assert.match(estimatedNote({ count: 1, expense: 5500 }, false)!, /^1 parcela estimada \(R\$\s?55,00\) nas somas\.$/);
   assert.match(estimatedNote({ count: 3, expense: 5500 }, false)!, /3 parcelas estimadas/);
   assert.doesNotMatch(estimatedNote({ count: 3, expense: 5500 }, true)!, /\d,\d\d/);
 });
