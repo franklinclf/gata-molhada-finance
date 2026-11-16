@@ -61,6 +61,8 @@ export function Grid({ items, editing, canDrag = true, wide = false, onColumns, 
   const container = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<LayoutItem[] | null>(null);
   const drag = useRef<Drag | null>(null);
+  // The latest draft for `end`, which also runs from window listeners whose closure is older than the last move.
+  const latest = useRef<LayoutItem[] | null>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
     const el = container.current;
@@ -99,15 +101,30 @@ export function Grid({ items, editing, canDrag = true, wide = false, onColumns, 
       cellH: ROW_HEIGHT + GAP,
       origin: { id: item.id, x: item.x, y: item.y, w: item.w, h: item.h },
     };
+    // The handle can be redrawn or moved while it is held (the layout changes under it), and then it never hears the release.
+    // The window does, so the gesture always ends with the button.
+    const stop = () => {
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+      window.removeEventListener('blur', stop);
+      end();
+    };
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    window.addEventListener('blur', stop);
   }
 
   function move(event: PointerEvent) {
     const d = drag.current;
     if (!d) return;
+    // A mouse move with no button down means the release was missed: end the gesture instead of resizing on.
+    if (event.pointerType === 'mouse' && event.buttons === 0) return end();
     const dx = Math.round((event.clientX - d.startX) / d.cellW);
     const dy = Math.round((event.clientY - d.startY) / d.cellH);
     const target = d.mode === 'move' ? { x: d.origin.x + dx, y: d.origin.y + dy } : { w: d.origin.w + dx, h: d.origin.h + dy };
-    setDraft(place(fitted(items), d.id, target, columns, minOf(byId(d.id))));
+    const next = place(fitted(items), d.id, target, columns, minOf(byId(d.id)));
+    latest.current = next;
+    setDraft(next);
   }
 
   const sizeValue = (i: LayoutItem) => (SIZES.some(([w, h]) => w === i.w && h === i.h) ? `${i.w}x${i.h}` : '');
@@ -119,7 +136,9 @@ export function Grid({ items, editing, canDrag = true, wide = false, onColumns, 
   function end() {
     if (!drag.current) return;
     drag.current = null;
-    if (draft) onChange(draft);
+    const done = latest.current;
+    latest.current = null;
+    if (done) onChange(done);
     setDraft(null);
   }
 
