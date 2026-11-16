@@ -5,7 +5,7 @@ import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/cano
 import { transactionDetail } from '../../src/api/detail.ts';
 import { amountInText, explore, type ExplorerQuery } from '../../src/api/explorer.ts';
 import { bulkEdit, saveGroup, removeGroup, addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
-import { apiRoute } from '../../src/api/routes.ts';
+import { apiRoute, parseExplorer } from '../../src/api/routes.ts';
 import * as views from '../../src/api/views.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
 
@@ -361,4 +361,66 @@ test('a number typed in the search box finds the transactions of that amount', (
   assert.equal(amountInText('12'), 1200);
   assert.equal(amountInText('padaria'), null);
   assert.equal(amountInText('99pay'), null);
+});
+
+test('explorer: installment, source, origin and international filters', () => {
+  const store = seeded();
+  store.registerSource({ id: 'manual', kind: 'test', capabilities: {} }, NOW.toISOString());
+  const extra = [
+    txn('pdfbuy', { description: 'Bookshop', amount: -2500, sourceIds: ['pierre', 'pluggy'] }),
+    txn('cash', { description: 'Cash tip', amount: -400, sourceIds: ['manual'] }),
+  ];
+  // The stored sources of a transaction come from its links.
+  const links = store.listAllTransactionLinks().map((l) => ({ ...l, matchPass: 0 }));
+  store.replaceCanonicalTransactions([...store.listCanonicalTransactions(), ...extra], [...links, { sourceId: 'pierre', externalId: 'ext-pdfbuy', transactionId: 'pdfbuy', matchPass: 0 }, { sourceId: 'pluggy', externalId: 'ext-pdfbuy-2', transactionId: 'pdfbuy', matchPass: 0 }, { sourceId: 'manual', externalId: 'ext-cash', transactionId: 'cash', matchPass: 0 }], NOW.toISOString());
+
+  assert.deepEqual(ids(explore(store, { ...base, installment: 'only' }, NOW)), ['phone', 'phone2']);
+  assert.ok(!ids(explore(store, { ...base, installment: 'none' }, NOW)).includes('phone'));
+  assert.ok(ids(explore(store, { ...base, installment: 'none' }, NOW)).includes('rent'));
+
+  assert.deepEqual(ids(explore(store, { ...base, sources: ['manual'] }, NOW)), ['cash']);
+  assert.deepEqual(ids(explore(store, { ...base, sources: ['pluggy'] }, NOW)), ['pdfbuy']);
+  assert.ok(ids(explore(store, { ...base, sources: ['pluggy', 'manual'] }, NOW)).length === 2);
+
+  assert.deepEqual(ids(explore(store, { ...base, origins: ['Market', 'Rent'] }, NOW)), ['market1', 'market2', 'rent']);
+  assert.deepEqual(ids(explore(store, { ...base, merchant: 'Rent' }, NOW)), ['rent']);
+
+  // A facet ignores its own filter, so the other options stay visible.
+  const filtered = explore(store, { ...base, origins: ['Bookshop'], sources: ['manual'] }, NOW);
+  assert.ok(filtered.facets.origins.some((f) => f.name === 'Cash Tip' || f.name === 'Cash tip'));
+  assert.deepEqual(filtered.facets.sources.map((f) => f.name).sort(), ['pierre', 'pluggy']);
+  const both = explore(store, base, NOW).facets.sources;
+  assert.equal(both.find((f) => f.name === 'pluggy')?.count, 1);
+  assert.equal(both.find((f) => f.name === 'pierre')?.count, 7 + 1);
+  assert.ok(explore(store, base, NOW).facets.origins.every((f) => f.name !== ''));
+  assert.equal(explore(store, base, NOW).facets.origins.find((f) => f.name === 'Market')?.count, 2);
+});
+
+test('explorer: international keeps charges with a foreign amount', () => {
+  const store = seeded();
+  store.upsertSourceTransactions('pierre', [{ externalId: 'ext-market1', accountExternalId: 'x', occurredAt: '2026-10-21T15:00:00Z', amount: -5000, description: 'Market', descriptionRaw: 'MARKET RAW', status: 'posted', installment: null, category: 'Supermercado', parties: { operation: null, mcc: null, payer: null, receiver: null, foreign: { currency: 'EUR', amount: 800, converted: true } } }], NOW.toISOString());
+  assert.deepEqual(ids(explore(store, { ...base, international: true }, NOW)), ['market1']);
+  assert.equal(explore(store, { ...base, international: false }, NOW).total, 7);
+});
+
+test('explorer: amountRange ignores min and max but not the other filters', () => {
+  const store = seeded();
+  const all = explore(store, base, NOW).amountRange;
+  assert.deepEqual(all, { min: 300, max: 500000 });
+  assert.deepEqual(explore(store, { ...base, min: 6000, max: 20000 }, NOW).amountRange, all);
+  assert.deepEqual(explore(store, { ...base, categories: ['Compras'], min: 1, max: 2 }, NOW).amountRange, { min: 10000, max: 10000 });
+  assert.deepEqual(explore(store, { ...base, q: 'no such text' }, NOW).amountRange, { min: 0, max: 0 });
+});
+
+test('parseExplorer: installment, source, origin and international', () => {
+  const ok = parseExplorer(new URLSearchParams('installment=only&source=pluggy&source=manual&origin=Shop, Inc&origin=Cafe&international=true'));
+  assert.ok(ok.ok);
+  assert.deepEqual([ok.value.installment, ok.value.sources, ok.value.origins, ok.value.international], ['only', ['pluggy', 'manual'], ['Shop, Inc', 'Cafe'], true]);
+  const none = parseExplorer(new URLSearchParams(''));
+  assert.ok(none.ok);
+  assert.deepEqual([none.value.installment, none.value.sources, none.value.origins, none.value.international], [undefined, undefined, undefined, false]);
+  for (const bad of ['installment=yes', 'installment=ONLY', 'installment=true']) {
+    const result = parseExplorer(new URLSearchParams(bad));
+    assert.equal(result.ok, false, bad);
+  }
 });
