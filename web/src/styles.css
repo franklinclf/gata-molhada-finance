@@ -1016,3 +1016,8 @@ input[type='checkbox']:indeterminate::before { transform: scale(1); clip-path: p
 .menu-item:disabled { opacity: 0.4; cursor: default; }
 /* On a narrow screen the bar scrolls sideways, so the way out comes first and stays in view. */
 @media (max-width: 760px) { .bulk-bar { padding-left: 6px; } .bulk-bar .bulk-exit { order: -1; } }
+
+/* A narrow, short column (1 x 2): the count and its unit share a line and only the rows that have something are listed. */
+.widget.sm.col .big.count { font-size: clamp(24px, 30cqi, 32px); line-height: 1.05; }
+.widget.sm.col .big.count small { display: inline; font-size: 12px; margin-left: 4px; }
+.widget.sm.col .widget-head { gap: 2px; padding-bottom: 4px; }

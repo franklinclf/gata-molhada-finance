@@ -23,7 +23,7 @@ export function ReviewWidget({ now, size, pixels }: WidgetProps) {
   return (
     <Widget title="Para revisar" column={column} now={now} loading={!ai.data && ai.loading} error={ai.error ?? findings.error ?? rules.error ?? bills.error} empty={ai.data && findings.data && rules.data && bills.data && total === 0 ? 'Nada esperando por você' : undefined} head={<><div class="big count">{total} <small>{total === 1 ? 'item' : 'itens'}</small></div></>}>
       <ul class="rows">
-        {rows.map(([label, n, page, params, , short]) => (
+        {rows.filter(([, n]) => !column || n > 0).map(([label, n, page, params, , short]) => (
           <li key={label} class={column ? 'stack' : undefined}>
             <div class={column ? 'row-line' : 'grow row-line'}>
               <Go class="grow clip" page={page} params={params} data-tip={label}>
