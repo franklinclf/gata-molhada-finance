@@ -12,7 +12,9 @@ import { InstitutionTree } from '../InstitutionTree.tsx';
 import { Info } from '../Info.tsx';
 import { Popover } from '../Popover.tsx';
 import { newRows, toggleId, withRange } from '../row-selection.ts';
-import { navigate, patchParams, type Route } from '../router.ts';
+import { patchParams, type Route } from '../router.ts';
+import { Checkbox } from '../Checkbox.tsx';
+import { boxState } from '../checkbox.ts';
 import { CategorySelect } from '../CategorySelect.tsx';
 import { CheckList, Go, Loading, Section, STATE_LABEL, Switch, TxRow } from '../ui.tsx';
 import { BILL_TIP, billPaymentNote, countNote, ESTIMATED_TIP, estimatedNote, INTERNAL_TIP, internalNote, tileSums } from './page-logic.ts';
@@ -166,6 +168,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const leave = () => {
     setPicking(false);
     setPicked([]);
+    setNote(null);
     anchor.current = null;
   };
 
@@ -243,11 +246,13 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   const sums = data ? tileSums(data.sums, data.internal, byBill) : { income: 0, expense: 0, net: 0 };
   const resultNote = data ? (byBill ? billPaymentNote(data.internal, hidden) : internalNote(data.internal, hidden)) : null;
   const estimated = data ? estimatedNote(data.estimated, hidden) : null;
-  const typeActive = (kind !== 'all' ? 1 : 0) + (p.get('status') ? 1 : 0) + (p.get('installment') ? 1 : 0) + (p.get('recurrence') ? 1 : 0) + sources.length + states.length + ['spendingOnly', 'future', 'international'].filter(flag).length;
+  const typeActive = (kind !== 'all' ? 1 : 0) + (p.get('status') ? 1 : 0) + (p.get('installment') ? 1 : 0) + (p.get('recurrence') ? 1 : 0) + sources.length + states.length + ['spendingOnly', 'future', 'international', 'uncategorized', 'named', 'refunded', 'netSpending', 'hideOwnTransfers'].filter(flag).length;
   const accountLabelOf = (id: string) => {
     const f = data?.facets.accounts.find((a) => a.id === id);
     return f ? accountLabel(f) : 'Conta';
   };
+  // "Limpar" drops the filters but keeps the period (and the order), which are not filters but the frame the list is read in.
+  const clearFilters = () => set(Object.fromEntries([...new Set(p.keys())].filter((k) => !['from', 'to', 'sort', 'tx', 'offset', 'new'].includes(k)).map((k) => [k, null])));
   const active = [
     ...categories.map((c) => ({ label: c || 'Sem categoria', remove: () => set({ category: categories.filter((x) => x !== c) }) })),
     ...institutions.map((c) => ({ label: c, remove: () => set({ institution: institutions.filter((x) => x !== c) }) })),
@@ -263,9 +268,12 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
     ...(flag('future') ? [{ label: 'Com datas futuras', remove: () => set({ future: null }) }] : []),
     ...(flag('spendingOnly') ? [{ label: 'Só gastos reais', remove: () => set({ spendingOnly: null }) }] : []),
     ...(flag('international') ? [{ label: 'Compras internacionais', remove: () => set({ international: null }) }] : []),
+    ...(flag('uncategorized') ? [{ label: 'Só sem categoria', remove: () => set({ uncategorized: null }) }] : []),
+    ...(flag('named') ? [{ label: 'Só com nome seu', remove: () => set({ named: null }) }] : []),
+    ...(flag('refunded') ? [{ label: 'Só estornadas', remove: () => set({ refunded: null }) }] : []),
     ...(p.get('recurrence') ? [{ label: p.get('recurrence') === 'subscription' ? 'Só assinaturas' : p.get('recurrence') === 'recurring' ? 'Só outras recorrentes' : 'Assinaturas e recorrentes', remove: () => set({ recurrence: null }) }] : []),
-    ...(flag('netSpending') ? [{ label: 'Gastos (compras menos estornos)', remove: () => set({ netSpending: null }) }] : []),
-    ...(flag('hideOwnTransfers') ? [{ label: 'Sem transferências entre suas contas', remove: () => set({ hideOwnTransfers: null }) }] : []),
+    ...(flag('netSpending') ? [{ label: 'Compras menos estornos', remove: () => set({ netSpending: null }) }] : []),
+    ...(flag('hideOwnTransfers') ? [{ label: 'Sem transf. entre suas contas', remove: () => set({ hideOwnTransfers: null }) }] : []),
   ];
 
   const segmented = (label: string, name: string, current: string, options: Array<[string, string]>) => (
@@ -286,7 +294,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
       <Section
         title="Tipo e status"
         active={typeActive}
-        onClear={() => set({ kind: null, status: null, installment: null, recurrence: null, source: null, state: null, spendingOnly: null, future: null, international: null })}
+        onClear={() => set({ kind: null, status: null, installment: null, recurrence: null, source: null, state: null, spendingOnly: null, future: null, international: null, uncategorized: null, named: null, refunded: null, netSpending: null, hideOwnTransfers: null })}
       >
         {segmented('Tipo', 'kind', kind === 'all' ? '' : kind, [['', 'Todas'], ['expense', 'Gastos'], ['income', 'Entradas']])}
         {segmented('Status', 'status', p.get('status') ?? '', [['', 'Todos'], ['posted', 'Lançadas'], ['pending', 'Pendentes']])}
@@ -315,6 +323,20 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
             onChange={(on) => set({ state: [...states.filter((s) => !HIDDEN_STATES.includes(s)), ...(on ? HIDDEN_STATES : [])] })}
             title="Ignoradas por você e pendentes que o banco não mostra mais"
           />
+        </div>
+        <div class="ffield">
+          <span class="muted">Mais filtros</span>
+          <div class="switches">
+            <Switch label="Só sem categoria" checked={flag('uncategorized')} onChange={toggleFlag('uncategorized')} />
+            <Switch label="Só com nome seu" checked={flag('named')} onChange={toggleFlag('named')} title="Compras a que você deu um nome próprio" />
+            <Switch label="Só estornadas" checked={flag('refunded')} onChange={toggleFlag('refunded')} title="Compras que tiveram estorno" />
+            <Switch
+              label="Só parcelas a vencer"
+              checked={flag('future') && p.get('installment') === 'only'}
+              onChange={(on) => set({ future: on ? 'true' : null, installment: on ? 'only' : null })}
+              title="Parcelas previstas, com data futura"
+            />
+          </div>
         </div>
       </Section>
       <Section title="Instituições e contas" active={institutions.length + accountIds.length} onClear={() => set({ institution: null, accountId: null })}>
@@ -347,6 +369,87 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
   );
 
   const sortValue = p.get('sort') ?? 'date_desc';
+  const some = picked.length > 0;
+  const bulkBar = (
+    <div class="bulk-bar" role="toolbar" aria-label="Ações nas selecionadas">
+      <Checkbox state={boxState(picked.length, pickable.length)} label="Selecionar todas as carregadas" onChange={(on) => setPicked(on ? order : [])} />
+      <span class="bulk-count" data-tip={data && data.total > rows.length ? `${rows.length} de ${data.total} no filtro; role a lista para carregar mais.` : undefined}>
+        {picked.length} selecionada{picked.length === 1 ? '' : 's'}
+      </span>
+      {picked.length < pickable.length && (
+        <button type="button" class="link bulk-all" onClick={() => setPicked(order)}>
+          Todas as {pickable.length}
+        </button>
+      )}
+      <span class="grow" />
+      <CategorySelect class="bulk-select" ariaLabel="Categoria das selecionadas" placeholder="Categoria" value="" onChange={(category) => category !== '' && some && void bulk({ category })} />
+      <Select
+        class="bulk-select"
+        ariaLabel="Status das selecionadas"
+        placeholder="Status"
+        value=""
+        disabled={!some}
+        options={[{ value: 'posted', label: 'Marcar lançadas' }, { value: 'pending', label: 'Marcar pendentes' }, { value: 'source', label: 'Status como a fonte diz' }]}
+        onChange={(value) => value !== '' && void bulk({ status: value === 'source' ? null : (value as 'posted' | 'pending') })}
+      />
+      <Select
+        class="bulk-select"
+        ariaLabel="Mover as selecionadas para a fatura"
+        placeholder="Fatura"
+        value=""
+        disabled={!some}
+        options={[{ value: 'auto', label: 'Voltar ao automático' }, ...(cards.data?.cycles ?? []).map((c) => ({ value: c, label: `Fatura com venc. ${monthName(c)}` }))]}
+        onChange={(value) => value !== '' && void bulk({ cycleKey: value === 'auto' ? null : value })}
+      />
+      <button type="button" class="chip" disabled={!some} onClick={() => (picked.length <= 20 || window.confirm(`Ignorar ${picked.length} transações? Elas saem dos totais até você restaurar.`)) && void bulk({ ignored: true })}>
+        Ignorar
+      </button>
+      <button type="button" class="chip" disabled={!some} onClick={() => void bulk({ ignored: false })}>
+        Restaurar
+      </button>
+      <Popover menu align="right" class="chip" label="Mais ações" trigger="Mais">
+        {(close) => (
+          <div class="menu" role="menu" aria-label="Mais ações">
+            <button type="button" role="menuitemcheckbox" aria-checked={similar} class={similar ? 'menu-item on' : 'menu-item'} onClick={() => setSimilar(!similar)}>
+              Valer também para as de mesma descrição
+              <svg class="menu-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3 8.5l3.2 3L13 4.5" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="menu-item"
+              disabled={!some}
+              onClick={() => {
+                close();
+                void bulk({ category: null });
+              }}
+            >
+              Voltar à categoria da fonte
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              class="menu-item"
+              disabled={!some}
+              onClick={() => {
+                close();
+                setPicked([]);
+              }}
+            >
+              Limpar seleção
+            </button>
+          </div>
+        )}
+      </Popover>
+      <button type="button" class="icon-btn bulk-exit" aria-label="Sair da seleção" data-tip="Sair da seleção (Esc)" onClick={leave}>
+        <Icon>
+          <path d="M6 6l12 12M18 6L6 18" />
+        </Icon>
+      </button>
+    </div>
+  );
   return (
     <div class="page-body">
       <h1 class="page-title">Transações</h1>
@@ -378,40 +481,6 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
         </button>
       </div>
 
-      {picking && (
-        <div class="bulk-bar">
-          <strong>{picked.length} selecionada{picked.length === 1 ? '' : 's'}</strong>
-          <button class="link" onClick={() => setPicked(order)}>Selecionar as {pickable.length} carregadas</button>
-          {data && data.total > rows.length && <span class="muted">{rows.length} de {data.total} no filtro; role a lista para carregar mais.</span>}
-          {picked.length > 0 && <button class="link" onClick={() => setPicked([])}>Limpar</button>}
-          <CategorySelect ariaLabel="Categoria das selecionadas" placeholder="Mudar categoria para..." value="" onChange={(category) => category !== '' && picked.length > 0 && void bulk({ category })} />
-          <label class="switch">
-            <input type="checkbox" checked={similar} onChange={(e) => setSimilar((e.currentTarget as HTMLInputElement).checked)} />
-            <span>Valer também para as de mesma descrição</span>
-          </label>
-          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ category: null })}>Voltar à categoria da fonte</button>
-          <Select
-            ariaLabel="Status das selecionadas"
-            placeholder="Mudar status..."
-            value=""
-            disabled={picked.length === 0}
-            options={[{ value: 'posted', label: 'Marcar lançadas' }, { value: 'pending', label: 'Marcar pendentes' }, { value: 'source', label: 'Status como a fonte diz' }]}
-            onChange={(value) => value !== '' && void bulk({ status: value === 'source' ? null : (value as 'posted' | 'pending') })}
-          />
-          <Select
-            ariaLabel="Mover as selecionadas para a fatura"
-            placeholder="Mover para a fatura..."
-            value=""
-            disabled={picked.length === 0}
-            options={[{ value: 'auto', label: 'Voltar ao automático' }, ...(cards.data?.cycles ?? []).map((c) => ({ value: c, label: `Fatura com venc. ${monthName(c)}` }))]}
-            onChange={(value) => value !== '' && void bulk({ cycleKey: value === 'auto' ? null : value })}
-          />
-          <button class="chip" disabled={picked.length === 0} onClick={() => (picked.length <= 20 || window.confirm(`Ignorar ${picked.length} transações? Elas saem dos totais até você restaurar.`)) && void bulk({ ignored: true })}>Ignorar</button>
-          <button class="chip" disabled={picked.length === 0} onClick={() => void bulk({ ignored: false })}>Restaurar</button>
-          {note && <span class="muted">{note}</span>}
-        </div>
-      )}
-
       {active.length > 0 && (
         <div class="active">
           {active.map((a) => (
@@ -419,7 +488,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
               {a.label} ×
             </button>
           ))}
-          <button class="link" onClick={() => navigate('transactions')}>Limpar tudo</button>
+          <button class="link" onClick={clearFilters}>Limpar tudo</button>
         </div>
       )}
 
@@ -461,10 +530,12 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
                   <strong>{brl(sums.net, hidden)}</strong>
                 </div>
               </div>
+              <div class={picking ? 'list-head picking' : 'list-head'}>
               <div class="list-bar">
                 <span class="muted">{rows.length < data.total ? `${rows.length} de ${data.total}` : `${data.total}`} {data.total === 1 ? 'transação' : 'transações'}</span>
                 <span class="grow" />
                 <Popover
+                  menu
                   align="right"
                   class="icon-btn"
                   label="Ordenar"
@@ -477,7 +548,7 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
                   }
                 >
                   {(close) => (
-                    <div class="menu" role="menu">
+                    <div class="menu" role="menu" aria-label="Ordenar por">
                       {SORTS.map((s) => (
                         <button
                           key={s.value}
@@ -491,6 +562,9 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
                           }}
                         >
                           {s.label}
+                          <svg class="menu-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M3 8.5l3.2 3L13 4.5" />
+                          </svg>
                         </button>
                       ))}
                     </div>
@@ -503,9 +577,19 @@ export function TransactionsPage({ route, now, hidden }: { route: Route; now: Da
                   </Icon>
                 </button>
               </div>
+              {picking && bulkBar}
+              {picking && note && (
+                <div class="bulk-note" role="status">
+                  <span>{note}</span>
+                  <button type="button" class="link" aria-label="Fechar aviso" onClick={() => setNote(null)}>
+                    ×
+                  </button>
+                </div>
+              )}
+              </div>
               {data.items.length === 0 ? (
                 <div class="empty">
-                  Nenhuma transação com esses filtros. <button class="link" onClick={() => navigate('transactions')}>Limpar filtros</button>
+                  Nenhuma transação com esses filtros. <button class="link" onClick={clearFilters}>Limpar filtros</button>
                 </div>
               ) : (
                 <ul

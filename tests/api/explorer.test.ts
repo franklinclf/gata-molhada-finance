@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { CanonicalAccount, CanonicalTransaction } from '../../src/core/canonical.ts';
 import { transactionDetail } from '../../src/api/detail.ts';
 import { amountInText, explore, type ExplorerQuery } from '../../src/api/explorer.ts';
-import { bulkEdit, saveGroup, removeGroup, addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
+import { bulkEdit, setTransactionName, saveGroup, removeGroup, addCategory, listCategories, removeCategory, renameCategory, setAccountHidden, setCategoryParent, setTransactionCategory, undoRename } from '../../src/api/mutations.ts';
 import { apiRoute, parseExplorer } from '../../src/api/routes.ts';
 import * as views from '../../src/api/views.ts';
 import { openSqliteStore } from '../../src/store/sqlite-store.ts';
@@ -423,4 +423,34 @@ test('parseExplorer: installment, source, origin and international', () => {
     const result = parseExplorer(new URLSearchParams(bad));
     assert.equal(result.ok, false, bad);
   }
+});
+
+test('explorer: uncategorized, named and refunded filters', () => {
+  const store = seeded();
+  const extra = [
+    txn('toy', { description: 'Toy store', amount: -4000, occurredAt: '2026-10-12T15:00:00Z' }),
+    txn('toyback', { description: 'Estorno de compra', amount: 4000, occurredAt: '2026-10-13T15:00:00Z', category: null }),
+  ];
+  const links = store.listAllTransactionLinks().map((l) => ({ ...l, matchPass: 0 }));
+  store.replaceCanonicalTransactions([...store.listCanonicalTransactions(), ...extra], [...links, ...extra.map((t) => ({ sourceId: 'pierre', externalId: `ext-${t.id}`, transactionId: t.id, matchPass: 0 }))], NOW.toISOString());
+
+  assert.ok(ids(explore(store, { ...base, uncategorized: true }, NOW)).includes('nocat'));
+  assert.ok(explore(store, { ...base, uncategorized: true }, NOW).items.every((t) => t.category === null));
+  assert.ok(!ids(explore(store, { ...base, uncategorized: true }, NOW)).includes('rent'));
+
+  assert.deepEqual(ids(explore(store, { ...base, refunded: true, foldRefunds: false }, NOW)), ['toy']);
+  assert.ok(ids(explore(store, { ...base, refunded: false, foldRefunds: false }, NOW)).includes('toyback'));
+
+  assert.deepEqual(ids(explore(store, { ...base, named: true }, NOW)), []);
+  assert.deepEqual(setTransactionName(store, 'rent', 'Aluguel de casa', NOW), { ok: true, changed: 1 });
+  assert.deepEqual(ids(explore(store, { ...base, named: true }, NOW)), ['rent']);
+});
+
+test('parseExplorer: uncategorized, named and refunded', () => {
+  const ok = parseExplorer(new URLSearchParams('uncategorized=true&named=true&refunded=true'));
+  assert.ok(ok.ok);
+  assert.deepEqual([ok.value.uncategorized, ok.value.named, ok.value.refunded], [true, true, true]);
+  const none = parseExplorer(new URLSearchParams('named=yes'));
+  assert.ok(none.ok);
+  assert.deepEqual([none.value.uncategorized, none.value.named, none.value.refunded], [false, false, false]);
 });

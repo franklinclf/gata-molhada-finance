@@ -48,15 +48,33 @@ export function isWholeYear(year: number, range: Range, today: string): boolean 
   return range.from === whole.from && range.to === whole.to;
 }
 
-/** Reads dd/mm/aaaa (day and month may have one digit) as YYYY-MM-DD; null when it is not a real day or is before the first year. */
-export function parseDay(text: string): string | null {
-  const m = /^\s*(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{4})\s*$/.exec(text);
-  if (!m) return null;
-  const [day, month, year] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  if (year < FIRST_YEAR || month < 1 || month > 12 || day < 1) return null;
-  const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  if (day > last) return null;
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+/** Number of days of a month (YYYY-MM), leap years included. */
+export const daysInMonth = (key: string): number => new Date(Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)), 0)).getUTCDate();
+
+/** The last day a month offers: its real length, but not past today for the current month (the app has no future days there). */
+export const lastDayOf = (key: string, today: string): number => (key === today.slice(0, 7) ? Number(today.slice(8, 10)) : daysInMonth(key));
+
+/**
+ * The days the "De" and "Até" pickers offer, as numbers 1..31 limited to the month's real length. Inside a single month the two sides
+ * cannot cross. Empty when the range has no start and end yet (no month chosen).
+ */
+export function dayBounds(range: Range, side: 'from' | 'to', today: string): { min: number; max: number } | null {
+  if (range.from === undefined || range.to === undefined) return null;
+  const key = (side === 'from' ? range.from : range.to).slice(0, 7);
+  const sameMonth = range.from.slice(0, 7) === range.to.slice(0, 7);
+  const min = side === 'to' && sameMonth ? Number(range.from.slice(8, 10)) : 1;
+  const max = side === 'from' && sameMonth ? Number(range.to.slice(8, 10)) : lastDayOf(key, today);
+  return { min, max };
+}
+
+/** Sets the start or end day inside the month it already has; a day outside what the month offers is pulled in. */
+export function withDay(range: Range, side: 'from' | 'to', day: number, today: string): Range {
+  const bounds = dayBounds(range, side, today);
+  if (!bounds) return range;
+  const current = side === 'from' ? range.from! : range.to!;
+  const clamped = Math.min(Math.max(day, bounds.min), bounds.max);
+  const next = `${current.slice(0, 8)}${String(clamped).padStart(2, '0')}`;
+  return side === 'from' ? { from: next, to: range.to } : { from: range.from, to: next };
 }
 
 /** YYYY-MM-DD as dd/mm/aaaa; empty for no day. */

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { activePreset, coverage, formatDay, isWholeYear, parseDay, pickMonth, rangeLabel, RANGE_PRESETS, yearRange } from '../../web/src/month-range.ts';
+import { activePreset, coverage, dayBounds, daysInMonth, formatDay, isWholeYear, lastDayOf, withDay, pickMonth, rangeLabel, RANGE_PRESETS, yearRange } from '../../web/src/month-range.ts';
 
 const today = '2026-11-15';
 
@@ -29,16 +29,32 @@ test('coverage tells full, partial and untouched months', () => {
   assert.equal(coverage('2026-06', {}, today), 'full');
 });
 
-test('typed days are parsed strictly', () => {
-  assert.equal(parseDay('05/03/2026'), '2026-03-05');
-  assert.equal(parseDay(' 5/3/2026 '), '2026-03-05');
-  assert.equal(parseDay('31/02/2026'), null);
-  assert.equal(parseDay('29/02/2028'), '2028-02-29');
-  assert.equal(parseDay('10/10/2025'), null);
-  assert.equal(parseDay('2026-03-05'), null);
-  assert.equal(parseDay('10/13/2026'), null);
+test('days offered follow the real length of the month', () => {
+  assert.deepEqual([daysInMonth('2026-02'), daysInMonth('2028-02'), daysInMonth('2026-04'), daysInMonth('2026-12')], [28, 29, 30, 31]);
+  assert.equal(lastDayOf('2026-02', '2026-05-10'), 28);
+  // The current month stops at today.
+  assert.equal(lastDayOf('2026-05', '2026-05-10'), 10);
   assert.equal(formatDay('2026-03-05'), '05/03/2026');
   assert.equal(formatDay(undefined), '');
+});
+
+test('day pickers need a range, and inside one month the two sides cannot cross', () => {
+  assert.equal(dayBounds({}, 'from', today), null);
+  assert.equal(dayBounds({ from: '2026-03-01' }, 'to', today), null);
+  const span = { from: '2026-02-01', to: '2026-04-30' };
+  assert.deepEqual([dayBounds(span, 'from', today), dayBounds(span, 'to', today)], [{ min: 1, max: 28 }, { min: 1, max: 30 }]);
+  const one = { from: '2026-03-05', to: '2026-03-20' };
+  assert.deepEqual([dayBounds(one, 'from', today), dayBounds(one, 'to', today)], [{ min: 1, max: 20 }, { min: 5, max: 31 }]);
+});
+
+test('withDay keeps the month and pulls an out of range day inside', () => {
+  const span = { from: '2026-02-01', to: '2026-04-30' };
+  assert.deepEqual(withDay(span, 'from', 15, today), { from: '2026-02-15', to: '2026-04-30' });
+  assert.deepEqual(withDay(span, 'from', 31, today), { from: '2026-02-28', to: '2026-04-30' });
+  assert.deepEqual(withDay(span, 'to', 0, today), { from: '2026-02-01', to: '2026-04-01' });
+  const one = { from: '2026-03-05', to: '2026-03-20' };
+  assert.deepEqual(withDay(one, 'to', 2, today), { from: '2026-03-05', to: '2026-03-05' });
+  assert.deepEqual(withDay({}, 'from', 3, today), {});
 });
 
 test('presets and labels', () => {

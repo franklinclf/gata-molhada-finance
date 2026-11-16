@@ -3,6 +3,7 @@ import { useRef, useState } from 'preact/hooks';
 import { brl, dayMonth, foreignMoney, localDay } from './format.ts';
 import { sourceLabel, theSource } from './names.ts';
 import { hrefFor } from './router.ts';
+import { Checkbox } from './Checkbox.tsx';
 import { HOLD_MS, movedTooFar } from './row-selection.ts';
 
 export function Loading({ error }: { error?: string | null }) {
@@ -53,7 +54,7 @@ export function CheckList({ options, selected, onChange, searchable = true, maxH
         {visible.length === 0 && <div class="muted">Nada encontrado</div>}
         {visible.map((o) => (
           <label key={o.value} class="option">
-            <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)} />
+            <Checkbox state={selected.includes(o.value)} label={o.label || 'Sem categoria'} onChange={() => toggle(o.value)} />
             <span class="grow clip">{o.label || 'Sem categoria'}</span>
             {o.count !== undefined && <span class="muted">{o.count}</span>}
           </label>
@@ -127,13 +128,14 @@ export function StatusBadge({ status }: { status: string }) {
   return <span class={`badge ${tone}`}>{text}</span>;
 }
 
+/** Short chip texts. The first two and `billed` have no control anymore: they stay for old links. */
 export const STATE_LABEL: Record<string, string> = {
-  confirmed: 'Confirmada pelas duas fontes',
-  single_source: 'Só uma fonte tem (normal)',
-  conflict: 'Fontes discordam do status',
-  stale_pending: 'Pendente que o banco não mostra (fora dos totais)',
-  billed: 'Pendente confirmada pela fatura do cartão',
-  ignored: 'Ignorada por você (fora dos totais)',
+  confirmed: 'Confirmadas',
+  single_source: 'Em uma fonte',
+  conflict: 'Fontes divergem',
+  stale_pending: 'Pendentes sumidas',
+  billed: 'Pendentes na fatura',
+  ignored: 'Ignoradas',
 };
 
 /** What a row needs to take part in a selection: its state, a toggle (with Shift held for a range) and the press-and-hold that starts selecting. */
@@ -196,11 +198,11 @@ export function TxRow({ t, hidden, onOpen, pick: wanted }: { t: { id: string; es
       tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && act(e.shiftKey)}
     >
-      {pick?.active && (
-        // The padding makes the touch target about 44 px; the label's own click must not reach the row, or the row would toggle twice.
-        <label class="tx-pick" onClick={(e) => e.stopPropagation()}>
-          <input type="checkbox" checked={pick.on} aria-label="Selecionar" onClick={(e) => e.stopPropagation()} onChange={() => pick.toggle(false)} />
-        </label>
+      {/* The gutter is there with selection off too (empty), so a row does not shift when the mode turns on. */}
+      {wanted && (
+        <span class="tx-gutter">
+          {pick?.active && <Checkbox class="tx-pick" state={pick.on} label="Selecionar" onChange={() => pick.toggle(false)} />}
+        </span>
       )}
       <div class="grow">
         {/* A name the owner gave keeps the bank text at hand. */}

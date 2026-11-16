@@ -23,6 +23,9 @@ window.addEventListener('load', () => {
     // `__clickText=<text>` clicks the first button or link whose text is exactly that.
     const t = /__clickText=([^&]+)/.exec(location.hash);
     // It waits a moment, so a click on a menu button can draw the menu first.
+    // `__clicks=<selector>|<selector>...` clicks each one in turn, to photograph a state that takes several steps.
+    const c = /__clicks=([^&]+)/.exec(location.hash);
+    if (c) decodeURIComponent(c[1]).split('|').forEach((sel, i) => setTimeout(() => document.querySelector(sel)?.click(), i * 350));
     if (t) setTimeout(() => [...document.querySelectorAll('button, a')].find((el) => el.textContent.trim().replace(/\s*[›▾]$/, '') === decodeURIComponent(t[1]))?.click(), m ? 400 : 0);
   }, 1800);
 });
