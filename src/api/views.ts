@@ -53,6 +53,11 @@ function liveTransactions(store: Store, range: DateRange, opts: ViewOptions): Ef
   return effectiveTransactions(store, opts).filter((t) => !t.excluded && inWindow(localDay(t.occurredAt), range));
 }
 
+/** A bill paid this long ago can still be inside the issuer's balance. */
+const RECENT_PAID_DAYS = 30;
+/** Cents of difference allowed between a paid bill and the part of the balance it explains. */
+const LAG_TOLERANCE = 100;
+
 // ---------- balances ----------
 
 export type { Stamped };
@@ -147,6 +152,30 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
   const plannedOf = (id: string, key: string) => plan.purchases.filter((p) => p.accountId === id).reduce((s, p) => s + p.slots.filter((x) => x.cycle === key && x.inferred && x.status !== 'future').length * p.amount, 0);
   const futureOf = (id: string) => plan.purchases.filter((p) => p.accountId === id).reduce((s, p) => s + p.slots.filter((x) => x.status === 'future').length * p.amount, 0);
 
+  /**
+   * Bills of this card the app counts as paid that fell due recently, newest first. An issuer that is slow to update (Bradesco) keeps
+   * a bill that was just paid in its balance for a few days, and the balance estimate of the open cycle would carry it to the next bill.
+   */
+  const recentlyPaidOf = (id: string): Cents[] =>
+    (allCycles.get(id) ?? [])
+      .filter((c) => c.status === 'paid' && c.billTotal !== null && c.billTotal > 0 && c.dueDate <= today && c.dueDate >= addDays(today, -RECENT_PAID_DAYS))
+      .sort((x, y) => y.dueDate.localeCompare(x.dueDate))
+      .map((c) => c.billTotal as Cents);
+  /**
+   * What the balance still holds of those bills: when the estimate is more than the charges the app knows by at least the
+   * amount of a recently paid bill, that bill is taken as still inside the balance. Several can be, newest first.
+   */
+  const unreflectedPaid = (paid: Cents[], excess: Cents): Cents => {
+    let left = excess;
+    let lag = 0;
+    for (const amount of paid) {
+      if (amount > left + LAG_TOLERANCE) continue;
+      lag += amount;
+      left -= amount;
+    }
+    return lag;
+  };
+
   const outstandingOf = (id: string) => (allCycles.get(id) ?? []).reduce((s, c) => s + c.outstanding, 0);
   const nextDueOf = (id: string): string | null => {
     const list = allCycles.get(id) ?? [];
@@ -171,7 +200,8 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
       else if (cycle.status !== 'open') total = posted + planned;
       else if (a.limitGroupId === null) {
         // The balance covers every unpaid bill of the card, so the estimate takes all of them out, also when one month is chosen.
-        total = Math.max(a.balance - outstandingOf(a.id) - futureOf(a.id), posted + planned);
+        const estimate = a.balance - outstandingOf(a.id) - futureOf(a.id);
+        total = Math.max(estimate - unreflectedPaid(recentlyPaidOf(a.id), estimate - posted - planned), posted + planned);
         estimated = total !== posted + planned;
       } else total = posted + planned;
     }
@@ -205,7 +235,9 @@ export function cards(store: Store, now: Date, opts: ViewOptions = {}, cycleChoi
     const members = g.memberIds.reduce((s, id) => s + outstandingOf(id) + futureOf(id), 0);
     // The open total of a shared limit is never less than what is already posted on its cards.
     const posted = g.memberIds.reduce((s, id) => s + (rows.find((r) => r.id === id)?.posted ?? 0) + (rows.find((r) => r.id === id)?.plannedInstallments ?? 0), 0);
-    return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max((first?.balance ?? 0) - members, posted, 0), unexplained: Math.max((first?.balance ?? 0) - members - posted, 0) };
+    const estimate = (first?.balance ?? 0) - members;
+    const lag = unreflectedPaid(g.memberIds.flatMap(recentlyPaidOf).sort((x, y) => y - x), estimate - posted);
+    return { id: g.id, institution: g.institution, creditLimit: g.creditLimit, used: g.creditLimit - available, available, cardIds: g.memberIds, openEstimate: Math.max(estimate - lag, posted, 0), unexplained: Math.max(estimate - lag - posted, 0) };
   });
 
   // A shared limit reports one balance for all its cards, so in the open cycle the group counts once.
