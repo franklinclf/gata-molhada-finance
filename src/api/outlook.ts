@@ -4,7 +4,7 @@ import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
 import { installments } from './installments.ts';
-import { groupBill, incomeEvents, monthlyDays } from './projection.ts';
+import { groupBill, incomeEvents, loanDays, monthlyDays } from './projection.ts';
 import { detectRecurring, isExpected, type RecurringItem } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
 import { stamp, type Stamped } from './stamp.ts';
@@ -141,7 +141,12 @@ export function outlook(store: Store, now: Date, opts: ViewOptions = {}): Outloo
   const events: Raw[] = [...billsInWindow];
   for (const r of recurring) {
     if (r.account === 'card' || r.direction !== 'out') continue;
-    const days = monthlyDays(r.nextDay, r.dayOfMonth, today, until);
+    // A loan is projected from its own installments, which end at its last due day.
+    if (r.remaining) {
+      for (const s of loanDays(r, today, until)) events.push({ day: s.day < today ? today : s.day, name: r.name, amount: s.amount, direction: 'out', kind: 'recurring', origin: `parcela do empréstimo, vence em ${shortDay(s.day)}`, late: s.day < today && r.late, estimate: false });
+      continue;
+    }
+    const days = monthlyDays(r.nextDay, r.dayOfMonth, today, until).filter((d) => r.endsOn === undefined || d <= r.endsOn);
     if (r.nextDay < today) days.unshift(today);
     for (const day of days) {
       const isLate = r.nextDay < today && day === today;

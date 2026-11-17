@@ -38,7 +38,7 @@ export interface CategorizerResult {
 }
 
 /** Decided by facts (the source's words, the documents, the bills), never by the model. */
-const DECIDED_BY_FACTS = new Set(['Transferência entre minhas contas', 'Pagamento de fatura', 'Investimentos']);
+const DECIDED_BY_FACTS = new Set(['Transferência entre minhas contas', 'Pagamento de fatura', 'Investimentos', 'Pagamento de empréstimo']);
 
 const SCHEMA = (allowed: string[]) => ({
   name: 'categories',

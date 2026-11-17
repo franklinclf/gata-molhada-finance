@@ -12,6 +12,7 @@ import { namesWithSeries } from './series.ts';
 import { merchantOf } from '../core/merchant.ts';
 import { counterpartyOf, evidenceRole, ownerNames, roleOf, slipBillPayments, type Role } from './roles.ts';
 import { publishedSourceBills } from './cycles.ts';
+import { matchAllLoans } from './loans.ts';
 import type { Store, StoredSourceBill } from '../store/store.ts';
 
 export interface ViewOptions {
@@ -78,7 +79,7 @@ export function resolveAlias(aliases: Map<string, string>, name: string): string
 }
 
 /** Key that a category rule matches on. */
-const ROLE_CATEGORY: Record<Role, string> = { card_payment: 'Pagamento de fatura', own_transfer: 'Transferência entre minhas contas', investment: 'Investimentos' };
+const ROLE_CATEGORY: Record<Role, string> = { card_payment: 'Pagamento de fatura', own_transfer: 'Transferência entre minhas contas', investment: 'Investimentos', loan_payment: 'Pagamento de empréstimo' };
 
 const ROLE_CATEGORY_NAMES = new Set(Object.values(ROLE_CATEGORY));
 
@@ -146,7 +147,8 @@ function bankBillOf(parties: Parties | undefined, billMonth: Map<string, string>
 
 export function effectiveTransactions(
   store: Store,
-  options: ViewOptions & { accountId?: string; includeExcluded?: boolean } = {},
+  /** `withoutLoans` skips the pass that marks loan installments: the loan view needs the rows as they are before it. */
+  options: ViewOptions & { accountId?: string; includeExcluded?: boolean; withoutLoans?: boolean } = {},
   accounts: CanonicalAccount[] = visibleAccounts(store, options),
 ): EffectiveTransaction[] {
   const ids = new Set(accounts.map((a) => a.id));
@@ -228,6 +230,10 @@ export function effectiveTransactions(
       return { ...t, status, state: revived ? 'single_source' : t.state, excluded: revived ? false : t.excluded, installment, category, categoryOrigin: origin, sourceCategory: t.category, sourceLabels: labels, role, counterparty, mcc: parties?.mcc ?? null, operation: parties?.operation ?? null, foreign: parties?.foreign ?? null, reversal: null, billCycle, billByBank: word?.cycleKey == null && bankBill !== null, statusByUser: word?.status != null, statusByBill: byBill, title: titleOf({ description: t.description, amount: t.amount, role, operation: parties?.operation ?? null, counterparty }), customName: null };
     });
   const mirrored = ownMirrors(built, cardIds);
+  // The debits that pay an installment of a registered loan. Matched over rows that have no loan role yet (the mirror role counts), so it cannot loop.
+  const loans = options.withoutLoans ? [] : store.listLoans();
+  const loanPaid = new Set<string>();
+  if (loans.length > 0) for (const byInstallment of matchAllLoans(loans, built.filter((t) => !mirrored.has(t.id))).values()) for (const id of byInstallment.values()) loanPaid.add(id);
   // The names the owner gave. An installment purchase is grouped over every account, like the plan of installments, so the
   // name of a purchase is the same on every screen.
   const names = store.listTransactionNames();
@@ -235,6 +241,7 @@ export function effectiveTransactions(
   const rows = built
     .filter((t) => ids.has(t.accountId) && (options.accountId === undefined || t.accountId === options.accountId))
     .map((t) => (mirrored.has(t.id) ? { ...t, role: 'own_transfer' as const, category: ROLE_CATEGORY.own_transfer, title: titleOf({ description: t.description, amount: t.amount, role: 'own_transfer', operation: t.operation, counterparty: t.counterparty }) } : t))
+    .map((t) => (loanPaid.has(t.id) ? { ...t, role: 'loan_payment' as const, category: ROLE_CATEGORY.loan_payment, title: titleOf({ description: t.description, amount: t.amount, role: 'loan_payment', operation: t.operation, counterparty: t.counterparty }) } : t))
     .map((t) => {
       const name = nameOf?.get(t.id);
       return name === undefined ? t : { ...t, customName: name, title: namedTitle(name, t.installment) };

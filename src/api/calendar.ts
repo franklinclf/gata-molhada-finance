@@ -2,7 +2,7 @@ import { addDays, lastDayOf } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
 import { cyclesFor } from './cycles.ts';
-import { groupBill, incomeEvents, monthlyDays } from './projection.ts';
+import { groupBill, incomeEvents, loanDays, monthlyDays } from './projection.ts';
 import { detectRecurring, isExpected, type RecurringItem } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type EffectiveTransaction, type ViewOptions } from './scope.ts';
 import { cards, cashFlow } from './views.ts';
@@ -53,13 +53,18 @@ function projectedByDay(store: Store, recurring: RecurringItem[], now: Date, opt
   // Money out of the bank: recurring payments. One that is late has not shown up and is still expected today, once; the next ones keep their days.
   for (const r of recurring) {
     if (r.account === 'card' || r.direction !== 'out' || !isExpected(r)) continue;
+    // A loan is projected from its own installments, which end at its last due day.
+    if (r.remaining) {
+      for (const s of loanDays(r, today, until)) add(s.day, { name: r.name, amount: s.amount, direction: 'out', kind: 'recurring', late: s.day < today && r.late });
+      continue;
+    }
     // Rent paid in parts: what is still due this month comes first, the ones after it are the whole.
     let amount = r.rest ?? r.amount;
     if (r.nextDay < today) {
       add(r.nextDay, { name: r.name, amount, direction: 'out', kind: 'recurring', late: r.late });
       amount = r.amount;
     }
-    for (const day of monthlyDays(r.nextDay, r.dayOfMonth, today, until)) {
+    for (const day of monthlyDays(r.nextDay, r.dayOfMonth, today, until).filter((d) => r.endsOn === undefined || d <= r.endsOn)) {
       add(day, { name: r.name, amount, direction: 'out', kind: 'recurring', late: false });
       amount = r.amount;
     }

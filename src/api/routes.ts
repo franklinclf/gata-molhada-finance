@@ -12,6 +12,7 @@ import { createGoal, deleteGoal, listGoals, updateGoal, type GoalResult } from '
 import { calendar } from './calendar.ts';
 import { outlook } from './outlook.ts';
 import { detectRecurring, ignoredRecurring, ignoreRecurring, markRecurring, overrideRecurring } from './recurring.ts';
+import { createLoan, deleteLoan, loansView, type LoanResult } from './loans.ts';
 import { createManual, deleteManual, updateManual, type ManualResult } from './manual.ts';
 import { compareMonths, isMonth } from './compare.ts';
 import { categoryTrend } from './trends.ts';
@@ -263,6 +264,18 @@ export function apiRoute(method: string, pathname: string, params: URLSearchPara
       if (method !== 'PUT') return methodNotAllowed();
       const input = parseBody(body);
       return input ? asResult(updateManual(store, id, input, now)) : badRequest('body must be an object');
+    }
+    case 'loans': {
+      const asResult = <T,>(r: LoanResult<T>): ApiResult => (r.ok ? { status: 200, body: r.value } : { status: r.status, body: { error: r.error } });
+      if (parts.length === 2) {
+        if (method === 'GET') return { status: 200, body: loansView(store, now) };
+        if (method !== 'POST') return methodNotAllowed();
+        const input = parseBody(body);
+        return input ? asResult(createLoan(store, input, now)) : badRequest('body must be { name, accountId, principal, total, installments, firstDue, takenOn }');
+      }
+      const loanId = numericId(id);
+      if (parts.length !== 3 || !Number.isInteger(loanId)) return null;
+      return method === 'DELETE' ? asResult(deleteLoan(store, loanId, now)) : methodNotAllowed();
     }
     case 'networth': {
       if (parts.length !== 2) return null;

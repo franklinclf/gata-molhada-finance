@@ -29,7 +29,7 @@ const FIELDS: Array<{ id: string; label: string; kind: 'text' | 'number' | 'date
   { id: 'date', label: 'Data', kind: 'date' },
   { id: 'direction', label: 'Direção', kind: 'enum', options: [['out', 'Saída'], ['in', 'Entrada']] },
   { id: 'status', label: 'Status', kind: 'enum', options: [['posted', 'Lançada'], ['pending', 'Pendente']] },
-  { id: 'role', label: 'Papel', kind: 'enum', options: [['none', 'Nenhum'], ['card_payment', 'Pagamento de fatura'], ['own_transfer', 'Entre contas suas'], ['investment', 'Investimento']] },
+  { id: 'role', label: 'Papel', kind: 'enum', options: [['none', 'Nenhum'], ['card_payment', 'Pagamento de fatura'], ['own_transfer', 'Entre contas suas'], ['investment', 'Investimento'], ['loan_payment', 'Pagamento de empréstimo']] },
 ];
 const fieldOf = (id: string) => FIELDS.find((f) => f.id === id) ?? FIELDS[0]!;
 const opsFor = (field: string) => (fieldOf(field).kind === 'text' ? TEXT_OPS : fieldOf(field).kind === 'enum' ? ENUM_OPS : NUMBER_OPS);

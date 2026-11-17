@@ -1,6 +1,7 @@
 import { addMonths, lastDayOf } from '../core/dates.ts';
 import { DATA_START_MONTH, localDay } from '../core/time.ts';
 import type { Store } from '../store/store.ts';
+import { loansView } from './loans.ts';
 import { cleanCategoryName } from './mutations.ts';
 import { effectiveTransactions, visibleAccounts, type ViewOptions } from './scope.ts';
 import { cards } from './views.ts';
@@ -66,11 +67,15 @@ export function netWorth(store: Store, now: Date, opts: ViewOptions = {}, months
   const debtNow = cards(store, now, opts).totals.reportedByIssuer;
   const manual = store.listAssets();
   const active = manual.filter((a) => !a.archived);
+  const shown = new Set(accounts.map((a) => a.id));
+  const loans = loansView(store, now).items.filter((l) => shown.has(l.accountId));
 
   const items: NetWorthItem[] = [
     ...bank.map((a): NetWorthItem => ({ name: accountLabel(a, bank), kind: 'bank', value: Math.max(a.balance, 0), liability: false })),
     ...bank.filter((a) => a.balance < 0).map((a): NetWorthItem => ({ name: `${accountLabel(a, bank)} (saldo negativo)`, kind: 'bank', value: -a.balance, liability: true })),
     ...(debtNow > 0 ? [{ name: 'Dívida no cartão (saldo informado pelo banco)', kind: 'card' as const, value: debtNow, liability: true }] : []),
+    // No data about the loan comes from the bank: the debt is what is left of the registered installments.
+    ...loans.filter((l) => l.remaining > 0).map((l): NetWorthItem => ({ name: `Empréstimo ${l.name} (parcelas restantes)`, kind: 'manual', value: l.remaining, liability: true })),
     ...active.flatMap((a): NetWorthItem[] => {
       const value = valueOn(a.values, today);
       return value === null ? [] : [{ name: a.name, kind: 'manual', value, liability: a.kind === 'liability', assetId: a.id }];
@@ -96,6 +101,8 @@ export function netWorth(store: Store, now: Date, opts: ViewOptions = {}, months
     const debtAt = Math.max(0, debtNow + after.filter((t) => cardIds.has(t.accountId)).reduce((s, t) => s + t.amount, 0));
     let a = Math.max(bankAt, 0);
     let l = debtAt + Math.max(-bankAt, 0);
+    // The loan's cash is in the balance from the day it came in, so its debt is counted from then: the installments not yet due on that day.
+    for (const loan of loans) if (loan.takenOn <= day) l += loan.schedule.filter((i) => i.day > day).reduce((sum, i) => sum + i.amount, 0);
     for (const asset of active) {
       const v = valueOn(asset.values, day);
       if (v === null) continue;

@@ -138,3 +138,11 @@ export function incomeEvents(store: Store, recurring: RecurringItem[], today: st
   }
   return { source, events };
 }
+
+/**
+ * The days a loan's open installments fall on, each with its own amount. The first one already past is still owed and comes
+ * first (the caller places it today); older unmatched ones are not stacked on top of it.
+ */
+export function loanDays(r: RecurringItem, today: string, until: string): Array<{ day: string; amount: number }> {
+  return (r.remaining ?? []).filter((s, i) => (i === 0 || s.day >= today) && s.day <= until && (r.endsOn === undefined || s.day <= r.endsOn));
+}

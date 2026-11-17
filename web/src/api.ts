@@ -4,6 +4,7 @@ import type { Device, Layout, LayoutItem, WidgetId } from '../../src/api/layout.
 import type { AiRunReply } from '../../src/ai/job.ts';
 import type { AiView, Decision, DecisionStatus, Suggestion } from '../../src/api/ai.ts';
 import type { IncomeItem } from '../../src/store/store.ts';
+import type { LoansView } from '../../src/api/loans.ts';
 import type { ForecastView } from '../../src/api/forecast.ts';
 import type { Candidate, CategoryRow } from '../../src/api/mutations.ts';
 import type { Cycle } from '../../src/api/cycles.ts';
@@ -30,6 +31,7 @@ import type { ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine }
 
 export type { AccountPreview, AccountPreviewLine, ApplyResult, BillImportView, BillPreview, ImageOnly, PreviewLine };
 
+export type { LoansView, LoanView, LoanInstallment, InstallmentStatus } from '../../src/api/loans.ts';
 export type { BillCheckView, RuleSuggestion, AnalystReply, ChatConversation, ChatMessage, ChangeView, ChatMessageView, GoalView, CalendarView, CalendarDay, OutlookView, RecurringItem, TrendView, CompareView, NetWorthView, BudgetLine, BudgetsView, SuggestionLine, ImportReport, Rule, RuleConditions, RulePreview, RuleRow, AiView, Decision, DecisionStatus, ForecastView, Suggestion, InstallmentPurchase, InstallmentSlot, Candidate, BalancesView, BillsView, CardsView, CashFlowView, CategoryRow, Cycle, ExplorerResult, FreshnessView, InstallmentsView, Device, Layout, LayoutItem, SpendingView, TransactionDetail, WidgetId };
 
 export interface SecurityView {
@@ -260,6 +262,10 @@ export const api = {
   saveIncome: (id: number | null, item: Omit<IncomeItem, 'id'>) =>
     request<{ id: number }>(id === null ? '/api/income' : `/api/income/${id}`, { method: id === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) }),
   deleteIncome: (id: number) => request<Record<string, never>>(`/api/income/${id}`, { method: 'DELETE' }),
+  loans: () => request<LoansView>('/api/loans'),
+  createLoan: (input: { name: string; accountId: string; principal: number; total: number; installments: number; firstDue: string; takenOn: string }) =>
+    request<{ id: number }>('/api/loans', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }),
+  deleteLoan: (id: number) => request<Record<string, never>>(`/api/loans/${id}`, { method: 'DELETE' }),
   saveGroup: (current: string | null, name: string, members: string[]) =>
     request<{ ok: true }>(current === null ? '/api/category-groups' : `/api/category-groups/${encodeURIComponent(current)}`, { method: current === null ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) }),
   deleteGroup: (name: string) => request<{ ok: true }>(`/api/category-groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),
