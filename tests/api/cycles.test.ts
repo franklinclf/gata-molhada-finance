@@ -721,3 +721,18 @@ test('a bill published gross of a credit the bank had already discounted takes t
   assert.equal(totalOf(), 85000);
   assert.equal(cyclesFor(store, k, [], '2026-10-27').find((c) => c.key === '2026-09')?.billTotal, 60000, 'other months keep their published total');
 });
+
+test('cards view: a bill just paid that the issuer still holds in its balance is not carried into the open cycle', () => {
+  const { store, card1 } = setup();
+  // The bank has not yet taken the 680,00 payment of the October bill out of its balance: 680,00 plus 25,00 of open charges.
+  store.replaceCanonicalAccounts([{ ...card1, balance: 70500 }], [], NOW.toISOString());
+  const row = cards(store, NOW).cards[0]!;
+  assert.deepEqual([row.cycle?.key, row.total, row.estimated, row.outstanding], ['2026-11', 2500, true, 0]);
+});
+
+test('cards view: a balance that holds more than a recent payment plus the open charges keeps the rest as the estimate', () => {
+  const { store, card1 } = setup();
+  // 680,00 still held for the paid bill, 500,00 of charges the app knows and 90,00 more the bank has not listed.
+  store.replaceCanonicalAccounts([{ ...card1, balance: 68000 + 500 + 9000 }], [], NOW.toISOString());
+  assert.equal(cards(store, NOW).cards[0]!.total, 9500);
+});
