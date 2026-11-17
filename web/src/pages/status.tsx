@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'preact/hooks';
-import { ButtonLink } from '../ds.tsx';
+import { Button, ButtonLink } from '../ds.tsx';
 import { api, type FreshnessView } from '../api.ts';
 import { Meter } from '../charts.tsx';
 import { ago, localDay, maskMoney } from '../format.ts';
@@ -54,6 +54,8 @@ function alertText(event: string, code: string | null, message: string | null): 
 export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidden: boolean; embedded?: boolean }) {
   const [watch, setWatch] = useState<Watch | null>(null);
   const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  // Windows the browser would not open together with the first one: each needs a click of its own.
+  const [blockedTargets, setBlockedTargets] = useState<Target[]>([]);
   // While a refresh is followed, the read is checked every few seconds instead of every minute.
   const fresh = useLoad(() => api.freshness(), [], watch ? 4_000 : 60_000);
   const findings = useLoad(() => api.findings(), []);
@@ -84,9 +86,19 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
     if (popups.length > 0) event.preventDefault();
     const institutions = targets.flatMap((t) => t.institutions);
     setWatch({ institutions, before: Object.fromEntries((fresh.data?.sources ?? []).map((src) => [src.institution, src.lastUpdatedAt])), until: Date.now() + WATCH_MS, popups });
-    const blocked = targets.length - popups.length;
-    setRefreshNote(popups.length > 0 && blocked > 0 ? `O navegador bloqueou ${blocked} ${blocked === 1 ? 'janela' : 'janelas'}. Permita pop-ups para este site e toque em Atualizar de novo.` : null);
+    // A browser lets one click open one window; the others wait for their own click, in the buttons below the list.
+    const opened = new Set(popups.map((p) => p.institutions.join('|')));
+    const waiting = popups.length > 0 ? targets.filter((t) => !opened.has(t.institutions.join('|'))) : [];
+    setBlockedTargets(waiting);
+    setRefreshNote(waiting.length > 0 ? 'O navegador abre uma janela por clique. Abra as outras nos botões abaixo, ou permita pop-ups para este site.' : null);
     api.watchSources().catch(() => setRefreshNote('O app não conseguiu conferir com mais frequência agora. Os dados novos entram pelo aviso do Meu Pluggy ou na conferência seguinte.'));
+  };
+  /** Opens one of the windows the browser held back, and adds it to the ones that are followed and closed. */
+  const openWaiting = (target: Target) => {
+    const window = openMeuPluggy(target.link, watch?.popups.length ?? 0);
+    if (!window) return;
+    setBlockedTargets((list) => list.filter((t) => t !== target));
+    setWatch((w) => (w ? { ...w, popups: [...w.popups, { institutions: target.institutions, window }] } : w));
   };
   useEffect(() => {
     if (!watch || !fresh.data) return;
@@ -97,11 +109,14 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
     for (const p of watch.popups) if (finished || p.institutions.every((i) => done.includes(i))) p.window.close();
     if (!finished && Date.now() < watch.until) return;
     for (const p of watch.popups) p.window.close();
+    // A window the browser refuses to close from here (Meu Pluggy can cut the link between the two) stays for the owner to close.
+    const stuck = watch.popups.some((p) => !p.window.closed);
     setWatch(null);
+    setBlockedTargets([]);
     if (done.length > 0) invalidateData();
     setRefreshNote(
       finished
-        ? `Pronto: ${done.join(', ')} ${done.length === 1 ? 'foi lido' : 'foram lidos'} agora, e os números já estão atualizados.`
+        ? `Pronto: ${done.join(', ')} ${done.length === 1 ? 'foi lido' : 'foram lidos'} agora, e os números já estão atualizados.${stuck ? ' O navegador não deixou fechar a janela do Meu Pluggy: feche você.' : ''}`
         : `${done.length > 0 ? `Lido agora: ${done.join(', ')}. ` : ''}O Meu Pluggy não terminou ${done.length > 0 ? 'os outros ' : ''}em 10 minutos. Quando terminar, o aviso dele traz os dados, e o app confere de novo a cada 30 minutos.`,
     );
   }, [fresh.data, watch]);
@@ -164,6 +179,15 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
           </ul>
         )}
         {refreshNote && <div class="note" role="status">{refreshNote}</div>}
+        {watch && blockedTargets.length > 0 && (
+          <div class="actions">
+            {blockedTargets.map((t) => (
+              <Button key={t.link + t.institutions.join()} size="sm" onClick={() => openWaiting(t)}>
+                Abrir {t.institutions.length > 2 ? `${t.institutions.slice(0, 2).join(', ')}…` : t.institutions.join(', ')}
+              </Button>
+            ))}
+          </div>
+        )}
         <div class="note">As horas são de quando o Meu Pluggy leu cada banco, o que ele faz sozinho uma vez por dia. O Pluggy não deixa outro app pedir essa leitura, só o próprio Meu Pluggy. Por isso "Atualizar" abre a conexão no Meu Pluggy numa janela pequena: toque em Atualizar lá, e o app acompanha, lê os dados assim que o banco responder e fecha a janela. Fora disso, o aviso do Meu Pluggy (webhook) traz os dados novos em segundos, e o app confere por garantia a cada 30 minutos.</div>
       </section>
       <section class="panel">
