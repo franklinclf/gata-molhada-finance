@@ -59,6 +59,7 @@ const ROUTES: Array<[string, string, number]> = [
   ['analista', 'chat?c=1', 1100],
   ['calendario', 'calendar', 1500],
   ['contas', 'accounts', 1200],
+  ['contas-emprestimo', `accounts?__clickText=${encodeURIComponent('+ Novo empréstimo')}`, 1500],
   ['fluxo', 'accounts?view=cashflow', 1500],
   ['transacoes-selecao', `transactions?__click=${encodeURIComponent('button[aria-label="Selecionar"]')}`, 1300],
   ['transacoes-periodo', `transactions?__click=${encodeURIComponent('.pickers .pop:nth-child(1) .pop-trigger')}`, 1300],
