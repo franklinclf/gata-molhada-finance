@@ -11,6 +11,21 @@ export interface ManualAsset {
   values: Array<{ day: string; value: number }>;
 }
 
+/** A personal loan registered by hand (see api/loans.ts). Amounts in cents, days as YYYY-MM-DD. */
+export interface Loan {
+  id: number;
+  name: string;
+  accountId: string;
+  principal: number;
+  total: number;
+  installments: number;
+  firstDue: string;
+  /** The day the cash came in. */
+  takenOn: string;
+  /** The manual transaction created for the interest, when there is interest. */
+  interestManualId: number | null;
+}
+
 export interface ManualTransaction {
   id: number;
   accountId: string;
@@ -433,6 +448,10 @@ export interface Store {
   /** Saves a manual transaction: without an id it is created. Returns the saved one. */
   saveManualTransaction(t: Omit<ManualTransaction, 'id'> & { id?: number }, now: string): ManualTransaction;
   deleteManualTransaction(id: number): void;
+  listLoans(): Loan[];
+  /** Without an id the loan is created. Returns the saved one. */
+  saveLoan(loan: Omit<Loan, 'id'> & { id?: number }, now: string): Loan;
+  deleteLoan(id: number): void;
   listAssets(): ManualAsset[];
   /** Creates the asset (throws when the name is taken) and returns its id. */
   addAsset(name: string, kind: 'asset' | 'liability', now: string): number;

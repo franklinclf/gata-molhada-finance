@@ -78,22 +78,26 @@ export function RecurringList({ items, today, hidden, onChanged }: { items: Recu
         <ul class="rows tall">
           {items.map((r) => {
             const id = rowId(r);
+            // A loan comes from its registration in Contas, so it has nothing to edit or remove here.
+            const loan = r.key.startsWith('loan:');
             return (
               <li key={id} class="recurring-row">
                 <div class="grow">
                   <div class="clip">
-                    {r.name} {r.label === 'subscription' && <span class="badge info">assinatura</span>} {r.manual && <span class="badge muted">marcada por você</span>} {r.edited && <span class="badge muted">ajustada por você</span>} {r.kind === 'variable' && <span class="badge muted">valor varia</span>} {r.account === 'card' && <span class="badge muted">no cartão</span>} {r.late && <span class="badge bad">atrasado</span>} {r.stale && <span class="badge muted">parou de cobrar</span>} {!r.regular && !r.stale && <span class="badge muted">sem periodicidade clara</span>}
+                    {r.name} {loan && <span class="badge info">Empréstimo</span>} {r.label === 'subscription' && <span class="badge info">assinatura</span>} {r.manual && !loan && <span class="badge muted">marcada por você</span>} {r.edited && <span class="badge muted">ajustada por você</span>} {r.kind === 'variable' && <span class="badge muted">valor varia</span>} {r.account === 'card' && <span class="badge muted">no cartão</span>} {r.late && <span class="badge bad">atrasado</span>} {r.stale && <span class="badge muted">parou de cobrar</span>} {!r.regular && !r.stale && <span class="badge muted">sem periodicidade clara</span>}
                   </div>
-                  <div class="muted">{r.regular && !r.stale ? recurringWhen(r, today) : `${r.occurrences} ${r.occurrences === 1 ? 'vez' : 'vezes'} · última ${dayMonth(r.lastDay)}`}</div>
+                  <div class="muted">{loan ? `${r.remaining?.length ?? 0} parcelas restantes · próxima ${dayMonth(r.nextDay)} · última ${dayMonth(r.endsOn ?? r.nextDay)}` : r.regular && !r.stale ? recurringWhen(r, today) : `${r.occurrences} ${r.occurrences === 1 ? 'vez' : 'vezes'} · última ${dayMonth(r.lastDay)}`}</div>
                 </div>
                 <strong class={r.direction === 'in' ? 'good-text' : ''}>
                   {r.direction === 'in' ? '+' : '−'}
                   {brl(r.amount, hidden)}
                 </strong>
-                <button class="small" aria-expanded={open === id} onClick={() => setOpen(open === id ? null : id)}>
-                  {open === id ? 'Fechar' : 'Editar'}
-                </button>
-                {open === id && (
+                {!loan && (
+                  <button class="small" aria-expanded={open === id} onClick={() => setOpen(open === id ? null : id)}>
+                    {open === id ? 'Fechar' : 'Editar'}
+                  </button>
+                )}
+                {open === id && !loan && (
                   <div class="recurring-edit">
                     {r.direction === 'out' ? (
                       <ExpenseEditor item={r} onSave={(edit) => run(() => api.overrideRecurring(r.key, edit))} onRemove={() => remove(r)} onCancel={() => setOpen(null)} onError={setMessage} />

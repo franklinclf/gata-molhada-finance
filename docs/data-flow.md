@@ -131,6 +131,7 @@ O plano de parcelas (`installments`, `src/api/installments.ts`) conta os meses a
 | Fatura dispensada em Conferir | `settings` (`bill_check_dismissed`) | Sim (por conta canônica e mês) |
 | Transação digitada | `manual_transactions` | Sim |
 | Renda fixa e a regra do dia que não é útil | `income_items` | Sim |
+| Empréstimo cadastrado à mão | `loans` | Sim |
 
 Renda esperada (`incomeEvents` em `src/api/projection.ts`, a mesma para o Mês em curso e o Calendário): para cada renda cadastrada, ou para cada entrada recorrente detectada quando não há cadastro, calcula o dia do mês, move para o dia útil conforme a regra (`src/core/business-days.ts`) e descarta o pagamento se um crédito de banco de valor parecido já chegou de 6 dias antes a 3 dias depois desse dia. O que o banco lança na manhã seguinte conta como o pagamento do dia anterior.
 

@@ -4,6 +4,7 @@ import { dayNumber, nextMonth } from '../core/dates.ts';
 import { localDay } from '../core/time.ts';
 import type { RecurringOverride, Store } from '../store/store.ts';
 import { cleanCategoryName } from './mutations.ts';
+import { loanRecurring } from './loans.ts';
 import { effectiveTransactions, type ViewOptions } from './scope.ts';
 
 export interface RecurringItem {
@@ -38,6 +39,10 @@ export interface RecurringItem {
   rest: number | null;
   /** A marked item that stopped: nothing came for more than two intervals. It stays listed so the owner sees it and can remove the mark, but is not expected any more. */
   stale: boolean;
+  /** The last expected day, for an item that ends (the last installment of a registered loan). Nothing is projected after it. */
+  endsOn?: string;
+  /** A loan's installments still to come, each with its own amount (the last one can differ by a cent). Projections use these instead of `amount` repeated. */
+  remaining?: Array<{ day: string; amount: number }>;
 }
 
 /** An item the projections can count on: one that comes about every month and has not stopped. */
@@ -139,7 +144,8 @@ function rentAmount(sorted: Occurrence[], today: string): { amount: number; rest
  * left out, and so are moves the app does not count as spending or income.
  */
 export function detectRecurring(store: Store, now: Date, opts: ViewOptions = {}): RecurringItem[] {
-  return detect(store, now, opts, false);
+  // Loan installments already matched carry a role, so detection skipped them: the registered loan is the only item for its debits.
+  return [...detect(store, now, opts, false), ...loanRecurring(store, now, opts)].sort((a, b) => a.nextDay.localeCompare(b.nextDay) || a.name.localeCompare(b.name));
 }
 
 /** The items the owner said are not recurring, as the app would list them otherwise, so one can be brought back. */

@@ -103,7 +103,7 @@ export function listCategories(store: Store): CategoryRow[] {
   return [...rows.values()].filter((r) => !aliases.has(r.name)).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
-const FIXED_NAMES = new Set(['Pagamento de fatura', 'Transferência entre minhas contas', 'Investimentos']);
+const FIXED_NAMES = new Set(['Pagamento de fatura', 'Transferência entre minhas contas', 'Investimentos', 'Pagamento de empréstimo']);
 
 /**
  * Renames a category, or merges it into another one when the new name already exists. Built-in, custom and source

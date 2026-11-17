@@ -16,13 +16,13 @@ export interface RuleSubject {
   amount: number;
   /** Local day, YYYY-MM-DD. */
   date: string;
-  /** card_payment, own_transfer, investment or empty. */
+  /** card_payment, own_transfer, investment, loan_payment or empty. */
   role: string;
 }
 
 export const TEXT_FIELDS = ['description', 'merchant', 'counterparty', 'sourceLabel', 'institution', 'account', 'operation', 'mcc'] as const;
 export const NUMBER_FIELDS = ['amount', 'date'] as const;
-export const ENUM_FIELDS = { status: ['pending', 'posted'], direction: ['in', 'out'], role: ['card_payment', 'own_transfer', 'investment', 'none'] } as const;
+export const ENUM_FIELDS = { status: ['pending', 'posted'], direction: ['in', 'out'], role: ['card_payment', 'own_transfer', 'investment', 'loan_payment', 'none'] } as const;
 export type RuleField = (typeof TEXT_FIELDS)[number] | (typeof NUMBER_FIELDS)[number] | keyof typeof ENUM_FIELDS;
 
 export const TEXT_OPERATORS = ['contains', 'not_contains', 'equals', 'not_equals', 'starts_with', 'ends_with', 'regex'] as const;

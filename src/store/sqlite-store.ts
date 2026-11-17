@@ -6,7 +6,7 @@ import type { AccountRef, CanonicalAccount, CanonicalTransaction, Finding, Limit
 import type { AccountKind, Freshness, SourceAccount, SourceBill, SourceId, SourceTransaction, TransactionStatus } from '../core/types.ts';
 import type { Rule } from '../api/rules-engine.ts';
 import type { NonBusinessRule } from '../core/business-days.ts';
-import type { BillEdit, BillImport, BillImportAccount, IncomeItem, RecurringOverride, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, TransactionName, RecordChoice, ReversalRow } from './store.ts';
+import type { BillEdit, BillImport, BillImportAccount, IncomeItem, RecurringOverride, BudgetRow, BudgetScope, ChangeStatus, ChatChange, ChatConversation, ChatMessage, Goal, Loan, ManualAsset, ManualTransaction, AccountPruneResult, PruneResult, PurgeReport, TransactionOverride, TransactionName, RecordChoice, ReversalRow } from './store.ts';
 import type { Parties, Party } from '../core/parties.ts';
 import { institutionKey } from '../core/names.ts';
 import { localMonth } from '../core/time.ts';
@@ -1054,6 +1054,24 @@ export function openSqliteStore(path: string, migrationsDir: string): Store {
 
     deleteManualTransaction(id: number): void {
       db.prepare('DELETE FROM manual_transactions WHERE id = ?').run(id);
+    },
+
+    listLoans(): Loan[] {
+      const rows = db.prepare('SELECT id, name, account_id, principal, total, installments, first_due, taken_on, interest_manual_id FROM loans ORDER BY first_due, id').all() as Array<{ id: number; name: string; account_id: string; principal: number; total: number; installments: number; first_due: string; taken_on: string; interest_manual_id: number | null }>;
+      return rows.map((r) => ({ id: r.id, name: r.name, accountId: r.account_id, principal: r.principal, total: r.total, installments: r.installments, firstDue: r.first_due, takenOn: r.taken_on, interestManualId: r.interest_manual_id }));
+    },
+
+    saveLoan(loan: Omit<Loan, 'id'> & { id?: number }, now: string): Loan {
+      if (loan.id === undefined) {
+        const info = db.prepare('INSERT INTO loans (name, account_id, principal, total, installments, first_due, taken_on, interest_manual_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(loan.name, loan.accountId, loan.principal, loan.total, loan.installments, loan.firstDue, loan.takenOn, loan.interestManualId, now);
+        return { ...loan, id: Number(info.lastInsertRowid) };
+      }
+      db.prepare('UPDATE loans SET name = ?, account_id = ?, principal = ?, total = ?, installments = ?, first_due = ?, taken_on = ?, interest_manual_id = ? WHERE id = ?').run(loan.name, loan.accountId, loan.principal, loan.total, loan.installments, loan.firstDue, loan.takenOn, loan.interestManualId, loan.id);
+      return { ...loan, id: loan.id };
+    },
+
+    deleteLoan(id: number): void {
+      db.prepare('DELETE FROM loans WHERE id = ?').run(id);
     },
 
     listAssets(): ManualAsset[] {

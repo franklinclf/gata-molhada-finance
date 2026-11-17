@@ -5,12 +5,13 @@ import { normalizeName } from '../core/names.ts';
  * What a transaction is for the arithmetic, apart from what it is called on screen:
  * - card_payment: money that pays a card bill (the credit on the card, or the debit on the bank account),
  * - own_transfer: a move between the user's own accounts,
- * - investment: money put into or taken out of an investment.
+ * - investment: money put into or taken out of an investment,
+ * - loan_payment: a debit that pays an installment of a loan the owner registered (set in scope.ts, never from the text).
  * None of these is spending or income. The role comes from what the source said (its own category and the text), because
  * those are facts. The category shown on screen can be changed by an AI or by the user for display, and must not
  * change a bill from paid to overdue.
  */
-export type Role = 'card_payment' | 'own_transfer' | 'investment';
+export type Role = 'card_payment' | 'own_transfer' | 'investment' | 'loan_payment';
 
 const SOURCE_CATEGORY: Array<[RegExp, Role]> = [
   [/pagamento de cartao|credit card payment|pagamento de fatura|pagamento recebido/, 'card_payment'],
@@ -39,6 +40,7 @@ const CHOSEN_CATEGORY: Record<string, Role> = {
   'pagamento de fatura': 'card_payment',
   'transferencia entre minhas contas': 'own_transfer',
   investimentos: 'investment',
+  'pagamento de emprestimo': 'loan_payment',
 };
 
 function firstMatch(rules: Array<[RegExp, Role]>, text: string): Role | null {

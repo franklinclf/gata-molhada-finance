@@ -5,7 +5,7 @@ export interface TitleInput {
   description: string;
   /** Cents with the sign of cash flow: negative is money out. */
   amount: number;
-  role: 'card_payment' | 'own_transfer' | 'investment' | null;
+  role: 'card_payment' | 'own_transfer' | 'investment' | 'loan_payment' | null;
   /** PIX, TED, DOC or BOLETO when the source says. */
   operation: string | null;
   counterparty: { name: string | null } | null;
@@ -48,6 +48,7 @@ function operationOf(text: string): string | null {
 export function titleOf(t: TitleInput): string {
   const out = t.amount < 0;
   if (t.role === 'card_payment') return 'Pagamento de fatura';
+  if (t.role === 'loan_payment') return 'Pagamento de empréstimo';
   if (t.role === 'own_transfer') return out ? 'Transferência para suas contas' : 'Transferência de suas contas';
   if (t.role === 'investment') {
     if (/rendimento|lucro|dividendo|juros/.test(normalizeName(t.description))) return 'Rendimento';

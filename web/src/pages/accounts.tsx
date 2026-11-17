@@ -5,6 +5,7 @@ import { accountName } from '../names.ts';
 import { useLoad } from '../hooks.ts';
 import { navigate, type Route } from '../router.ts';
 import { IncomePanel } from '../IncomePanel.tsx';
+import { LoansPanel } from '../LoansPanel.tsx';
 import { Go, Loading } from '../ui.tsx';
 import { OutlookCommitted, OutlookFacts, OutlookTimeline } from '../widgets/outlook.tsx';
 import { CashflowPage } from './cashflow.tsx';
@@ -68,6 +69,7 @@ function Balances({ now, hidden, focusIncome, prefill }: { now: Date; hidden: bo
             </section>
           )}
           <IncomePanel hidden={hidden} focus={focusIncome} prefill={prefill} />
+          <LoansPanel hidden={hidden} now={now} />
           {data.institutions.map((inst, n) => (
             <section class="panel" key={inst.institution}>
               <div class="row-head">
