@@ -3,7 +3,7 @@ import { localDay } from '../core/time.ts';
 import { DEFAULT_DATA_START } from '../reconcile/run.ts';
 import type { Loan, Store } from '../store/store.ts';
 import { addMonthsToDay } from './cycles.ts';
-import { createManual, deleteManual } from './manual.ts';
+import { deleteManual } from './manual.ts';
 import { cleanCategoryName } from './mutations.ts';
 import type { RecurringItem } from './recurring.ts';
 import { effectiveTransactions, visibleAccounts, type EffectiveTransaction, type ViewOptions } from './scope.ts';
@@ -44,6 +44,8 @@ export interface LoanView {
   remaining: number;
   next: { day: string; amount: number; late: boolean } | null;
   schedule: LoanInstallment[];
+  /** The credit that was the loan, when the app found it. */
+  proceeds: { transactionId: string; day: string } | null;
 }
 
 export interface LoansView extends Stamped {
@@ -53,11 +55,13 @@ export interface LoansView extends Stamped {
 const MAX_LOANS = 20;
 const MAX_AMOUNT = 100_000_000_000;
 const MAX_INSTALLMENTS = 120;
-const INTEREST_CATEGORY = 'Empréstimos e financiamentos';
+const LOAN_CATEGORY = 'Empréstimos e financiamentos';
 /** Debits can post a few days before the due day (a bank moves it back) or after it (a weekend, a holiday). */
 const WINDOW_BEFORE_DAYS = 3;
 const WINDOW_AFTER_DAYS = 7;
 const AMOUNT_TOLERANCE_CENTS = 2;
+/** The cash can post a few days either side of the day the owner says it came in. */
+const PROCEEDS_WINDOW_DAYS = 3;
 /** An unmatched installment due more than this many days ago is late rather than just due. */
 const LATE_AFTER_DAYS = 5;
 
@@ -100,6 +104,20 @@ export function matchInstallments(loan: Loan, transactions: Candidate[], used: S
   return matched;
 }
 
+/** The credit that was the loan itself: on the loan's account, exactly the amount received, within 3 days of the day it came in. */
+export function matchProceeds(loan: Loan, transactions: Candidate[], used: Set<string> = new Set()): string | null {
+  const taken = dayNumber(loan.takenOn);
+  let best: { id: string; gap: number } | null = null;
+  for (const t of transactions) {
+    if (t.amount !== loan.principal || t.accountId !== loan.accountId || t.role !== null || t.excluded || t.state === 'stale_pending' || used.has(t.id)) continue;
+    const gap = Math.abs(dayNumber(localDay(t.occurredAt)) - taken);
+    if (gap > PROCEEDS_WINDOW_DAYS || (best !== null && (gap > best.gap || (gap === best.gap && t.id > best.id)))) continue;
+    best = { id: t.id, gap };
+  }
+  if (best !== null) used.add(best.id);
+  return best?.id ?? null;
+}
+
 /** Every loan's matches, over rows whose role was computed without the loan pass. */
 export function matchAllLoans(loans: Loan[], transactions: Candidate[]): Map<number, Map<number, string>> {
   const used = new Set<string>();
@@ -112,7 +130,7 @@ function statusOf(day: string, paid: boolean, today: string): InstallmentStatus 
   return dayNumber(today) - dayNumber(day) > LATE_AFTER_DAYS ? 'late' : 'due';
 }
 
-function viewOf(loan: Loan, matched: Map<number, string>, today: string, accountName: string): LoanView {
+function viewOf(loan: Loan, matched: Map<number, string>, today: string, accountName: string, proceeds: LoanView['proceeds']): LoanView {
   const schedule: LoanInstallment[] = scheduleOf(loan).map((s) => ({ ...s, status: statusOf(s.day, matched.has(s.number), today), transactionId: matched.get(s.number) ?? null }));
   const open = schedule.filter((s) => s.status !== 'paid');
   const first = open[0];
@@ -131,6 +149,7 @@ function viewOf(loan: Loan, matched: Map<number, string>, today: string, account
     remaining: open.reduce((s, i) => s + i.amount, 0),
     next: first ? { day: first.day, amount: first.amount, late: first.status === 'late' } : null,
     schedule,
+    proceeds,
   };
 }
 
@@ -140,12 +159,18 @@ export function loansView(store: Store, now: Date): LoansView {
   const today = localDay(now.toISOString());
   const accounts = store.listCanonicalAccounts();
   if (loans.length === 0) return { ...stamp(accounts, now), items: [] };
-  const matches = matchAllLoans(loans, effectiveTransactions(store, { includeHidden: true, withoutLoans: true }));
+  const rows = effectiveTransactions(store, { includeHidden: true, withoutLoans: true });
+  const matches = matchAllLoans(loans, rows);
+  const taken = new Set([...matches.values()].flatMap((m) => [...m.values()]));
+  const dayOf = new Map(rows.map((t) => [t.id, localDay(t.occurredAt)]));
   const label = (id: string) => {
     const a = accounts.find((x) => x.id === id);
     return a ? `${a.institution} · ${a.name}` : id;
   };
-  return { ...stamp(accounts, now), items: loans.map((l) => viewOf(l, matches.get(l.id)!, today, label(l.accountId))) };
+  return { ...stamp(accounts, now), items: loans.map((l) => {
+      const id = matchProceeds(l, rows, taken);
+      return viewOf(l, matches.get(l.id)!, today, label(l.accountId), id === null ? null : { transactionId: id, day: dayOf.get(id)! });
+    }) };
 }
 
 /** Loans with installments still to match, as recurring bank payments. Only loans on accounts the view shows. */
@@ -169,7 +194,7 @@ export function loanRecurring(store: Store, now: Date, opts: ViewOptions = {}): 
       lastDay: paid.at(-1)?.day ?? loan.takenOn,
       nextDay: next.day,
       late: next.status === 'late',
-      category: INTEREST_CATEGORY,
+      category: LOAN_CATEGORY,
       account: 'bank',
       label: 'recurring',
       edited: false,
@@ -205,14 +230,7 @@ export function createLoan(store: Store, body: Record<string, unknown>, now: Dat
   if (body.takenOn > localDay(now.toISOString())) return bad('takenOn cannot be in the future');
   if (body.takenOn < DEFAULT_DATA_START) return bad(`the app only keeps data from ${DEFAULT_DATA_START}`);
   if (store.listLoans().length >= MAX_LOANS) return bad(`at most ${MAX_LOANS} loans`);
-  const interest = total - principal;
-  let interestManualId: number | null = null;
-  if (interest > 0) {
-    const made = createManual(store, { accountId: account.id, day: body.takenOn, amount: -interest, description: `Juros do empréstimo ${name}`, category: INTEREST_CATEGORY }, now);
-    if (!made.ok) return made;
-    interestManualId = Number(made.value.id.slice(4));
-  }
-  const saved = store.saveLoan({ name, accountId: account.id, principal, total, installments, firstDue: body.firstDue, takenOn: body.takenOn, interestManualId }, now.toISOString());
+  const saved = store.saveLoan({ name, accountId: account.id, principal, total, installments, firstDue: body.firstDue, takenOn: body.takenOn, interestManualId: null }, now.toISOString());
   return { ok: true, value: { id: saved.id } };
 }
 
@@ -220,6 +238,7 @@ export function deleteLoan(store: Store, id: number, now: Date): LoanResult {
   const loan = store.listLoans().find((l) => l.id === id);
   if (!loan) return { ok: false, status: 404, error: 'not_found' };
   store.deleteLoan(id);
+  // Loans made before the interest stopped being posted by hand may still own such a transaction.
   if (loan.interestManualId !== null) deleteManual(store, manualIdOf(loan.interestManualId), now);
   return { ok: true, value: {} };
 }

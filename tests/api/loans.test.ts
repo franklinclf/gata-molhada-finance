@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { calendar } from '../../src/api/calendar.ts';
-import { createLoan, deleteLoan, loansView, matchInstallments, scheduleOf } from '../../src/api/loans.ts';
+import { createLoan, deleteLoan, loansView, matchInstallments, matchProceeds, scheduleOf } from '../../src/api/loans.ts';
 import { netWorth } from '../../src/api/networth.ts';
 import { outlook } from '../../src/api/outlook.ts';
 import { detectRecurring } from '../../src/api/recurring.ts';
@@ -72,19 +72,38 @@ test('a transaction pays one installment only, and pending, excluded, other-acco
   }
 });
 
-test('creating a loan books the interest as a manual transaction, and deleting the loan removes it', () => {
+test('creating a loan posts nothing by hand: the interest is inside the installments', () => {
   const { store, accountId } = seeded();
   const made = createLoan(store, { ...LOAN, accountId }, NOW);
   assert.ok(made.ok);
   const saved = store.listLoans()[0]!;
-  const manual = store.listManualTransactions().find((m) => m.id === saved.interestManualId)!;
-  assert.deepEqual([manual.amount, manual.description, manual.category, manual.day, manual.accountId], [-25000, 'Juros do empréstimo Reforma', 'Empréstimos e financiamentos', '2026-09-05', accountId]);
+  assert.deepEqual([saved.interestManualId, store.listManualTransactions().length], [null, 0]);
   assert.deepEqual(deleteLoan(store, saved.id, NOW), { ok: true, value: {} });
-  assert.deepEqual([store.listLoans().length, store.listManualTransactions().length], [0, 0]);
+  assert.equal(store.listLoans().length, 0);
   assert.equal(deleteLoan(store, saved.id, NOW).ok, false);
-  const free = createLoan(store, { ...LOAN, total: LOAN.principal, accountId }, NOW);
-  assert.ok(free.ok);
-  assert.equal(store.listLoans()[0]!.interestManualId, null, 'no interest, no manual transaction');
+});
+
+test('deleting a loan made by the earlier version also removes the interest it posted by hand', () => {
+  const { store, accountId } = seeded();
+  const manual = store.saveManualTransaction({ accountId, day: '2026-09-05', amount: -25000, description: 'Juros do empréstimo Reforma', category: null, notes: null }, T);
+  const saved = store.saveLoan({ ...LOAN, accountId, interestManualId: manual.id }, T);
+  assert.ok(deleteLoan(store, saved.id, NOW).ok);
+  assert.equal(store.listManualTransactions().length, 0);
+});
+
+test('the credit of the amount received, within 3 days of the day it came in, is the loan and not income', () => {
+  const credit = (id: string, day: string, amount: number, extra: Record<string, unknown> = {}) => row(id, day, amount, extra);
+  assert.equal(matchProceeds(loan(), [credit('c', '2026-09-05', 300000)]), 'c');
+  assert.equal(matchProceeds(loan(), [credit('c', '2026-09-08', 300000)]), 'c');
+  assert.equal(matchProceeds(loan(), [credit('c', '2026-09-09', 300000)]), null, 'outside the window');
+  assert.equal(matchProceeds(loan(), [credit('c', '2026-09-05', 299999)]), null, 'another amount');
+  assert.equal(matchProceeds(loan(), [credit('c', '2026-09-05', 300000, { role: 'own_transfer' })]), null);
+  assert.equal(matchProceeds(loan(), [credit('far', '2026-09-08', 300000), credit('near', '2026-09-06', 300000)]), 'near');
+  const { store, accountId } = seeded();
+  createLoan(store, { ...LOAN, accountId }, NOW);
+  const cash = effectiveTransactions(store, { includeHidden: true }).find((x) => x.description === 'Crédito em conta')!;
+  assert.deepEqual([cash.role, cash.title], ['loan_payment', 'Empréstimo recebido']);
+  assert.equal(loansView(store, NOW).items[0]!.proceeds?.day, '2026-09-05');
 });
 
 test('validation errors', () => {
@@ -108,8 +127,8 @@ test('the view marks installments paid, due, late and future, and the debit leav
   assert.deepEqual([v!.paidCount, v!.interest, v!.remaining, v!.next], [1, 25000, 325000 - 54167, { day: '2026-09-10', amount: 54167, late: true }]);
   const t = effectiveTransactions(store, { includeHidden: true }).find((x) => x.description === 'DEBITO p1')!;
   assert.deepEqual([t.role, t.category, t.title], ['loan_payment', 'Pagamento de empréstimo', 'Pagamento de empréstimo']);
-  // Spending holds the market and the interest, not the installment.
-  assert.equal(spending(store, { from: '2026-09-01', to: '2026-10-31' }, 'category', NOW).total, 7000 + 25000);
+  // Spending holds the market only: neither the installment nor the cash received count.
+  assert.equal(spending(store, { from: '2026-09-01', to: '2026-10-31' }, 'category', NOW).total, 7000);
   // Without the loan the same debit is ordinary spending.
   const lonely = seeded([['p1', '2026-10-10', -54167]]);
   assert.equal(spending(lonely.store, { from: '2026-09-01', to: '2026-10-31' }, 'category', NOW).total, 7000 + 54167);

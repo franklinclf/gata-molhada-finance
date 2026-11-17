@@ -12,7 +12,7 @@ import { namesWithSeries } from './series.ts';
 import { merchantOf } from '../core/merchant.ts';
 import { counterpartyOf, evidenceRole, ownerNames, roleOf, slipBillPayments, type Role } from './roles.ts';
 import { publishedSourceBills } from './cycles.ts';
-import { matchAllLoans } from './loans.ts';
+import { matchAllLoans, matchProceeds } from './loans.ts';
 import type { Store, StoredSourceBill } from '../store/store.ts';
 
 export interface ViewOptions {
@@ -234,6 +234,14 @@ export function effectiveTransactions(
   const loans = options.withoutLoans ? [] : store.listLoans();
   const loanPaid = new Set<string>();
   if (loans.length > 0) for (const byInstallment of matchAllLoans(loans, built.filter((t) => !mirrored.has(t.id))).values()) for (const id of byInstallment.values()) loanPaid.add(id);
+  // The credit that was the loan: the cash is borrowed, not earned, so it is not income.
+  if (loans.length > 0) {
+    const open = built.filter((t) => !mirrored.has(t.id));
+    for (const loan of loans) {
+      const id = matchProceeds(loan, open, loanPaid);
+      if (id !== null) loanPaid.add(id);
+    }
+  }
   // The names the owner gave. An installment purchase is grouped over every account, like the plan of installments, so the
   // name of a purchase is the same on every screen.
   const names = store.listTransactionNames();

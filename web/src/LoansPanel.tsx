@@ -34,7 +34,8 @@ const installmentHint = (total: number, count: number): string => {
 
 /**
  * Personal loans paid in monthly debits. The bank gives no loan data, so the owner registers the loan and the app matches each
- * installment to a debit on the account. The debits then stop counting as spending (the cash was counted when it came in).
+ * installment to a debit on the account and the cash to a credit. Neither counts as income or spending: the cash that was spent is
+ * counted where it went, and the interest is inside the installments.
  */
 export function LoansPanel({ hidden, now }: { hidden: boolean; now: Date }) {
   const loans = useLoad(() => api.loans(), []);
@@ -65,7 +66,7 @@ export function LoansPanel({ hidden, now }: { hidden: boolean; now: Date }) {
       await work();
       setForm(null);
       loans.reload();
-      // The interest becomes a transaction and the installments leave spending, so every screen reloads.
+      // The installments and the cash received leave spending and income, so every screen reloads.
       invalidateData();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Não foi possível salvar.');
@@ -86,7 +87,7 @@ export function LoansPanel({ hidden, now }: { hidden: boolean; now: Date }) {
         <h3>Empréstimos</h3>
         <button class="chip" onClick={() => setForm(blank(today))}>+ Novo empréstimo</button>
       </div>
-      <div class="muted">Cadastre um empréstimo pago em débitos mensais na conta. O dinheiro que entrou já foi contado, então as parcelas deixam de contar como gasto; os juros entram como um gasto no dia em que o dinheiro chegou. Cada parcela é reconhecida pelo débito de valor igual (até 2 centavos de diferença), de 3 dias antes a 7 dias depois do vencimento.</div>
+      <div class="muted">Cadastre um empréstimo pago em débitos mensais na conta. O app reconhece o dinheiro que entrou e cada parcela debitada, e nenhum dos dois conta como receita ou gasto: o juros já está dentro das parcelas. As parcelas que faltam aparecem no Mês em curso e no Calendário.</div>
       {items.length === 0 && !form && <div class="empty">Nenhum empréstimo cadastrado.</div>}
       {items.length > 0 && (
         <ul class="rows tall">
@@ -99,11 +100,12 @@ export function LoansPanel({ hidden, now }: { hidden: boolean; now: Date }) {
                 <div class="muted">
                   {l.paidCount} de {l.installments} pagas · {l.next ? `próxima ${dayMonth(l.next.day)}, ${brl(l.next.amount, hidden)}` : 'quitado'} · falta {brl(l.remaining, hidden)} · juros {brl(l.interest, hidden)}
                 </div>
+                <div class="muted">{l.proceeds ? `Dinheiro recebido em ${dayMonth(l.proceeds.day)}` : 'Dinheiro recebido ainda não identificado na conta'}</div>
               </div>
               <button class="small" aria-expanded={openId === l.id} onClick={() => setOpenId(openId === l.id ? null : l.id)}>
                 {openId === l.id ? 'Fechar' : 'Parcelas'}
               </button>
-              <button class="link" onClick={() => window.confirm(`Remover o empréstimo “${l.name}”? Os juros lançados também saem e os débitos voltam a contar como gasto.`) && void run(() => api.deleteLoan(l.id))}>
+              <button class="link" onClick={() => window.confirm(`Remover o empréstimo “${l.name}”? Os débitos e o dinheiro recebido voltam a contar como gasto e receita.`) && void run(() => api.deleteLoan(l.id))}>
                 Remover
               </button>
               {openId === l.id && (
@@ -125,32 +127,57 @@ export function LoansPanel({ hidden, now }: { hidden: boolean; now: Date }) {
       )}
       {form && (
         <form
-          class="recat income-form"
+          class="loan-form"
           onSubmit={(e) => {
             e.preventDefault();
             submit();
           }}
         >
-          <input aria-label="Nome do empréstimo" placeholder="Nome (ex.: Reforma)" value={form.name} maxLength={60} onInput={(e) => set({ name: input(e) })} />
-          <Select ariaLabel="Conta onde o dinheiro entrou e as parcelas saem" value={chosen} onChange={(accountId) => set({ accountId })} options={bank.map((a) => ({ value: a.id, label: accountLabel(a), group: a.institution }))} />
-          <input aria-label="Valor recebido" inputMode="decimal" placeholder="Valor recebido (ex.: 3000,00)" value={form.principal} onInput={(e) => set({ principal: input(e) })} />
-          <input aria-label="Total a pagar" inputMode="decimal" placeholder="Total a pagar (ex.: 3250,00)" value={form.total} onInput={(e) => set({ total: input(e) })} />
-          <input aria-label="Número de parcelas" type="number" min="1" max="120" placeholder="Parcelas (ex.: 6)" value={form.installments} onInput={(e) => set({ installments: input(e) })} />
-          <label class="muted">
-            Primeiro vencimento
-            <input type="date" aria-label="Primeiro vencimento" value={form.firstDue} onInput={(e) => set({ firstDue: input(e) })} />
-          </label>
-          <label class="muted">
-            Dia em que o dinheiro entrou
-            <input type="date" aria-label="Dia em que o dinheiro entrou" value={form.takenOn} max={today} min="2026-01-01" onInput={(e) => set({ takenOn: input(e) })} />
-          </label>
-          {total !== null && countOk && <div class="muted">Parcela de {installmentHint(total, count)}.</div>}
-          {principal !== null && total !== null && (total >= principal ? <div class="muted">Juros: {brl(total - principal)}.</div> : <div class="error">O total a pagar não pode ser menor que o valor recebido.</div>)}
-          <button class="primary" disabled={busy || !ready}>Salvar</button>
-          <button type="button" class="link" onClick={() => setForm(null)}>Cancelar</button>
+          <div class="loan-grid">
+            <label class="field wide">
+              <span class="muted">Nome</span>
+              <input aria-label="Nome do empréstimo" placeholder="Ex.: Reforma" value={form.name} maxLength={60} onInput={(e) => set({ name: input(e) })} />
+            </label>
+            <div class="field wide">
+              <span class="muted">Conta onde o dinheiro entrou e as parcelas saem</span>
+              <Select ariaLabel="Conta onde o dinheiro entrou e as parcelas saem" value={chosen} onChange={(accountId) => set({ accountId })} options={bank.map((a) => ({ value: a.id, label: accountLabel(a), group: a.institution }))} />
+            </div>
+            <label class="field">
+              <span class="muted">Valor recebido</span>
+              <input aria-label="Valor recebido" inputMode="decimal" placeholder="3000,00" value={form.principal} onInput={(e) => set({ principal: input(e) })} />
+            </label>
+            <label class="field">
+              <span class="muted">Total a pagar</span>
+              <input aria-label="Total a pagar" inputMode="decimal" placeholder="3250,00" value={form.total} onInput={(e) => set({ total: input(e) })} />
+            </label>
+            <label class="field">
+              <span class="muted">Parcelas</span>
+              <input aria-label="Número de parcelas" type="number" min="1" max="120" placeholder="6" value={form.installments} onInput={(e) => set({ installments: input(e) })} />
+            </label>
+            <label class="field">
+              <span class="muted">Primeiro vencimento</span>
+              <input type="date" aria-label="Primeiro vencimento" value={form.firstDue} onInput={(e) => set({ firstDue: input(e) })} />
+            </label>
+            <label class="field">
+              <span class="muted">Dia em que o dinheiro entrou</span>
+              <input type="date" aria-label="Dia em que o dinheiro entrou" value={form.takenOn} max={today} min="2026-01-01" onInput={(e) => set({ takenOn: input(e) })} />
+            </label>
+          </div>
+          {(total !== null && countOk) || (principal !== null && total !== null && total >= principal) ? (
+            <div class="muted loan-hints">
+              {total !== null && countOk && <span>Parcela de {installmentHint(total, count)}.</span>}
+              {principal !== null && total !== null && total >= principal && <span> Juros dentro das parcelas: {brl(total - principal)}.</span>}
+            </div>
+          ) : null}
+          {principal !== null && total !== null && total < principal && <div class="error">O total a pagar não pode ser menor que o valor recebido.</div>}
+          {message && <div class="error">{message}</div>}
+          <div class="loan-actions">
+            <button type="button" class="link" onClick={() => setForm(null)}>Cancelar</button>
+            <button class="primary" disabled={busy || !ready}>Salvar</button>
+          </div>
         </form>
       )}
-      {message && <div class="error">{message}</div>}
+      {message && !form && <div class="error">{message}</div>}
     </div>
   );
 }
