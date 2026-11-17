@@ -15,18 +15,29 @@ type Source = FreshnessView['sources'][number];
 const WATCH_MS = 10 * 60_000;
 
 /** A refresh the owner started at Meu Pluggy: which banks, and when each was last read before it. */
-type Watch = { institutions: string[]; before: Record<string, string>; until: number; popup: Window | null };
+type Watch = { institutions: string[]; before: Record<string, string>; until: number; popups: Array<{ institutions: string[]; window: Window }> };
+
+/** One connection to open: its link and the banks it covers. */
+type Target = { link: string; institutions: string[] };
 
 /**
  * Opens Meu Pluggy in a small window. It must happen in the click itself, or the browser blocks it. The window gets no
  * handle back to the app, but the app keeps one to close it when the data arrives. Null when the browser refused.
+ * Each one has its own name and place, so several can be open at once without covering each other.
  */
-function openMeuPluggy(link: string): Window | null {
-  const popup = window.open('about:blank', 'meupluggy', 'popup,width=520,height=820');
+function openMeuPluggy(link: string, index: number): Window | null {
+  const popup = window.open('about:blank', `meupluggy-${index}`, `popup,width=520,height=820,left=${40 + index * 70},top=${40 + index * 30}`);
   if (!popup) return null;
   popup.opener = null;
   popup.location.href = link;
   return popup;
+}
+
+/** The connections behind these sources, one entry per link (several banks can share one). */
+function targetsOf(sources: Source[]): Target[] {
+  const byLink = new Map<string, string[]>();
+  for (const src of sources) byLink.set(src.link, [...(byLink.get(src.link) ?? []), src.institution]);
+  return [...byLink].map(([link, institutions]) => ({ link, institutions }));
 }
 
 function alertText(event: string, code: string | null, message: string | null): string {
@@ -63,13 +74,18 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
     }
   };
   const refreshed = (src: Source): boolean => watch !== null && Date.parse(src.lastUpdatedAt) > Date.parse(watch.before[src.institution] ?? '') && !src.syncing;
-  /** Opens the connection at Meu Pluggy, where the owner taps Atualizar, and follows it until the new data is in. */
-  const startRefresh = (event: MouseEvent, link: string, institutions: string[]) => {
-    const popup = openMeuPluggy(link);
+  /** Opens the connections at Meu Pluggy, where the owner taps Atualizar, and follows them until the new data is in. */
+  const startRefresh = (event: MouseEvent, targets: Target[]) => {
+    const popups = targets.flatMap((t, i) => {
+      const w = openMeuPluggy(t.link, i);
+      return w ? [{ institutions: t.institutions, window: w }] : [];
+    });
     // Without a window of its own, the link opens as a normal tab and the page still follows.
-    if (popup) event.preventDefault();
-    setWatch({ institutions, before: Object.fromEntries((fresh.data?.sources ?? []).map((src) => [src.institution, src.lastUpdatedAt])), until: Date.now() + WATCH_MS, popup });
-    setRefreshNote(null);
+    if (popups.length > 0) event.preventDefault();
+    const institutions = targets.flatMap((t) => t.institutions);
+    setWatch({ institutions, before: Object.fromEntries((fresh.data?.sources ?? []).map((src) => [src.institution, src.lastUpdatedAt])), until: Date.now() + WATCH_MS, popups });
+    const blocked = targets.length - popups.length;
+    setRefreshNote(popups.length > 0 && blocked > 0 ? `O navegador bloqueou ${blocked} ${blocked === 1 ? 'janela' : 'janelas'}. Permita pop-ups para este site e toque em Atualizar de novo.` : null);
     api.watchSources().catch(() => setRefreshNote('O app não conseguiu conferir com mais frequência agora. Os dados novos entram pelo aviso do Meu Pluggy ou na conferência seguinte.'));
   };
   useEffect(() => {
@@ -77,8 +93,10 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
     const watched = fresh.data.sources.filter((src) => watch.institutions.includes(src.institution));
     const done = watched.filter(refreshed).map((src) => src.institution);
     const finished = watched.length > 0 && done.length === watched.length;
+    // Each window closes as soon as the banks it covers are read; the rest close when all are, or when the time is up.
+    for (const p of watch.popups) if (finished || p.institutions.every((i) => done.includes(i))) p.window.close();
     if (!finished && Date.now() < watch.until) return;
-    if (finished) watch.popup?.close();
+    for (const p of watch.popups) p.window.close();
     setWatch(null);
     if (done.length > 0) invalidateData();
     setRefreshNote(
@@ -121,7 +139,7 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
       <section class="panel">
         <div class="panel-head">
           <h2>Última leitura de cada banco</h2>
-          <ButtonLink variant="primary" size="sm" href="https://meu.pluggy.ai/connections" target="_blank" rel="noreferrer noopener" onClick={(e) => startRefresh(e, 'https://meu.pluggy.ai/connections', (fresh.data?.sources ?? []).map((src) => src.institution))}>
+          <ButtonLink variant="primary" size="sm" href="https://meu.pluggy.ai/connections" target="_blank" rel="noreferrer noopener" onClick={(e) => startRefresh(e, targetsOf(fresh.data?.sources ?? []))}>
             Atualizar todos
           </ButtonLink>
         </div>
@@ -138,7 +156,7 @@ export function StatusPage({ now, hidden, embedded = false }: { now: Date; hidde
                 {s.quotaExhausted && <span class="badge bad">limite do banco atingido</span>}
                 {rowState(s) && <span class={rowState(s) === 'lido agora' ? 'badge good' : 'badge'}>{rowState(s)}</span>}
                 <span class={s.late ? 'bad-text' : 'muted'}>{ago(s.lastUpdatedAt, now)}</span>
-                <ButtonLink size="sm" href={s.link} target="_blank" rel="noreferrer noopener" title="Abre a conexão no Meu Pluggy numa janela pequena; toque em Atualizar lá e o app acompanha" onClick={(e) => startRefresh(e, s.link, [s.institution])}>
+                <ButtonLink size="sm" href={s.link} target="_blank" rel="noreferrer noopener" title="Abre a conexão no Meu Pluggy numa janela pequena; toque em Atualizar lá e o app acompanha" onClick={(e) => startRefresh(e, [{ link: s.link, institutions: [s.institution] }])}>
                   Atualizar
                 </ButtonLink>
               </li>
